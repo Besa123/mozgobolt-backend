@@ -1,0 +1,56 @@
+# -----------------------------
+# Environment & Secrets
+# -----------------------------
+.env
+.env.*
+*.jks
+*.keystore
+secrets.properties
+
+# -----------------------------
+# Gradle
+# -----------------------------
+.gradle/
+build/
+/build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# -----------------------------
+# IntelliJ IDEA / JetBrains
+# -----------------------------
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+gen/
+/run/
+
+# -----------------------------
+# Kotlin / Java Compiled Files
+# -----------------------------
+*.class
+*.log
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+hs_err_pid*
+
+# -----------------------------
+# Mac / Windows OS Files
+# -----------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
