@@ -1,4 +1,4 @@
-package com.besa.boardShare.modules.plugin
+package com.besa.boardShare.core.modules.plugin
 
 import io.ktor.server.application.*
 import io.ktor.server.auth.*

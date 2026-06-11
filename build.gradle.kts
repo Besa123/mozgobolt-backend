@@ -34,6 +34,7 @@ dependencies {
     implementation(libs.postgresql)
     implementation(libs.hikariCP)
     implementation(libs.dotenv)
+    implementation(libs.password4j)
 
     testImplementation(kotlin("test"))
     testImplementation(ktorLibs.server.testHost)

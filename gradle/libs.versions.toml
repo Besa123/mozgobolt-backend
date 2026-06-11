@@ -5,6 +5,7 @@ exposed = "1.3.0"
 postgresql = "42.7.8"
 hikariCP = "7.0.2"
 dotenv = "6.5.1"
+password4j = "1.8.4"
 
 [libraries]
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
@@ -14,6 +15,7 @@ exposed-dao = { module = "org.jetbrains.exposed:exposed-dao", version.ref = "exp
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 hikariCP = { module = "com.zaxxer:HikariCP", version.ref = "hikariCP" }
 dotenv = { module = "io.github.cdimascio:dotenv-kotlin", version.ref = "dotenv" }
+password4j = { module = "com.password4j:password4j", version.ref = "password4j" }
 
 [plugins]
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

@@ -1,8 +1,8 @@
-package com.besa.boardShare.modules
+package com.besa.boardShare.core.modules
 
-import com.besa.boardShare.modules.plugin.configureContentNegotiation
-import com.besa.boardShare.modules.plugin.configureRateLimit
-import com.besa.boardShare.modules.plugin.configureSecurity
+import com.besa.boardShare.core.modules.plugin.configureContentNegotiation
+import com.besa.boardShare.core.modules.plugin.configureRateLimit
+import com.besa.boardShare.core.modules.plugin.configureSecurity
 import io.ktor.server.application.*
 import io.ktor.server.http.*
 import io.ktor.server.plugins.autohead.*

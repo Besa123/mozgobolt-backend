@@ -1,4 +1,4 @@
-package com.besa.boardShare.utility.module
+package com.besa.boardShare.core.utility.module.dotEnv
 
 import io.github.cdimascio.dotenv.dotenv
 

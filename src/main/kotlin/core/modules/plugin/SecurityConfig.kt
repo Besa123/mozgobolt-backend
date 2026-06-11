@@ -1,24 +1,26 @@
-package com.besa.boardShare.modules.plugin
+package com.besa.boardShare.core.modules.plugin
 
 import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
-import com.besa.boardShare.utility.module.DotEnv
+import com.besa.boardShare.core.domain.security.AuthConstants.ENV_JWT_AUDIENCE
+import com.besa.boardShare.core.domain.security.AuthConstants.ENV_JWT_ISSUER
+import com.besa.boardShare.core.domain.security.AuthConstants.ENV_JWT_SECRET
+import com.besa.boardShare.core.domain.security.AuthConstants.PROTECT_ENDPOINT_JWT
+import com.besa.boardShare.core.utility.module.dotEnv.DotEnv
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
 import io.ktor.server.response.*
 
-const val PROTECT_ENDPOINT_JWT = "auth-jwt"
-
 fun Application.configureSecurity() {
     val jwtRealm = "KockaKölcsönző Zárt Rendszer"
     val jwtSecret =
-        DotEnv.INSTANCE.get("JWT_SECRET") ?: error("Hiányzó JWT_SECRET")
+        DotEnv.INSTANCE.get(ENV_JWT_SECRET) ?: error("Hiányzó $ENV_JWT_SECRET")
     val jwtIssuer =
-        DotEnv.INSTANCE.get("JWT_ISSUER") ?: error("Missing JWT_ISSUER")
+        DotEnv.INSTANCE.get(ENV_JWT_ISSUER) ?: error("Missing $ENV_JWT_ISSUER")
     val jwtAudience =
-        DotEnv.INSTANCE.get("JWT_AUDIENCE") ?: error("Missing JWT_AUDIENCE")
+        DotEnv.INSTANCE.get(ENV_JWT_AUDIENCE) ?: error("Missing $ENV_JWT_AUDIENCE")
 
     install(Authentication) {
         jwt(PROTECT_ENDPOINT_JWT) {
@@ -32,9 +34,12 @@ fun Application.configureSecurity() {
             )
 
             validate { credential ->
-                if (credential.payload.getClaim("userId").asString() != "") {
+                val userId = credential.payload.getClaim("userId").asInt()
+                if (userId != null) {
                     JWTPrincipal(credential.payload)
-                } else null
+                } else {
+                    null
+                }
             }
 
             challenge { _, _ ->
