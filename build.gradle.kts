@@ -26,6 +26,7 @@ dependencies {
     implementation(ktorLibs.serialization.kotlinx.json)
     implementation(ktorLibs.server.auth)
     implementation(ktorLibs.server.auth.jwt)
+    implementation(ktorLibs.server.statusPages)
 
     implementation(libs.logback.classic)
     implementation(libs.exposed.core)

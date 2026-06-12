@@ -8,5 +8,4 @@ fun UserEntity.toUser() = User(
     email = email,
     name = name,
     passwordHash = passwordHash,
-    passwordSalt = passwordSalt,
 )

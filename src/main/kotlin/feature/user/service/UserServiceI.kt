@@ -3,40 +3,65 @@ package com.besa.boardShare.feature.user.service
 import com.besa.boardShare.core.domain.AppResult
 import com.besa.boardShare.core.domain.security.PasswordService
 import com.besa.boardShare.core.domain.security.TokenManager
+import com.besa.boardShare.core.domain.validation.PasswordValidator
 import com.besa.boardShare.feature.user.domain.UserRepository
 import com.besa.boardShare.feature.user.domain.UserService
-import com.besa.boardShare.feature.user.domain.model.AuthError
 import com.besa.boardShare.feature.user.domain.model.AuthResponse
+import com.besa.boardShare.feature.user.domain.model.LoginError
+import com.besa.boardShare.feature.user.domain.model.RegisterError
 
 class UserServiceI(
     private val userRepository: UserRepository,
     private val passwordService: PasswordService,
-    private val tokenManager: TokenManager
+    private val tokenManager: TokenManager,
+    private val passwordValidator: PasswordValidator,
 ) : UserService {
     override suspend fun createUser(
         password: String,
         email: String,
         name: String,
-    ): AppResult<AuthResponse, AuthError> {
+    ): AppResult<Unit, RegisterError> {
         val user = userRepository.findUser(email)
-        if (user != null) return AppResult.Error(AuthError.ALREADY_EXISTS)
+        if (user != null) return AppResult.Error(RegisterError.ALREADY_EXISTS)
 
-        val encryptPassword = passwordService.hashPassword(password)
-        val createdUser = userRepository.createUser(
+        val isPasswordValid = passwordValidator.isValid(password)
+        if (!isPasswordValid) return AppResult.Error(RegisterError.WEAK_PASSWORD)
+
+        val hashedPassword = passwordService.hashPassword(password)
+        userRepository.createUser(
             email = email,
-            password = encryptPassword,
+            password = hashedPassword,
             name = name
         )
 
-        val accessToken = tokenManager.generateAccessToken(
-            userId = createdUser.id,
-            email = createdUser.email
-        )
-        val refreshToken = tokenManager.generateRefreshToken(
-            userId = createdUser.id
+        return AppResult.Success(Unit)
+    }
+
+    override suspend fun signInUser(
+        password: String,
+        email: String
+    ): AppResult<AuthResponse, LoginError> {
+        val user = userRepository.findUser(email)
+            ?: return AppResult.Error(LoginError.USER_DOES_NOT_EXIST)
+
+        val hashPassword = user.passwordHash
+        val isPasswordValid = passwordService.verifyPassword(
+            password = password,
+            hash = hashPassword
         )
 
-        userRepository.saveRefreshToken(createdUser.id, refreshToken)
+        if (!isPasswordValid) return AppResult.Error(LoginError.INVALID_CREDENTIALS)
+
+
+        val accessToken = tokenManager.generateAccessToken(
+            userId = user.id,
+            email = user.email
+        )
+        val refreshToken = tokenManager.generateRefreshToken(
+            userId = user.id
+        )
+
+        userRepository.saveRefreshToken(user.id, refreshToken)
 
         return AppResult.Success(
             AuthResponse(
@@ -44,20 +69,5 @@ class UserServiceI(
                 refreshToken = refreshToken
             )
         )
-    }
-
-    override suspend fun signInUser(
-        password: String,
-        email: String
-    ): AppResult<AuthResponse, AuthError> {
-
-
-        // CSINÁÉLD MEG
-        // REGISTER NE GENERÁLJON TOKENT
-        // LOGIN GENERÁLJON EGYEDÜL
-        // OLDD MEG HOGY CSAK VALAMI 200 térjen vissza a register
-        // VIGYÁZZ HOGY HA VISSZATÉRSZ A TOKENNEL AKKOR A KIFELE DTO OBJECTEN LEGYEN @SERI
-
-
     }
 }

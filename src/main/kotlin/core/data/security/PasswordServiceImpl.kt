@@ -21,6 +21,5 @@ class PasswordServiceImpl(
         return Password.check(password, hash)
             .addPepper(pepper)
             .withArgon2()
-
     }
 }
