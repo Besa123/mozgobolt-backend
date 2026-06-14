@@ -8,6 +8,7 @@ import com.besa.boardShare.feature.user.domain.UserRepository
 import com.besa.boardShare.feature.user.domain.UserService
 import com.besa.boardShare.feature.user.domain.model.AuthResponse
 import com.besa.boardShare.feature.user.domain.model.LoginError
+import com.besa.boardShare.feature.user.domain.model.RefreshError
 import com.besa.boardShare.feature.user.domain.model.RegisterError
 
 class UserServiceI(
@@ -52,6 +53,45 @@ class UserServiceI(
 
         if (!isPasswordValid) return AppResult.Error(LoginError.INVALID_CREDENTIALS)
 
+
+        val accessToken = tokenManager.generateAccessToken(
+            userId = user.id,
+            email = user.email
+        )
+        val refreshToken = tokenManager.generateRefreshToken(
+            userId = user.id
+        )
+
+        userRepository.saveRefreshToken(user.id, refreshToken)
+
+        return AppResult.Success(
+            AuthResponse(
+                accessToken = accessToken,
+                refreshToken = refreshToken
+            )
+        )
+    }
+
+    override suspend fun logoutUser(refreshToken: String) {
+        userRepository.revokeSpecificRefreshToken(token = refreshToken)
+    }
+
+    override suspend fun refreshToken(oldRefreshToken: String): AppResult<AuthResponse, RefreshError> {
+        val userId = tokenManager.verifyAndGetUserIdFromRefreshToken(oldRefreshToken)
+            ?: return AppResult.Error(RefreshError.INVALID_CREDENTIALS)
+
+        val user = userRepository.findUserById(userId)
+            ?: return AppResult.Error(RefreshError.INVALID_CREDENTIALS)
+
+        val isValidToken = userRepository.validateAndRevokeRefreshToken(
+            userId = userId,
+            token = oldRefreshToken
+        )
+
+        if (!isValidToken) {
+            userRepository.revokeAllTokensForUser(userId)
+            return AppResult.Error(RefreshError.INVALID_CREDENTIALS)
+        }
 
         val accessToken = tokenManager.generateAccessToken(
             userId = user.id,

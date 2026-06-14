@@ -13,6 +13,7 @@ object RefreshTokensTable : IntIdTable("refresh_tokens") {
         onDelete = ReferenceOption.CASCADE
     )
     val token = varchar("token", 512).uniqueIndex()
+    val isRevoked = bool("is_revoked").default(false)
 }
 
 class RefreshTokenEntity(id: EntityID<Int>) : IntEntity(id) {
@@ -20,4 +21,5 @@ class RefreshTokenEntity(id: EntityID<Int>) : IntEntity(id) {
 
     var user by UserEntity referencedOn RefreshTokensTable.userId
     var token by RefreshTokensTable.token
+    var isRevoked by RefreshTokensTable.isRevoked
 }

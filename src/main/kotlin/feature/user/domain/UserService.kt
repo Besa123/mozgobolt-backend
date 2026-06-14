@@ -3,6 +3,7 @@ package com.besa.boardShare.feature.user.domain
 import com.besa.boardShare.core.domain.AppResult
 import com.besa.boardShare.feature.user.domain.model.AuthResponse
 import com.besa.boardShare.feature.user.domain.model.LoginError
+import com.besa.boardShare.feature.user.domain.model.RefreshError
 import com.besa.boardShare.feature.user.domain.model.RegisterError
 
 interface UserService {
@@ -16,4 +17,12 @@ interface UserService {
         password: String,
         email: String,
     ): AppResult<AuthResponse, LoginError>
+
+    suspend fun logoutUser(
+        refreshToken: String
+    )
+
+    suspend fun refreshToken(
+        oldRefreshToken: String,
+    ): AppResult<AuthResponse, RefreshError>
 }

@@ -2,15 +2,17 @@ package com.besa.boardShare.feature.user.routing
 
 import com.besa.boardShare.core.modules.plugin.AUTH_LIMIT
 import com.besa.boardShare.core.routing.dto.response.ErrorResponse
+import com.besa.boardShare.core.utility.functions.publicRateLimitedApi
 import com.besa.boardShare.feature.user.domain.UserService
 import com.besa.boardShare.feature.user.domain.model.RegisterError
 import com.besa.boardShare.feature.user.routing.dto.request.LoginRequestDto
+import com.besa.boardShare.feature.user.routing.dto.request.LogoutRequestDto
+import com.besa.boardShare.feature.user.routing.dto.request.RefreshRequestDto
 import com.besa.boardShare.feature.user.routing.dto.request.UserCreationRequestDto
 import com.besa.boardShare.feature.user.routing.dto.response.SignInResponseDto
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.plugins.di.*
-import io.ktor.server.plugins.ratelimit.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -19,8 +21,8 @@ fun Application.userRoutes() {
     val userService: UserService by dependencies
 
     routing {
-        route("/auth") {
-            rateLimit(RateLimitName(AUTH_LIMIT)) {
+        publicRateLimitedApi(limitName = AUTH_LIMIT) {
+            route("/auth") {
                 post("/register") {
                     val request = call.receive<UserCreationRequestDto>()
                     userService.createUser(
@@ -30,12 +32,10 @@ fun Application.userRoutes() {
                     ).fold(
                         onError = { registerError ->
                             val errorDto = ErrorResponse(error = registerError.name)
-
                             val status = when (registerError) {
                                 RegisterError.ALREADY_EXISTS -> HttpStatusCode.Conflict
                                 RegisterError.WEAK_PASSWORD -> HttpStatusCode.BadRequest
                             }
-
                             call.respond(status, errorDto)
                         },
                         onSuccess = {
@@ -60,6 +60,32 @@ fun Application.userRoutes() {
                             )
                         },
                         onError = { _ ->
+                            call.respond(HttpStatusCode.Unauthorized)
+                        }
+                    )
+                }
+
+                post("/logout") {
+                    val request = call.receive<LogoutRequestDto>()
+                    userService.logoutUser(refreshToken = request.refreshToken)
+                    call.respond(HttpStatusCode.OK)
+                }
+
+                post("/refresh") {
+                    val request = call.receive<RefreshRequestDto>()
+                    userService.refreshToken(
+                        oldRefreshToken = request.refreshToken
+                    ).fold(
+                        onSuccess = { authResponse ->
+                            call.respond(
+                                HttpStatusCode.OK,
+                                SignInResponseDto(
+                                    accessToken = authResponse.accessToken,
+                                    refreshToken = authResponse.refreshToken
+                                )
+                            )
+                        },
+                        onError = {
                             call.respond(HttpStatusCode.Unauthorized)
                         }
                     )

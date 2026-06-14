@@ -2,7 +2,6 @@ package com.besa.boardShare.core.domain.security
 
 object AuthConstants {
     const val CLAIM_USER_ID = "userId"
-    const val CLAIM_EMAIL = "email"
 
     const val ENV_JWT_SECRET = "JWT_SECRET"
     const val ENV_JWT_ISSUER = "JWT_ISSUER"

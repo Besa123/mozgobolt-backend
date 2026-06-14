@@ -2,6 +2,7 @@ package com.besa.boardShare.core.modules.plugin
 
 import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
+import com.besa.boardShare.core.domain.security.AuthConstants.CLAIM_USER_ID
 import com.besa.boardShare.core.domain.security.AuthConstants.ENV_JWT_AUDIENCE
 import com.besa.boardShare.core.domain.security.AuthConstants.ENV_JWT_ISSUER
 import com.besa.boardShare.core.domain.security.AuthConstants.ENV_JWT_SECRET
@@ -34,7 +35,7 @@ fun Application.configureSecurity() {
             )
 
             validate { credential ->
-                val userId = credential.payload.getClaim("userId").asInt()
+                val userId = credential.payload.getClaim(CLAIM_USER_ID).asInt()
                 if (userId != null) {
                     JWTPrincipal(credential.payload)
                 } else {

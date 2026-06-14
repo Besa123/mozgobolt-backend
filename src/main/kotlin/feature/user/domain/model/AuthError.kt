@@ -9,3 +9,7 @@ enum class LoginError {
     USER_DOES_NOT_EXIST,
     INVALID_CREDENTIALS
 }
+
+enum class RefreshError {
+    INVALID_CREDENTIALS
+}

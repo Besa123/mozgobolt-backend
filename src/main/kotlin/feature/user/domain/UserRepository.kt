@@ -7,6 +7,10 @@ interface UserRepository {
         email: String,
     ): User?
 
+    suspend fun findUserById(
+        userId: Int
+    ): User?
+
     suspend fun createUser(
         email: String,
         password: String,
@@ -18,4 +22,13 @@ interface UserRepository {
         userId: Int,
         token: String
     )
+
+    suspend fun validateAndRevokeRefreshToken(
+        userId: Int,
+        token: String
+    ): Boolean
+
+    suspend fun revokeAllTokensForUser(userId: Int)
+
+    suspend fun revokeSpecificRefreshToken(token: String)
 }
