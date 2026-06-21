@@ -1,37 +1,42 @@
 package com.besa.boardShare.core.database
 
-import com.besa.boardShare.core.utility.module.dotEnv.DotEnv
-import com.besa.boardShare.feature.user.data.database.RefreshTokensTable
-import com.besa.boardShare.feature.user.data.database.UsersTable
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
+import org.flywaydb.core.Flyway
 import org.jetbrains.exposed.v1.jdbc.Database
-import org.jetbrains.exposed.v1.jdbc.SchemaUtils
-import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import javax.sql.DataSource
 
 object DatabaseFactory {
-    fun createDatabase(): Database {
+    fun createHikariDataSource(
+        dbUrl: String,
+        dbUser: String,
+        dbPassword: String,
+    ): DataSource {
         val config = HikariConfig().apply {
             driverClassName = "org.postgresql.Driver"
-            jdbcUrl = DotEnv.INSTANCE.get("DB_URL") ?: error("Missing DB_URL")
-            username = DotEnv.INSTANCE.get("DB_USER") ?: error("Missing DB_USER")
-            password = DotEnv.INSTANCE.get("DB_PASSWORD") ?: error("Missing DB_PASSWORD")
+            jdbcUrl = dbUrl
+            username = dbUser
+            password = dbPassword
             maximumPoolSize = 10
             isAutoCommit = false
         }
 
-        val dataSource = HikariDataSource(config)
+        return HikariDataSource(config)
+    }
+
+    fun createDatabase(
+        dataSource: DataSource
+    ): Database {
         return Database.connect(dataSource)
     }
 
-    fun schemaInitializer(
-        database: Database
+    fun runFlywayMigration(
+        database: DataSource
     ) {
-        transaction(database) {
-            SchemaUtils.create(
-                UsersTable,
-                RefreshTokensTable,
-            )
-        }
+        val flyway = Flyway.configure()
+            .dataSource(database)
+            .load()
+
+        flyway.migrate()
     }
 }

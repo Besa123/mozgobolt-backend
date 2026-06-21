@@ -11,8 +11,8 @@ object RefreshTokensTable : IntIdTable("refresh_tokens") {
         name = "user_id",
         refColumn = UsersTable.id,
         onDelete = ReferenceOption.CASCADE
-    )
-    val token = varchar("token", 512).uniqueIndex()
+    ).index()
+    val token = varchar("token", 512)
     val isRevoked = bool("is_revoked").default(false)
 }
 

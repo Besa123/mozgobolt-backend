@@ -4,6 +4,7 @@ import com.besa.boardShare.core.data.security.JwtTokenManager
 import com.besa.boardShare.core.data.security.PasswordServiceImpl
 import com.besa.boardShare.core.data.validator.StandardPasswordValidator
 import com.besa.boardShare.core.database.DatabaseFactory.createDatabase
+import com.besa.boardShare.core.database.DatabaseFactory.createHikariDataSource
 import com.besa.boardShare.core.domain.security.AuthConstants
 import com.besa.boardShare.core.domain.security.PasswordConstants.PASSWORD_PEPPER
 import com.besa.boardShare.core.domain.security.PasswordService
@@ -13,11 +14,23 @@ import com.besa.boardShare.core.utility.module.dotEnv.DotEnv
 import com.besa.boardShare.feature.user.di.configureAuthDependencyInjection
 import io.ktor.server.application.*
 import io.ktor.server.plugins.di.*
+import javax.sql.DataSource
 
 fun Application.configureDependencyInjection() {
     dependencies {
-        provide(::createDatabase)
+        provide<DataSource> {
+            val dbUrl = DotEnv.INSTANCE.get("DB_URL") ?: error("Missing DB_URL")
+            val dbUser = DotEnv.INSTANCE.get("DB_USER") ?: error("Missing DB_USER")
+            val dbPassword = DotEnv.INSTANCE.get("DB_PASSWORD") ?: error("Missing DB_PASSWORD")
 
+            createHikariDataSource(
+                dbUrl = dbUrl,
+                dbUser = dbUser,
+                dbPassword = dbPassword
+            )
+        }
+
+        provide(::createDatabase)
         provide<PasswordValidator>(::StandardPasswordValidator)
 
         provide<PasswordService> {
