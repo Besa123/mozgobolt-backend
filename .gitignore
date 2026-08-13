@@ -41,6 +41,7 @@ gen/
 *.tar.gz
 *.rar
 hs_err_pid*
+logs/
 
 # -----------------------------
 # Mac / Windows OS Files

@@ -1,12 +1,101 @@
-<configuration>
-    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder>
-            <pattern>%d{YYYY-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+<configuration scan="true" scanPeriod="30 seconds">
+
+    <shutdownHook class="ch.qos.logback.core.hook.DelayingShutdownHook">
+        <delay>3000</delay>
+    </shutdownHook>
+
+    <property name="LOG_DIR" value="${LOG_DIR:-logs}" />
+    <property name="APP_NAME" value="boardGameShare" />
+    <property name="ENVIRONMENT" value="${ENVIRONMENT:-local}" />
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <customFields>{"app":"${APP_NAME}","env":"${ENVIRONMENT}"}</customFields>
         </encoder>
     </appender>
-    <root level="INFO">
-        <appender-ref ref="STDOUT"/>
-    </root>
-    <logger name="org.eclipse.jetty" level="INFO"/>
-    <logger name="io.netty" level="INFO"/>
+
+    <appender name="JSON_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/${APP_NAME}.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/archive/${APP_NAME}.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>2GB</totalSizeCap>
+            <cleanHistoryOnStart>true</cleanHistoryOnStart>
+        </rollingPolicy>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <timestampPattern>yyyy-MM-dd'T'HH:mm:ss.SSS'Z'</timestampPattern>
+            <timeZone>UTC</timeZone>
+            <fieldNames>
+                <timestamp>timestamp</timestamp>
+                <message>message</message>
+                <logger>logger</logger>
+                <thread>thread</thread>
+                <level>level</level>
+                <levelValue>[ignore]</levelValue>
+                <version>[ignore]</version>
+            </fieldNames>
+            <customFields>{"app":"${APP_NAME}","env":"${ENVIRONMENT}"}</customFields>
+            <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+                <maxDepthPerThrowable>20</maxDepthPerThrowable>
+                <shortenedClassNameLength>25</shortenedClassNameLength>
+                <rootCauseFirst>true</rootCauseFirst>
+            </throwableConverter>
+        </encoder>
+    </appender>
+
+    <appender name="ERROR_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/${APP_NAME}-errors.log</file>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>ERROR</level>
+        </filter>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/archive/${APP_NAME}-errors.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>90</maxHistory>
+            <totalSizeCap>500MB</totalSizeCap>
+        </rollingPolicy>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <customFields>{"app":"${APP_NAME}","env":"${ENVIRONMENT}","stream":"errors"}</customFields>
+        </encoder>
+    </appender>
+
+    <appender name="ASYNC_JSON_FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="JSON_FILE" />
+        <queueSize>1024</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <neverBlock>false</neverBlock>
+        <includeCallerData>false</includeCallerData>
+    </appender>
+
+    <appender name="ASYNC_ERROR_FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="ERROR_FILE" />
+        <queueSize>256</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+    </appender>
+
+    <logger name="io.netty" level="WARN" />
+    <logger name="io.ktor" level="INFO" />
+    <logger name="org.jetbrains.exposed" level="WARN" />
+    <logger name="com.zaxxer.hikari" level="INFO" />
+    <logger name="org.flywaydb" level="INFO" />
+
+    <if condition='p("ENVIRONMENT").equals("production")'>
+        <then>
+            <logger name="com.besa.boardShare" level="INFO" />
+            <root level="WARN">
+                <appender-ref ref="ASYNC_JSON_FILE" />
+                <appender-ref ref="ASYNC_ERROR_FILE" />
+            </root>
+        </then>
+        <else>
+            <logger name="com.besa.boardShare" level="DEBUG" />
+            <root level="INFO">
+                <appender-ref ref="CONSOLE" />
+                <appender-ref ref="ASYNC_JSON_FILE" />
+                <appender-ref ref="ASYNC_ERROR_FILE" />
+            </root>
+        </else>
+    </if>
+
 </configuration>

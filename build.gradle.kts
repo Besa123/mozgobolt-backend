@@ -29,6 +29,9 @@ dependencies {
     implementation(ktorLibs.server.statusPages)
 
     implementation(libs.logback.classic)
+    implementation(libs.kotlin.logging)
+    implementation(libs.logstash.logback.encoder)
+    implementation(libs.janino)
     implementation(libs.exposed.core)
     implementation(libs.exposed.jdbc)
     implementation(libs.exposed.dao)
