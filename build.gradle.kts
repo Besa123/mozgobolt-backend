@@ -27,6 +27,8 @@ dependencies {
     implementation(ktorLibs.server.auth)
     implementation(ktorLibs.server.auth.jwt)
     implementation(ktorLibs.server.statusPages)
+    implementation(ktorLibs.server.callLogging)
+    implementation(ktorLibs.server.callId)
 
     implementation(libs.logback.classic)
     implementation(libs.kotlin.logging)
