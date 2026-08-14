@@ -8,6 +8,7 @@ import io.ktor.server.resources.*
 fun Application.configureModules() {
     install(Resources)
     install(AutoHeadResponse)
+    configureDefaultHeaders()
     configureSecurity()
     configureCors()
     configureContentNegotiation()
