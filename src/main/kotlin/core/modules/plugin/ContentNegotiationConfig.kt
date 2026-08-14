@@ -10,7 +10,6 @@ fun Application.configureContentNegotiation() {
         json(
             Json {
                 prettyPrint = true
-                isLenient = true
                 ignoreUnknownKeys = true
             }
         )

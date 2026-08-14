@@ -9,6 +9,7 @@ fun Application.configureModules() {
     install(Resources)
     install(AutoHeadResponse)
     configureSecurity()
+    configureCors()
     configureContentNegotiation()
     configureRateLimit()
     configureCallId()

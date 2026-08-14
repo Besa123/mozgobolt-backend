@@ -29,6 +29,7 @@ dependencies {
     implementation(ktorLibs.server.statusPages)
     implementation(ktorLibs.server.callLogging)
     implementation(ktorLibs.server.callId)
+    implementation(ktorLibs.server.cors)
 
     implementation(libs.logback.classic)
     implementation(libs.kotlin.logging)
