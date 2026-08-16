@@ -8,6 +8,8 @@ import com.besa.boardShare.core.data.validator.StandardEmailValidator
 import com.besa.boardShare.core.data.validator.StandardPasswordValidator
 import com.besa.boardShare.core.database.DatabaseFactory.createDatabase
 import com.besa.boardShare.core.database.DatabaseFactory.createHikariDataSource
+import com.besa.boardShare.core.database.ExposedTransactionalRunner
+import com.besa.boardShare.core.database.TransactionalRunner
 import com.besa.boardShare.core.domain.security.PasswordService
 import com.besa.boardShare.core.domain.security.TokenManager
 import com.besa.boardShare.core.domain.validation.EmailValidator
@@ -35,6 +37,7 @@ fun Application.configureDependencyInjection() {
         }
 
         provide(::createDatabase)
+        provide<TransactionalRunner>(::ExposedTransactionalRunner)
         provide<IdempotencyStore>(::ExposedIdempotencyStore)
         provide<PasswordValidator>(::StandardPasswordValidator)
         provide<EmailValidator>(::StandardEmailValidator)

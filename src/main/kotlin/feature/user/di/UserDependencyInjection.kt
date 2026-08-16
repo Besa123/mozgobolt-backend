@@ -9,7 +9,7 @@ import io.ktor.server.plugins.di.*
 
 fun Application.configureAuthDependencyInjection() {
     dependencies {
-        provide<UserRepository>(::UserRepositoryI)
+        provide<UserRepository> { UserRepositoryI() }
         provide<UserService>(::UserServiceI)
     }
 }

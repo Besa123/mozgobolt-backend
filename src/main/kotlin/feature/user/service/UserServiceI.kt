@@ -1,5 +1,6 @@
 package com.besa.boardShare.feature.user.service
 
+import com.besa.boardShare.core.database.TransactionalRunner
 import com.besa.boardShare.core.domain.AppResult
 import com.besa.boardShare.core.domain.security.PasswordService
 import com.besa.boardShare.core.domain.security.TokenManager
@@ -18,7 +19,9 @@ class UserServiceI(
     private val tokenManager: TokenManager,
     private val passwordValidator: PasswordValidator,
     private val emailValidator: EmailValidator,
+    private val tx: TransactionalRunner,
 ) : UserService {
+
     override suspend fun createUser(
         password: String,
         email: String,
@@ -30,20 +33,22 @@ class UserServiceI(
             return AppResult.Error(RegisterError.INVALID_EMAIL)
         }
 
-        val user = userRepository.findUser(normalizedEmail)
-        if (user != null) return AppResult.Error(RegisterError.ALREADY_EXISTS)
-
         val isPasswordValid = passwordValidator.isValid(password)
         if (!isPasswordValid) return AppResult.Error(RegisterError.WEAK_PASSWORD)
 
         val hashedPassword = passwordService.hashPassword(password)
-        userRepository.createUser(
-            email = normalizedEmail,
-            password = hashedPassword,
-            name = name
-        )
 
-        return AppResult.Success(Unit)
+        return tx.transactional {
+            val existing = userRepository.findUser(normalizedEmail)
+            if (existing != null) return@transactional AppResult.Error(RegisterError.ALREADY_EXISTS)
+
+            userRepository.createUser(
+                email = normalizedEmail,
+                password = hashedPassword,
+                name = name
+            )
+            AppResult.Success(Unit)
+        }
     }
 
     override suspend fun signInUser(
@@ -51,40 +56,34 @@ class UserServiceI(
         email: String
     ): AppResult<AuthResponse, LoginError> {
         val normalizedEmail = emailValidator.normalize(email)
-        val user = userRepository.findUser(normalizedEmail)
-            ?: return AppResult.Error(LoginError.INVALID_CREDENTIALS)
 
-        val hashPassword = user.passwordHash
-        val isPasswordValid = passwordService.verifyPassword(
-            password = password,
-            hash = hashPassword
-        )
+        return tx.transactional {
+            val user = userRepository.findUser(normalizedEmail)
+                ?: return@transactional AppResult.Error(LoginError.INVALID_CREDENTIALS)
 
-        if (!isPasswordValid) return AppResult.Error(LoginError.INVALID_CREDENTIALS)
-
-
-        val accessToken = tokenManager.generateAccessToken(
-            userId = user.id
-        )
-        val refreshToken = tokenManager.generateRefreshToken(
-            userId = user.id
-        )
-
-        userRepository.saveRefreshToken(user.id, tokenManager.hashTokenForStorage(refreshToken))
-
-        return AppResult.Success(
-            AuthResponse(
-                accessToken = accessToken,
-                refreshToken = refreshToken
+            val isPasswordValid = passwordService.verifyPassword(
+                password = password,
+                hash = user.passwordHash
             )
-        )
+
+            if (!isPasswordValid) return@transactional AppResult.Error(LoginError.INVALID_CREDENTIALS)
+
+            val accessToken = tokenManager.generateAccessToken(userId = user.id)
+            val refreshToken = tokenManager.generateRefreshToken(userId = user.id)
+
+            userRepository.saveRefreshToken(user.id, tokenManager.hashTokenForStorage(refreshToken))
+
+            AppResult.Success(
+                AuthResponse(accessToken = accessToken, refreshToken = refreshToken)
+            )
+        }
     }
 
-    override suspend fun logoutUser(refreshToken: String) {
+    override suspend fun logoutUser(refreshToken: String) = tx.transactional {
         userRepository.revokeSpecificRefreshToken(token = tokenManager.hashTokenForStorage(refreshToken))
     }
 
-    override suspend fun logoutAllSessions(userId: Int) {
+    override suspend fun logoutAllSessions(userId: Int) = tx.transactional {
         userRepository.revokeAllTokensForUser(userId)
     }
 
@@ -92,34 +91,30 @@ class UserServiceI(
         val userId = tokenManager.verifyAndGetUserIdFromRefreshToken(oldRefreshToken)
             ?: return AppResult.Error(RefreshError.INVALID_CREDENTIALS)
 
-        val user = userRepository.findUserById(userId)
-            ?: return AppResult.Error(RefreshError.INVALID_CREDENTIALS)
-
         val hashedOldToken = tokenManager.hashTokenForStorage(oldRefreshToken)
-        val isValidToken = userRepository.validateAndRevokeRefreshToken(
-            userId = userId,
-            token = hashedOldToken
-        )
 
-        if (!isValidToken) {
-            userRepository.revokeAllTokensForUser(userId)
-            return AppResult.Error(RefreshError.INVALID_CREDENTIALS)
-        }
+        return tx.transactional {
+            val user = userRepository.findUserById(userId)
+                ?: return@transactional AppResult.Error(RefreshError.INVALID_CREDENTIALS)
 
-        val accessToken = tokenManager.generateAccessToken(
-            userId = user.id
-        )
-        val refreshToken = tokenManager.generateRefreshToken(
-            userId = user.id
-        )
-
-        userRepository.saveRefreshToken(user.id, tokenManager.hashTokenForStorage(refreshToken))
-
-        return AppResult.Success(
-            AuthResponse(
-                accessToken = accessToken,
-                refreshToken = refreshToken
+            val isValidToken = userRepository.validateAndRevokeRefreshToken(
+                userId = userId,
+                token = hashedOldToken
             )
-        )
+
+            if (!isValidToken) {
+                userRepository.revokeAllTokensForUser(userId)
+                return@transactional AppResult.Error(RefreshError.INVALID_CREDENTIALS)
+            }
+
+            val accessToken = tokenManager.generateAccessToken(userId = user.id)
+            val refreshToken = tokenManager.generateRefreshToken(userId = user.id)
+
+            userRepository.saveRefreshToken(user.id, tokenManager.hashTokenForStorage(refreshToken))
+
+            AppResult.Success(
+                AuthResponse(accessToken = accessToken, refreshToken = refreshToken)
+            )
+        }
     }
 }
