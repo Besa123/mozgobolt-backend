@@ -5,10 +5,7 @@ import com.besa.boardShare.core.data.idempotency.IdempotentResult
 import com.besa.boardShare.core.data.idempotency.idempotent
 import com.besa.boardShare.core.data.idempotency.idempotentResult
 import com.besa.boardShare.core.domain.security.AuthConstants
-import com.besa.boardShare.core.modules.plugin.AUTH_LIMIT
-import com.besa.boardShare.core.modules.plugin.BodyLimit
-import com.besa.boardShare.core.modules.plugin.limitedPost
-import com.besa.boardShare.core.modules.plugin.validatedPost
+import com.besa.boardShare.core.modules.plugin.*
 import com.besa.boardShare.core.routing.dto.response.ErrorResponse
 import com.besa.boardShare.core.utility.functions.protectedApi
 import com.besa.boardShare.core.utility.functions.publicRateLimitedApi
@@ -40,7 +37,7 @@ fun Application.userRoutes() {
 private fun Route.authPublicRoutes(userService: UserService, idempotencyStore: IdempotencyStore) {
     publicRateLimitedApi(limitName = AUTH_LIMIT) {
         route("/auth") {
-            validatedPost<UserCreationRequestDto>("/register", BodyLimit.TINY) { request ->
+            validatedPost<UserCreationRequestDto>("/register", BodyLimit.TINY, RequestTimeout.FAST) { request ->
                 idempotent(idempotencyStore, requestFingerprint = request.email) {
                     userService.createUser(
                         password = request.password,
@@ -62,7 +59,7 @@ private fun Route.authPublicRoutes(userService: UserService, idempotencyStore: I
                 }
             }
 
-            validatedPost<LoginRequestDto>("/login", BodyLimit.TINY) { request ->
+            validatedPost<LoginRequestDto>("/login", BodyLimit.TINY, RequestTimeout.FAST) { request ->
                 userService.signInUser(
                     password = request.password,
                     email = request.email
@@ -82,7 +79,7 @@ private fun Route.authPublicRoutes(userService: UserService, idempotencyStore: I
                 )
             }
 
-            validatedPost<RefreshRequestDto>("/refresh", BodyLimit.SMALL) { request ->
+            validatedPost<RefreshRequestDto>("/refresh", BodyLimit.SMALL, RequestTimeout.FAST) { request ->
                 userService.refreshToken(
                     oldRefreshToken = request.refreshToken
                 ).fold(
@@ -107,12 +104,12 @@ private fun Route.authPublicRoutes(userService: UserService, idempotencyStore: I
 private fun Route.authProtectedRoutes(userService: UserService) {
     protectedApi(limitName = AUTH_LIMIT) {
         route("/auth") {
-            validatedPost<LogoutRequestDto>("/logout", BodyLimit.SMALL) { request ->
+            validatedPost<LogoutRequestDto>("/logout", BodyLimit.SMALL, RequestTimeout.FAST) { request ->
                 userService.logoutUser(refreshToken = request.refreshToken)
                 call.respond(HttpStatusCode.OK)
             }
 
-            limitedPost("/logout-all") {
+            limitedPost("/logout-all", timeout = RequestTimeout.FAST) {
                 val principal = call.principal<JWTPrincipal>()
                     ?: return@limitedPost call.respond(HttpStatusCode.Unauthorized)
 

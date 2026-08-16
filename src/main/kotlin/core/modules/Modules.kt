@@ -11,6 +11,7 @@ fun Application.configureModules() {
     configureDefaultHeaders()
     configureForwardedHeaders()
     configureGlobalBodyLimit()
+    configureRequestTimeout()
     configureSecurity()
     configureCors()
     configureContentNegotiation()

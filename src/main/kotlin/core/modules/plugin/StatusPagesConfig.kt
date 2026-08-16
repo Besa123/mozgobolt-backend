@@ -7,6 +7,7 @@ import io.ktor.server.plugins.*
 import io.ktor.server.plugins.requestvalidation.*
 import io.ktor.server.plugins.statuspages.*
 import io.ktor.server.response.*
+import kotlinx.coroutines.TimeoutCancellationException
 
 private val logger = KotlinLogging.logger {}
 
@@ -20,6 +21,14 @@ fun Application.configureStatusPages() {
                     "error" to "VALIDATION_FAILED",
                     "reasons" to cause.reasons
                 )
+            )
+        }
+
+        exception<TimeoutCancellationException> { call, _ ->
+            logger.warn { "Request timed out: ${call.request.local.method.value} ${call.request.local.uri}" }
+            call.respond(
+                HttpStatusCode.GatewayTimeout,
+                mapOf("error" to "REQUEST_TIMEOUT")
             )
         }
 
