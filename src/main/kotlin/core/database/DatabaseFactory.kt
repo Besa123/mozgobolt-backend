@@ -2,9 +2,12 @@ package com.besa.boardShare.core.database
 
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.flywaydb.core.Flyway
 import org.jetbrains.exposed.v1.jdbc.Database
 import javax.sql.DataSource
+
+private val logger = KotlinLogging.logger {}
 
 object DatabaseFactory {
     fun createHikariDataSource(
@@ -18,17 +21,30 @@ object DatabaseFactory {
             jdbcUrl = dbUrl
             username = dbUser
             password = dbPassword
+            poolName = "BoardGameShare-Pool"
             maximumPoolSize = poolSize
+            minimumIdle = 2
             isAutoCommit = false
+            transactionIsolation = "TRANSACTION_READ_COMMITTED"
+            connectionTimeout = 10_000
+            validationTimeout = 5_000
+            idleTimeout = 600_000
+            maxLifetime = 1_800_000
+            keepaliveTime = 300_000
+            leakDetectionThreshold = 30_000
         }
 
-        return HikariDataSource(config)
+        return HikariDataSource(config).also {
+            logger.info { "Database pool started (max=$poolSize, minIdle=2)" }
+        }
     }
 
     fun createDatabase(
         dataSource: DataSource
     ): Database {
-        return Database.connect(dataSource)
+        return Database.connect(dataSource).also {
+            logger.info { "Exposed ORM connected to database" }
+        }
     }
 
     fun runFlywayMigration(
@@ -36,8 +52,12 @@ object DatabaseFactory {
     ) {
         val flyway = Flyway.configure()
             .dataSource(database)
+            .locations("classpath:db/migration")
+            .baselineOnMigrate(true)
+            .validateOnMigrate(true)
             .load()
 
-        flyway.migrate()
+        val result = flyway.migrate()
+        logger.info { "Flyway migration complete: ${result.migrationsExecuted} migrations applied" }
     }
 }
