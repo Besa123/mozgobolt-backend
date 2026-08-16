@@ -1,16 +1,10 @@
 package com.besa.boardShare
 
+import com.besa.boardShare.feature.health.routing.healthRoutes
 import com.besa.boardShare.feature.user.routing.userRoutes
 import io.ktor.server.application.*
-import io.ktor.server.response.*
-import io.ktor.server.routing.*
 
 fun Application.configureRouting() {
-    routing {
-        get("/") {
-            call.respondText("Hello, World!")
-        }
-    }
-
+    healthRoutes()
     userRoutes()
 }
