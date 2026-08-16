@@ -4,6 +4,7 @@ import com.besa.boardShare.core.domain.security.AuthConstants
 import com.besa.boardShare.core.modules.plugin.AUTH_LIMIT
 import com.besa.boardShare.core.modules.plugin.BodyLimit
 import com.besa.boardShare.core.modules.plugin.limitedPost
+import com.besa.boardShare.core.modules.plugin.validatedPost
 import com.besa.boardShare.core.routing.dto.response.ErrorResponse
 import com.besa.boardShare.core.utility.functions.protectedApi
 import com.besa.boardShare.core.utility.functions.publicRateLimitedApi
@@ -19,7 +20,6 @@ import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
 import io.ktor.server.plugins.di.*
-import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 
@@ -35,8 +35,7 @@ fun Application.userRoutes() {
 private fun Route.authPublicRoutes(userService: UserService) {
     publicRateLimitedApi(limitName = AUTH_LIMIT) {
         route("/auth") {
-            limitedPost("/register", BodyLimit.TINY) {
-                val request = call.receive<UserCreationRequestDto>()
+            validatedPost<UserCreationRequestDto>("/register", BodyLimit.TINY) { request ->
                 userService.createUser(
                     password = request.password,
                     email = request.email,
@@ -57,8 +56,7 @@ private fun Route.authPublicRoutes(userService: UserService) {
                 )
             }
 
-            limitedPost("/login", BodyLimit.TINY) {
-                val request = call.receive<LoginRequestDto>()
+            validatedPost<LoginRequestDto>("/login", BodyLimit.TINY) { request ->
                 userService.signInUser(
                     password = request.password,
                     email = request.email
@@ -78,8 +76,7 @@ private fun Route.authPublicRoutes(userService: UserService) {
                 )
             }
 
-            limitedPost("/refresh", BodyLimit.SMALL) {
-                val request = call.receive<RefreshRequestDto>()
+            validatedPost<RefreshRequestDto>("/refresh", BodyLimit.SMALL) { request ->
                 userService.refreshToken(
                     oldRefreshToken = request.refreshToken
                 ).fold(
@@ -104,15 +101,14 @@ private fun Route.authPublicRoutes(userService: UserService) {
 private fun Route.authProtectedRoutes(userService: UserService) {
     protectedApi(limitName = AUTH_LIMIT) {
         route("/auth") {
-            limitedPost("/logout", BodyLimit.SMALL) {
-                val request = call.receive<LogoutRequestDto>()
+            validatedPost<LogoutRequestDto>("/logout", BodyLimit.SMALL) { request ->
                 userService.logoutUser(refreshToken = request.refreshToken)
                 call.respond(HttpStatusCode.OK)
             }
 
-            post("/logout-all") {
+            limitedPost("/logout-all") {
                 val principal = call.principal<JWTPrincipal>()
-                    ?: return@post call.respond(HttpStatusCode.Unauthorized)
+                    ?: return@limitedPost call.respond(HttpStatusCode.Unauthorized)
 
                 val userId = principal.payload.getClaim(AuthConstants.CLAIM_USER_ID).asInt()
                 userService.logoutAllSessions(userId)
