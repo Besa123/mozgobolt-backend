@@ -9,6 +9,7 @@ import com.besa.boardShare.core.domain.security.TokenManager
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import java.util.*
 
 class JwtTokenManager(
     secret: String,
@@ -40,6 +41,7 @@ class JwtTokenManager(
         return JWT.create()
             .withAudience(audience)
             .withIssuer(issuer)
+            .withJWTId(UUID.randomUUID().toString())
             .withClaim(AuthConstants.CLAIM_USER_ID, userId)
             .withClaim(AuthConstants.CLAIM_TOKEN_TYPE, AuthConstants.TOKEN_TYPE_ACCESS)
             .withExpiresAt(expirationDate)
@@ -52,6 +54,7 @@ class JwtTokenManager(
         return JWT.create()
             .withAudience(audience)
             .withIssuer(issuer)
+            .withJWTId(UUID.randomUUID().toString())
             .withClaim(AuthConstants.CLAIM_USER_ID, userId)
             .withClaim(AuthConstants.CLAIM_TOKEN_TYPE, AuthConstants.TOKEN_TYPE_REFRESH)
             .withExpiresAt(expirationDate)

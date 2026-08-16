@@ -62,11 +62,12 @@ class UserRepositoryI(
     override suspend fun validateAndRevokeRefreshToken(userId: Int, token: String): Boolean = suspendTransaction(
         db = database
     ) {
+        val now = Instant.now()
         val tokenRow = RefreshTokenEntity
             .find { (RefreshTokensTable.userId eq userId) and (RefreshTokensTable.token eq token) }
             .singleOrNull()
 
-        if (tokenRow == null || tokenRow.isRevoked) {
+        if (tokenRow == null || tokenRow.isRevoked || tokenRow.expiresAt.isBefore(now)) {
             return@suspendTransaction false
         }
 
@@ -75,7 +76,6 @@ class UserRepositoryI(
         }
 
         true
-
     }
 
     override suspend fun revokeAllTokensForUser(userId: Int): Unit = suspendTransaction(

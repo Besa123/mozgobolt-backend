@@ -43,7 +43,7 @@ class UserServiceI(
         email: String
     ): AppResult<AuthResponse, LoginError> {
         val user = userRepository.findUser(email)
-            ?: return AppResult.Error(LoginError.USER_DOES_NOT_EXIST)
+            ?: return AppResult.Error(LoginError.INVALID_CREDENTIALS)
 
         val hashPassword = user.passwordHash
         val isPasswordValid = passwordService.verifyPassword(
@@ -73,6 +73,10 @@ class UserServiceI(
 
     override suspend fun logoutUser(refreshToken: String) {
         userRepository.revokeSpecificRefreshToken(token = tokenManager.hashTokenForStorage(refreshToken))
+    }
+
+    override suspend fun logoutAllSessions(userId: Int) {
+        userRepository.revokeAllTokensForUser(userId)
     }
 
     override suspend fun refreshToken(oldRefreshToken: String): AppResult<AuthResponse, RefreshError> {

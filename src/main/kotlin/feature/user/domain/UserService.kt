@@ -22,6 +22,8 @@ interface UserService {
         refreshToken: String
     )
 
+    suspend fun logoutAllSessions(userId: Int)
+
     suspend fun refreshToken(
         oldRefreshToken: String,
     ): AppResult<AuthResponse, RefreshError>
