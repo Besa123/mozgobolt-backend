@@ -1,7 +1,8 @@
 package com.besa.boardShare.core.domain.security
 
 interface TokenManager {
-    fun generateAccessToken(userId: Int, email: String): String
+    fun generateAccessToken(userId: Int): String
     fun generateRefreshToken(userId: Int): String
     fun verifyAndGetUserIdFromRefreshToken(token: String): Int?
+    fun hashTokenForStorage(token: String): String
 }

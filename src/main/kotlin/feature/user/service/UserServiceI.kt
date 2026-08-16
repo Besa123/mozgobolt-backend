@@ -55,14 +55,13 @@ class UserServiceI(
 
 
         val accessToken = tokenManager.generateAccessToken(
-            userId = user.id,
-            email = user.email
+            userId = user.id
         )
         val refreshToken = tokenManager.generateRefreshToken(
             userId = user.id
         )
 
-        userRepository.saveRefreshToken(user.id, refreshToken)
+        userRepository.saveRefreshToken(user.id, tokenManager.hashTokenForStorage(refreshToken))
 
         return AppResult.Success(
             AuthResponse(
@@ -73,7 +72,7 @@ class UserServiceI(
     }
 
     override suspend fun logoutUser(refreshToken: String) {
-        userRepository.revokeSpecificRefreshToken(token = refreshToken)
+        userRepository.revokeSpecificRefreshToken(token = tokenManager.hashTokenForStorage(refreshToken))
     }
 
     override suspend fun refreshToken(oldRefreshToken: String): AppResult<AuthResponse, RefreshError> {
@@ -83,9 +82,10 @@ class UserServiceI(
         val user = userRepository.findUserById(userId)
             ?: return AppResult.Error(RefreshError.INVALID_CREDENTIALS)
 
+        val hashedOldToken = tokenManager.hashTokenForStorage(oldRefreshToken)
         val isValidToken = userRepository.validateAndRevokeRefreshToken(
             userId = userId,
-            token = oldRefreshToken
+            token = hashedOldToken
         )
 
         if (!isValidToken) {
@@ -94,14 +94,13 @@ class UserServiceI(
         }
 
         val accessToken = tokenManager.generateAccessToken(
-            userId = user.id,
-            email = user.email
+            userId = user.id
         )
         val refreshToken = tokenManager.generateRefreshToken(
             userId = user.id
         )
 
-        userRepository.saveRefreshToken(user.id, refreshToken)
+        userRepository.saveRefreshToken(user.id, tokenManager.hashTokenForStorage(refreshToken))
 
         return AppResult.Success(
             AuthResponse(

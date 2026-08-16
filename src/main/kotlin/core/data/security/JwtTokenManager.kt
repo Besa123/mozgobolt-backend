@@ -6,27 +6,44 @@ import com.auth0.jwt.algorithms.Algorithm
 import com.auth0.jwt.exceptions.JWTVerificationException
 import com.besa.boardShare.core.domain.security.AuthConstants
 import com.besa.boardShare.core.domain.security.TokenManager
+import java.security.MessageDigest
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
 class JwtTokenManager(
-    private val secret: String,
+    secret: String,
     private val audience: String,
     private val issuer: String,
 ) : TokenManager {
-    val jwtVerifier: JWTVerifier by lazy {
-        JWT.require(Algorithm.HMAC256(secret)).build()
+
+    private val algorithm = Algorithm.HMAC256(secret)
+
+    private val refreshTokenVerifier: JWTVerifier by lazy {
+        JWT.require(algorithm)
+            .withAudience(audience)
+            .withIssuer(issuer)
+            .withClaim(AuthConstants.CLAIM_TOKEN_TYPE, AuthConstants.TOKEN_TYPE_REFRESH)
+            .build()
     }
 
-    override fun generateAccessToken(userId: Int, email: String): String {
+    val accessTokenVerifier: JWTVerifier by lazy {
+        JWT.require(algorithm)
+            .withAudience(audience)
+            .withIssuer(issuer)
+            .withClaim(AuthConstants.CLAIM_TOKEN_TYPE, AuthConstants.TOKEN_TYPE_ACCESS)
+            .build()
+    }
+
+    override fun generateAccessToken(userId: Int): String {
         val expirationDate = Instant.now().plus(15, ChronoUnit.MINUTES)
 
         return JWT.create()
             .withAudience(audience)
             .withIssuer(issuer)
             .withClaim(AuthConstants.CLAIM_USER_ID, userId)
+            .withClaim(AuthConstants.CLAIM_TOKEN_TYPE, AuthConstants.TOKEN_TYPE_ACCESS)
             .withExpiresAt(expirationDate)
-            .sign(Algorithm.HMAC256(secret))
+            .sign(algorithm)
     }
 
     override fun generateRefreshToken(userId: Int): String {
@@ -36,14 +53,20 @@ class JwtTokenManager(
             .withAudience(audience)
             .withIssuer(issuer)
             .withClaim(AuthConstants.CLAIM_USER_ID, userId)
+            .withClaim(AuthConstants.CLAIM_TOKEN_TYPE, AuthConstants.TOKEN_TYPE_REFRESH)
             .withExpiresAt(expirationDate)
-            .sign(Algorithm.HMAC256(secret))
+            .sign(algorithm)
     }
 
     override fun verifyAndGetUserIdFromRefreshToken(token: String) = try {
-        val decodedJWT = jwtVerifier.verify(token)
+        val decodedJWT = refreshTokenVerifier.verify(token)
         decodedJWT.getClaim(AuthConstants.CLAIM_USER_ID).asInt()
     } catch (_: JWTVerificationException) {
         null
+    }
+
+    override fun hashTokenForStorage(token: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        return digest.digest(token.toByteArray(Charsets.UTF_8)).toHexString()
     }
 }

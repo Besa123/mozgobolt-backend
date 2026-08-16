@@ -12,6 +12,8 @@ import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction
 import org.jetbrains.exposed.v1.jdbc.update
+import java.time.Duration
+import java.time.Instant
 
 class UserRepositoryI(
     private val database: Database
@@ -48,9 +50,12 @@ class UserRepositoryI(
     override suspend fun saveRefreshToken(userId: Int, token: String): Unit = suspendTransaction(
         db = database
     ) {
+        val now = Instant.now()
         RefreshTokenEntity.new {
             this.user = UserEntity[userId]
             this.token = token
+            this.createdAt = now
+            this.expiresAt = now.plus(Duration.ofDays(30))
         }
     }
 
