@@ -1,5 +1,6 @@
 package com.besa.boardShare.core.data.idempotency
 
+import com.besa.boardShare.core.routing.dto.response.ErrorResponse
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*
@@ -39,7 +40,7 @@ suspend fun RoutingContext.idempotent(
         }
 
         is KeyState.Rejected -> {
-            call.respond(state.statusCode, mapOf("error" to state.error))
+            call.respond(state.statusCode, ErrorResponse(error = state.error))
         }
 
         is KeyState.Available -> {
@@ -77,10 +78,7 @@ private suspend fun lookupKey(
     val existing = store.find(key) ?: return KeyState.Available
 
     if (existing.requestFingerprint.isNotEmpty() && existing.requestFingerprint != fingerprintHash) {
-        return KeyState.Rejected(
-            HttpStatusCode.UnprocessableEntity,
-            "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD"
-        )
+        return KeyState.Rejected(HttpStatusCode.UnprocessableEntity, "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD")
     }
 
     val statusCode = existing.statusCode
@@ -116,7 +114,7 @@ private suspend fun RoutingContext.executeWithLock(
     val inserted = store.acquireLock(key, fingerprintHash)
 
     if (!inserted) {
-        call.respond(HttpStatusCode.Conflict, mapOf("error" to "REQUEST_IN_PROGRESS"))
+        call.respond(HttpStatusCode.Conflict, ErrorResponse(error = "REQUEST_IN_PROGRESS"))
         return
     }
 

@@ -1,5 +1,6 @@
 package com.besa.boardShare.core.modules.plugin
 
+import com.besa.boardShare.core.routing.dto.response.ErrorResponse
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -28,7 +29,12 @@ fun Application.configureRequestTimeout() {
             }
         } catch (e: TimeoutCancellationException) {
             logger.error { "Request exceeded safety net: ${call.request.local.method.value} ${call.request.local.uri}" }
-            call.respond(HttpStatusCode.GatewayTimeout, mapOf("error" to "REQUEST_TIMEOUT"))
+            call.respond(
+                HttpStatusCode.GatewayTimeout, ErrorResponse(
+                    error = "REQUEST_TIMEOUT",
+                    message = "Request exceeded the global safety net timeout"
+                )
+            )
         }
     }
 }

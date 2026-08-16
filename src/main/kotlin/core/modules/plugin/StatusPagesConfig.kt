@@ -1,5 +1,6 @@
 package com.besa.boardShare.core.modules.plugin
 
+import com.besa.boardShare.core.routing.dto.response.ErrorResponse
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -17,9 +18,10 @@ fun Application.configureStatusPages() {
             logger.warn(cause) { "Validation failed" }
             call.respond(
                 HttpStatusCode.BadRequest,
-                mapOf(
-                    "error" to "VALIDATION_FAILED",
-                    "reasons" to cause.reasons
+                ErrorResponse(
+                    error = "VALIDATION_FAILED",
+                    message = "Request validation failed",
+                    details = cause.reasons
                 )
             )
         }
@@ -28,7 +30,10 @@ fun Application.configureStatusPages() {
             logger.warn { "Request timed out: ${call.request.local.method.value} ${call.request.local.uri}" }
             call.respond(
                 HttpStatusCode.GatewayTimeout,
-                mapOf("error" to "REQUEST_TIMEOUT")
+                ErrorResponse(
+                    error = "REQUEST_TIMEOUT",
+                    message = "The server took too long to process this request"
+                )
             )
         }
 
@@ -36,7 +41,10 @@ fun Application.configureStatusPages() {
             logger.warn(cause) { "Bad request" }
             call.respond(
                 HttpStatusCode.BadRequest,
-                mapOf("error" to "MALFORMED_REQUEST")
+                ErrorResponse(
+                    error = "MALFORMED_REQUEST",
+                    message = "The request could not be understood"
+                )
             )
         }
 
@@ -44,7 +52,10 @@ fun Application.configureStatusPages() {
             logger.warn(cause) { "Invalid request body" }
             call.respond(
                 HttpStatusCode.BadRequest,
-                mapOf("error" to "INVALID_BODY")
+                ErrorResponse(
+                    error = "INVALID_BODY",
+                    message = "The request body is missing or malformed"
+                )
             )
         }
 
@@ -52,7 +63,10 @@ fun Application.configureStatusPages() {
             logger.error(cause) { "Unhandled exception" }
             call.respond(
                 HttpStatusCode.InternalServerError,
-                mapOf("error" to "INTERNAL_SERVER_ERROR")
+                ErrorResponse(
+                    error = "INTERNAL_SERVER_ERROR",
+                    message = "An unexpected error occurred"
+                )
             )
         }
     }
