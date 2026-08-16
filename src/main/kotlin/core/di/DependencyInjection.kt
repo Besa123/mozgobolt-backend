@@ -1,5 +1,7 @@
 package com.besa.boardShare.core.di
 
+import com.besa.boardShare.core.data.idempotency.ExposedIdempotencyStore
+import com.besa.boardShare.core.data.idempotency.IdempotencyStore
 import com.besa.boardShare.core.data.security.JwtTokenManager
 import com.besa.boardShare.core.data.security.PasswordServiceImpl
 import com.besa.boardShare.core.data.validator.StandardEmailValidator
@@ -33,6 +35,7 @@ fun Application.configureDependencyInjection() {
         }
 
         provide(::createDatabase)
+        provide<IdempotencyStore>(::ExposedIdempotencyStore)
         provide<PasswordValidator>(::StandardPasswordValidator)
         provide<EmailValidator>(::StandardEmailValidator)
 

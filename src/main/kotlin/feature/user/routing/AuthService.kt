@@ -1,5 +1,9 @@
 package com.besa.boardShare.feature.user.routing
 
+import com.besa.boardShare.core.data.idempotency.IdempotencyStore
+import com.besa.boardShare.core.data.idempotency.IdempotentResult
+import com.besa.boardShare.core.data.idempotency.idempotent
+import com.besa.boardShare.core.data.idempotency.idempotentResult
 import com.besa.boardShare.core.domain.security.AuthConstants
 import com.besa.boardShare.core.modules.plugin.AUTH_LIMIT
 import com.besa.boardShare.core.modules.plugin.BodyLimit
@@ -25,35 +29,37 @@ import io.ktor.server.routing.*
 
 fun Application.userRoutes() {
     val userService: UserService by dependencies
+    val idempotencyStore: IdempotencyStore by dependencies
 
     routing {
-        authPublicRoutes(userService)
+        authPublicRoutes(userService, idempotencyStore)
         authProtectedRoutes(userService)
     }
 }
 
-private fun Route.authPublicRoutes(userService: UserService) {
+private fun Route.authPublicRoutes(userService: UserService, idempotencyStore: IdempotencyStore) {
     publicRateLimitedApi(limitName = AUTH_LIMIT) {
         route("/auth") {
             validatedPost<UserCreationRequestDto>("/register", BodyLimit.TINY) { request ->
-                userService.createUser(
-                    password = request.password,
-                    email = request.email,
-                    name = request.name
-                ).fold(
-                    onError = { registerError ->
-                        val errorDto = ErrorResponse(error = registerError.name)
-                        val status = when (registerError) {
-                            RegisterError.ALREADY_EXISTS -> HttpStatusCode.Conflict
-                            RegisterError.WEAK_PASSWORD -> HttpStatusCode.BadRequest
-                            RegisterError.INVALID_EMAIL -> HttpStatusCode.BadRequest
+                idempotent(idempotencyStore, requestFingerprint = request.email) {
+                    userService.createUser(
+                        password = request.password,
+                        email = request.email,
+                        name = request.name
+                    ).fold(
+                        onError = { registerError ->
+                            val status = when (registerError) {
+                                RegisterError.ALREADY_EXISTS -> HttpStatusCode.Conflict
+                                RegisterError.WEAK_PASSWORD -> HttpStatusCode.BadRequest
+                                RegisterError.INVALID_EMAIL -> HttpStatusCode.BadRequest
+                            }
+                            idempotentResult(status, ErrorResponse(error = registerError.name))
+                        },
+                        onSuccess = {
+                            IdempotentResult(HttpStatusCode.Created, "")
                         }
-                        call.respond(status, errorDto)
-                    },
-                    onSuccess = {
-                        call.respond(HttpStatusCode.Created)
-                    }
-                )
+                    )
+                }
             }
 
             validatedPost<LoginRequestDto>("/login", BodyLimit.TINY) { request ->
