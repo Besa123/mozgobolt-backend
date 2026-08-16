@@ -2,6 +2,8 @@ package com.besa.boardShare.feature.user.routing
 
 import com.besa.boardShare.core.domain.security.AuthConstants
 import com.besa.boardShare.core.modules.plugin.AUTH_LIMIT
+import com.besa.boardShare.core.modules.plugin.BodyLimit
+import com.besa.boardShare.core.modules.plugin.limitedPost
 import com.besa.boardShare.core.routing.dto.response.ErrorResponse
 import com.besa.boardShare.core.utility.functions.protectedApi
 import com.besa.boardShare.core.utility.functions.publicRateLimitedApi
@@ -33,7 +35,7 @@ fun Application.userRoutes() {
 private fun Route.authPublicRoutes(userService: UserService) {
     publicRateLimitedApi(limitName = AUTH_LIMIT) {
         route("/auth") {
-            post("/register") {
+            limitedPost("/register", BodyLimit.TINY) {
                 val request = call.receive<UserCreationRequestDto>()
                 userService.createUser(
                     password = request.password,
@@ -55,7 +57,7 @@ private fun Route.authPublicRoutes(userService: UserService) {
                 )
             }
 
-            post("/login") {
+            limitedPost("/login", BodyLimit.TINY) {
                 val request = call.receive<LoginRequestDto>()
                 userService.signInUser(
                     password = request.password,
@@ -76,7 +78,7 @@ private fun Route.authPublicRoutes(userService: UserService) {
                 )
             }
 
-            post("/refresh") {
+            limitedPost("/refresh", BodyLimit.SMALL) {
                 val request = call.receive<RefreshRequestDto>()
                 userService.refreshToken(
                     oldRefreshToken = request.refreshToken
@@ -102,7 +104,7 @@ private fun Route.authPublicRoutes(userService: UserService) {
 private fun Route.authProtectedRoutes(userService: UserService) {
     protectedApi(limitName = AUTH_LIMIT) {
         route("/auth") {
-            post("/logout") {
+            limitedPost("/logout", BodyLimit.SMALL) {
                 val request = call.receive<LogoutRequestDto>()
                 userService.logoutUser(refreshToken = request.refreshToken)
                 call.respond(HttpStatusCode.OK)
