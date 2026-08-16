@@ -11,13 +11,14 @@ object DatabaseFactory {
         dbUrl: String,
         dbUser: String,
         dbPassword: String,
+        poolSize: Int = 10,
     ): DataSource {
         val config = HikariConfig().apply {
             driverClassName = "org.postgresql.Driver"
             jdbcUrl = dbUrl
             username = dbUser
             password = dbPassword
-            maximumPoolSize = 10
+            maximumPoolSize = poolSize
             isAutoCommit = false
         }
 

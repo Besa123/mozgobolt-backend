@@ -8,8 +8,8 @@ import io.ktor.server.plugins.di.*
 import javax.sql.DataSource
 
 fun Application.rootModule() {
-    configureModules()
     configureDependencyInjection()
+    configureModules()
     configureRouting()
 
     val database: DataSource by dependencies

@@ -1,14 +1,16 @@
 package com.besa.boardShare
 
-import io.ktor.server.application.*
-import io.ktor.server.engine.*
+import io.github.cdimascio.dotenv.dotenv
 import io.ktor.server.netty.*
 
 fun main(args: Array<String>) {
-    embeddedServer(
-        factory = Netty,
-        port = 8080,
-        host = "0.0.0.0",
-        module = Application::rootModule,
-    ).start(wait = true)
+    dotenv {
+        ignoreIfMissing = true
+    }.entries().forEach { entry ->
+        if (System.getenv(entry.key) == null) {
+            System.setProperty(entry.key, entry.value)
+        }
+    }
+
+    EngineMain.main(args)
 }

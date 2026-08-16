@@ -1,23 +1,21 @@
 package com.besa.boardShare.core.modules.plugin
 
-import com.besa.boardShare.core.utility.module.dotEnv.DotEnv
+import com.besa.boardShare.core.modules.AppConfig
 import io.ktor.http.*
 import io.ktor.server.application.*
+import io.ktor.server.config.*
 import io.ktor.server.plugins.cors.routing.*
 
 fun Application.configureCors() {
-    install(CORS) {
-        val allowedHosts = DotEnv.INSTANCE.get("CORS_ALLOWED_HOSTS")
-            ?.split(",")
-            ?.map { it.trim() }
-            ?.filter { it.isNotBlank() }
-            ?: emptyList()
+    val corsConfig: AppConfig.Cors = property("app.cors")
+    val env = environment.config.propertyOrNull("ktor.environment")?.getString() ?: "local"
 
-        allowedHosts.forEach { host ->
+    install(CORS) {
+        corsConfig.hosts().forEach { host ->
             allowHost(host, schemes = listOf("https"))
         }
 
-        val isDev = DotEnv.INSTANCE.get("ENVIRONMENT")?.lowercase() != "production"
+        val isDev = env != "production"
         if (isDev) {
             allowHost("localhost:3000")
             allowHost("localhost:5173")
