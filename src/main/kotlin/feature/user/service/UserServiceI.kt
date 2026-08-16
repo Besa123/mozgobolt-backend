@@ -3,6 +3,7 @@ package com.besa.boardShare.feature.user.service
 import com.besa.boardShare.core.domain.AppResult
 import com.besa.boardShare.core.domain.security.PasswordService
 import com.besa.boardShare.core.domain.security.TokenManager
+import com.besa.boardShare.core.domain.validation.EmailValidator
 import com.besa.boardShare.core.domain.validation.PasswordValidator
 import com.besa.boardShare.feature.user.domain.UserRepository
 import com.besa.boardShare.feature.user.domain.UserService
@@ -16,13 +17,20 @@ class UserServiceI(
     private val passwordService: PasswordService,
     private val tokenManager: TokenManager,
     private val passwordValidator: PasswordValidator,
+    private val emailValidator: EmailValidator,
 ) : UserService {
     override suspend fun createUser(
         password: String,
         email: String,
         name: String,
     ): AppResult<Unit, RegisterError> {
-        val user = userRepository.findUser(email)
+        val normalizedEmail = emailValidator.normalize(email)
+
+        if (!emailValidator.isValid(normalizedEmail)) {
+            return AppResult.Error(RegisterError.INVALID_EMAIL)
+        }
+
+        val user = userRepository.findUser(normalizedEmail)
         if (user != null) return AppResult.Error(RegisterError.ALREADY_EXISTS)
 
         val isPasswordValid = passwordValidator.isValid(password)
@@ -30,7 +38,7 @@ class UserServiceI(
 
         val hashedPassword = passwordService.hashPassword(password)
         userRepository.createUser(
-            email = email,
+            email = normalizedEmail,
             password = hashedPassword,
             name = name
         )
@@ -42,7 +50,8 @@ class UserServiceI(
         password: String,
         email: String
     ): AppResult<AuthResponse, LoginError> {
-        val user = userRepository.findUser(email)
+        val normalizedEmail = emailValidator.normalize(email)
+        val user = userRepository.findUser(normalizedEmail)
             ?: return AppResult.Error(LoginError.INVALID_CREDENTIALS)
 
         val hashPassword = user.passwordHash

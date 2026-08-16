@@ -45,6 +45,7 @@ private fun Route.authPublicRoutes(userService: UserService) {
                         val status = when (registerError) {
                             RegisterError.ALREADY_EXISTS -> HttpStatusCode.Conflict
                             RegisterError.WEAK_PASSWORD -> HttpStatusCode.BadRequest
+                            RegisterError.INVALID_EMAIL -> HttpStatusCode.BadRequest
                         }
                         call.respond(status, errorDto)
                     },

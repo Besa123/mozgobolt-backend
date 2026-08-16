@@ -2,7 +2,8 @@ package com.besa.boardShare.feature.user.domain.model
 
 enum class RegisterError {
     ALREADY_EXISTS,
-    WEAK_PASSWORD
+    WEAK_PASSWORD,
+    INVALID_EMAIL,
 }
 
 enum class LoginError {

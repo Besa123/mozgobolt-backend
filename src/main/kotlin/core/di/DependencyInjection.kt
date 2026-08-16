@@ -2,6 +2,7 @@ package com.besa.boardShare.core.di
 
 import com.besa.boardShare.core.data.security.JwtTokenManager
 import com.besa.boardShare.core.data.security.PasswordServiceImpl
+import com.besa.boardShare.core.data.validator.StandardEmailValidator
 import com.besa.boardShare.core.data.validator.StandardPasswordValidator
 import com.besa.boardShare.core.database.DatabaseFactory.createDatabase
 import com.besa.boardShare.core.database.DatabaseFactory.createHikariDataSource
@@ -9,6 +10,7 @@ import com.besa.boardShare.core.domain.security.AuthConstants
 import com.besa.boardShare.core.domain.security.PasswordConstants.PASSWORD_PEPPER
 import com.besa.boardShare.core.domain.security.PasswordService
 import com.besa.boardShare.core.domain.security.TokenManager
+import com.besa.boardShare.core.domain.validation.EmailValidator
 import com.besa.boardShare.core.domain.validation.PasswordValidator
 import com.besa.boardShare.core.utility.module.dotEnv.DotEnv
 import com.besa.boardShare.feature.user.di.configureAuthDependencyInjection
@@ -32,6 +34,7 @@ fun Application.configureDependencyInjection() {
 
         provide(::createDatabase)
         provide<PasswordValidator>(::StandardPasswordValidator)
+        provide<EmailValidator>(::StandardEmailValidator)
 
         provide<PasswordService> {
             val pepper = DotEnv.INSTANCE.get(PASSWORD_PEPPER) ?: error("Password pepper is missing")
