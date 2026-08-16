@@ -31,6 +31,7 @@ dependencies {
     implementation(ktorLibs.server.callId)
     implementation(ktorLibs.server.cors)
     implementation(ktorLibs.server.defaultHeaders)
+    implementation(ktorLibs.server.forwardedHeader)
 
     implementation(libs.logback.classic)
     implementation(libs.kotlin.logging)

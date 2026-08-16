@@ -9,6 +9,7 @@ fun Application.configureModules() {
     install(Resources)
     install(AutoHeadResponse)
     configureDefaultHeaders()
+    configureForwardedHeaders()
     configureSecurity()
     configureCors()
     configureContentNegotiation()
