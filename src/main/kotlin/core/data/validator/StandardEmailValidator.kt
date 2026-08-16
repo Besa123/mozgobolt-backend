@@ -19,7 +19,9 @@ class StandardEmailValidator : EmailValidator {
     }
 
     companion object {
-        private val EMAIL_REGEX = Regex("^[a-z0-9._%+\\-]+@[a-z0-9.\\-]+\\.[a-z]{2,}$")
+        private val EMAIL_REGEX = Regex(
+            "^[a-z0-9]([a-z0-9._%+\\-]*[a-z0-9])?@[a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*\\.[a-z]{2,}$"
+        )
 
         private val disposableDomains: Set<String> by lazy {
             val resource = StandardEmailValidator::class.java.classLoader
