@@ -1,5 +1,6 @@
 package com.besa.boardShare.feature.user.domain
 
+import com.besa.boardShare.feature.user.domain.model.TokenValidationResult
 import com.besa.boardShare.feature.user.domain.model.User
 
 interface UserRepository {
@@ -17,16 +18,18 @@ interface UserRepository {
         name: String,
     ): User
 
-
     suspend fun saveRefreshToken(
         userId: Int,
-        token: String
+        token: String,
+        familyId: String,
     )
 
     suspend fun validateAndRevokeRefreshToken(
         userId: Int,
         token: String
-    ): Boolean
+    ): TokenValidationResult
+
+    suspend fun revokeTokenFamily(familyId: String)
 
     suspend fun revokeAllTokensForUser(userId: Int)
 

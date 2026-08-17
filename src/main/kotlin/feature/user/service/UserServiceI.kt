@@ -8,10 +8,11 @@ import com.besa.boardShare.core.domain.validation.EmailValidator
 import com.besa.boardShare.core.domain.validation.PasswordValidator
 import com.besa.boardShare.feature.user.domain.UserRepository
 import com.besa.boardShare.feature.user.domain.UserService
-import com.besa.boardShare.feature.user.domain.model.AuthResponse
-import com.besa.boardShare.feature.user.domain.model.LoginError
-import com.besa.boardShare.feature.user.domain.model.RefreshError
-import com.besa.boardShare.feature.user.domain.model.RegisterError
+import com.besa.boardShare.feature.user.domain.model.*
+import io.github.oshai.kotlinlogging.KotlinLogging
+import java.util.*
+
+private val logger = KotlinLogging.logger {}
 
 class UserServiceI(
     private val userRepository: UserRepository,
@@ -70,8 +71,9 @@ class UserServiceI(
 
             val accessToken = tokenManager.generateAccessToken(userId = user.id)
             val refreshToken = tokenManager.generateRefreshToken(userId = user.id)
+            val familyId = UUID.randomUUID().toString()
 
-            userRepository.saveRefreshToken(user.id, tokenManager.hashTokenForStorage(refreshToken))
+            userRepository.saveRefreshToken(user.id, tokenManager.hashTokenForStorage(refreshToken), familyId)
 
             AppResult.Success(
                 AuthResponse(accessToken = accessToken, refreshToken = refreshToken)
@@ -97,24 +99,35 @@ class UserServiceI(
             val user = userRepository.findUserById(userId)
                 ?: return@transactional AppResult.Error(RefreshError.INVALID_CREDENTIALS)
 
-            val isValidToken = userRepository.validateAndRevokeRefreshToken(
-                userId = userId,
-                token = hashedOldToken
-            )
+            when (val result = userRepository.validateAndRevokeRefreshToken(userId, hashedOldToken)) {
+                is TokenValidationResult.Valid -> {
+                    val accessToken = tokenManager.generateAccessToken(userId = user.id)
+                    val refreshToken = tokenManager.generateRefreshToken(userId = user.id)
 
-            if (!isValidToken) {
-                userRepository.revokeAllTokensForUser(userId)
-                return@transactional AppResult.Error(RefreshError.INVALID_CREDENTIALS)
+                    userRepository.saveRefreshToken(
+                        user.id,
+                        tokenManager.hashTokenForStorage(refreshToken),
+                        result.familyId
+                    )
+
+                    AppResult.Success(
+                        AuthResponse(accessToken = accessToken, refreshToken = refreshToken)
+                    )
+                }
+
+                is TokenValidationResult.AlreadyRevoked -> {
+                    logger.warn {
+                        "Refresh token reuse detected for user $userId, family ${result.familyId}. " +
+                                "Revoking entire token family — possible token theft."
+                    }
+                    userRepository.revokeTokenFamily(result.familyId)
+                    AppResult.Error(RefreshError.TOKEN_REUSE_DETECTED)
+                }
+
+                is TokenValidationResult.NotFound -> {
+                    AppResult.Error(RefreshError.INVALID_CREDENTIALS)
+                }
             }
-
-            val accessToken = tokenManager.generateAccessToken(userId = user.id)
-            val refreshToken = tokenManager.generateRefreshToken(userId = user.id)
-
-            userRepository.saveRefreshToken(user.id, tokenManager.hashTokenForStorage(refreshToken))
-
-            AppResult.Success(
-                AuthResponse(accessToken = accessToken, refreshToken = refreshToken)
-            )
         }
     }
 }

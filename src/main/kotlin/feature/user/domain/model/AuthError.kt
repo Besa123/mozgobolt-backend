@@ -11,5 +11,6 @@ enum class LoginError {
 }
 
 enum class RefreshError {
-    INVALID_CREDENTIALS
+    INVALID_CREDENTIALS,
+    TOKEN_REUSE_DETECTED,
 }

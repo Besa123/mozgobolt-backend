@@ -6,6 +6,7 @@ import com.besa.boardShare.feature.user.data.database.UserEntity
 import com.besa.boardShare.feature.user.data.database.UsersTable
 import com.besa.boardShare.feature.user.data.mapper.toUser
 import com.besa.boardShare.feature.user.domain.UserRepository
+import com.besa.boardShare.feature.user.domain.model.TokenValidationResult
 import com.besa.boardShare.feature.user.domain.model.User
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
@@ -36,31 +37,55 @@ class UserRepositoryI : UserRepository {
         return entity.toUser()
     }
 
-    override suspend fun saveRefreshToken(userId: Int, token: String) {
+    override suspend fun saveRefreshToken(userId: Int, token: String, familyId: String) {
         val now = Instant.now()
         RefreshTokenEntity.new {
             this.user = UserEntity[userId]
             this.token = token
+            this.familyId = familyId
             this.createdAt = now
             this.expiresAt = now.plus(Duration.ofDays(30))
         }
     }
 
-    override suspend fun validateAndRevokeRefreshToken(userId: Int, token: String): Boolean {
+    override suspend fun validateAndRevokeRefreshToken(
+        userId: Int,
+        token: String
+    ): TokenValidationResult {
         val now = Instant.now()
         val tokenRow = RefreshTokenEntity
             .find { (RefreshTokensTable.userId eq userId) and (RefreshTokensTable.token eq token) }
             .singleOrNull()
+            ?: return TokenValidationResult.NotFound
 
-        if (tokenRow == null || tokenRow.isRevoked || tokenRow.expiresAt.isBefore(now)) {
-            return false
+        if (tokenRow.expiresAt.isBefore(now)) return TokenValidationResult.NotFound
+
+        if (tokenRow.isRevoked) {
+            return TokenValidationResult.AlreadyRevoked(familyId = tokenRow.familyId)
         }
 
-        RefreshTokenEntity.findByIdAndUpdate(tokenRow.id.value) {
-            it.isRevoked = true
+        val updated = RefreshTokensTable.update(
+            where = {
+                (RefreshTokensTable.id eq tokenRow.id.value) and
+                        (RefreshTokensTable.isRevoked eq false)
+            }
+        ) {
+            it[isRevoked] = true
         }
 
-        return true
+        if (updated == 0) {
+            return TokenValidationResult.AlreadyRevoked(familyId = tokenRow.familyId)
+        }
+
+        return TokenValidationResult.Valid(familyId = tokenRow.familyId)
+    }
+
+    override suspend fun revokeTokenFamily(familyId: String) {
+        RefreshTokensTable.update(
+            where = { RefreshTokensTable.familyId eq familyId }
+        ) {
+            it[isRevoked] = true
+        }
     }
 
     override suspend fun revokeAllTokensForUser(userId: Int) {

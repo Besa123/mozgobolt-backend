@@ -14,6 +14,7 @@ object RefreshTokensTable : IntIdTable("refresh_tokens") {
         onDelete = ReferenceOption.CASCADE
     ).index()
     val token = varchar("token", 64)
+    val familyId = varchar("family_id", 36).index()
     val isRevoked = bool("is_revoked").default(false)
     val createdAt = timestamp("created_at")
     val expiresAt = timestamp("expires_at")
@@ -24,6 +25,7 @@ class RefreshTokenEntity(id: EntityID<Int>) : IntEntity(id) {
 
     var user by UserEntity referencedOn RefreshTokensTable.userId
     var token by RefreshTokensTable.token
+    var familyId by RefreshTokensTable.familyId
     var isRevoked by RefreshTokensTable.isRevoked
     var createdAt by RefreshTokensTable.createdAt
     var expiresAt by RefreshTokensTable.expiresAt
