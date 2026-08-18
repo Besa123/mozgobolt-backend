@@ -2,6 +2,7 @@ package com.besa.boardShare.feature.user.domain
 
 import com.besa.boardShare.feature.user.domain.model.TokenValidationResult
 import com.besa.boardShare.feature.user.domain.model.User
+import java.time.Instant
 
 interface UserRepository {
     suspend fun findUser(
@@ -28,6 +29,10 @@ interface UserRepository {
         userId: Int,
         token: String
     ): TokenValidationResult
+
+    suspend fun recordFailedLogin(userId: Int, lockUntil: Instant?)
+
+    suspend fun resetFailedLogins(userId: Int)
 
     suspend fun revokeTokenFamily(familyId: String)
 

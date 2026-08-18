@@ -8,4 +8,6 @@ fun UserEntity.toUser() = User(
     email = email,
     name = name,
     passwordHash = passwordHash,
+    failedLoginAttempts = failedLoginAttempts,
+    lockedUntil = lockedUntil,
 )

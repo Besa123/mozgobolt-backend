@@ -10,6 +10,7 @@ import com.besa.boardShare.core.routing.dto.response.ErrorResponse
 import com.besa.boardShare.core.utility.functions.protectedApi
 import com.besa.boardShare.core.utility.functions.publicRateLimitedApi
 import com.besa.boardShare.feature.user.domain.UserService
+import com.besa.boardShare.feature.user.domain.model.LoginError
 import com.besa.boardShare.feature.user.domain.model.RefreshError
 import com.besa.boardShare.feature.user.domain.model.RegisterError
 import com.besa.boardShare.feature.user.routing.dto.request.LoginRequestDto
@@ -67,8 +68,14 @@ private fun Route.authPublicRoutes(userService: UserService, idempotencyStore: I
                             )
                         )
                     },
-                    onError = { _ ->
-                        call.respond(HttpStatusCode.Unauthorized)
+                    onError = { error ->
+                        when (error) {
+                            LoginError.ACCOUNT_LOCKED ->
+                                call.respond(HttpStatusCode.TooManyRequests, ErrorResponse(error = "ACCOUNT_LOCKED"))
+
+                            LoginError.INVALID_CREDENTIALS ->
+                                call.respond(HttpStatusCode.Unauthorized)
+                        }
                     }
                 )
             }

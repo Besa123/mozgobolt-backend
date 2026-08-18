@@ -62,12 +62,31 @@ class UserServiceI(
             val user = userRepository.findUser(normalizedEmail)
                 ?: return@transactional AppResult.Error(LoginError.INVALID_CREDENTIALS)
 
+            if (user.isLocked) {
+                logger.warn { "Login attempt on locked account: ${user.id}" }
+                return@transactional AppResult.Error(LoginError.ACCOUNT_LOCKED)
+            }
+
             val isPasswordValid = passwordService.verifyPassword(
                 password = password,
                 hash = user.passwordHash
             )
 
-            if (!isPasswordValid) return@transactional AppResult.Error(LoginError.INVALID_CREDENTIALS)
+            if (!isPasswordValid) {
+                val newAttemptCount = user.failedLoginAttempts + 1
+                val lockUntil = LockoutPolicy.calculateLockUntil(newAttemptCount)
+                userRepository.recordFailedLogin(user.id, lockUntil)
+
+                if (lockUntil != null) {
+                    logger.warn { "Account ${user.id} locked until $lockUntil after $newAttemptCount failed attempts" }
+                }
+
+                return@transactional AppResult.Error(LoginError.INVALID_CREDENTIALS)
+            }
+
+            if (user.failedLoginAttempts > 0) {
+                userRepository.resetFailedLogins(user.id)
+            }
 
             val accessToken = tokenManager.generateAccessToken(userId = user.id)
             val refreshToken = tokenManager.generateRefreshToken(userId = user.id)

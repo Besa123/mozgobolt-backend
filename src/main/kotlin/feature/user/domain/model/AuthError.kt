@@ -7,7 +7,8 @@ enum class RegisterError {
 }
 
 enum class LoginError {
-    INVALID_CREDENTIALS
+    INVALID_CREDENTIALS,
+    ACCOUNT_LOCKED,
 }
 
 enum class RefreshError {

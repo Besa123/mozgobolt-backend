@@ -10,6 +10,7 @@ import com.besa.boardShare.feature.user.domain.model.TokenValidationResult
 import com.besa.boardShare.feature.user.domain.model.User
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.core.plus
 import org.jetbrains.exposed.v1.jdbc.update
 import java.time.Duration
 import java.time.Instant
@@ -78,6 +79,20 @@ class UserRepositoryI : UserRepository {
         }
 
         return TokenValidationResult.Valid(familyId = tokenRow.familyId)
+    }
+
+    override suspend fun recordFailedLogin(userId: Int, lockUntil: Instant?) {
+        UsersTable.update(where = { UsersTable.id eq userId }) {
+            it[failedLoginAttempts] = failedLoginAttempts + 1
+            it[UsersTable.lockedUntil] = lockUntil
+        }
+    }
+
+    override suspend fun resetFailedLogins(userId: Int) {
+        UsersTable.update(where = { UsersTable.id eq userId }) {
+            it[failedLoginAttempts] = 0
+            it[lockedUntil] = null
+        }
     }
 
     override suspend fun revokeTokenFamily(familyId: String) {
