@@ -18,21 +18,14 @@ import com.besa.boardShare.feature.user.routing.dto.request.RefreshRequestDto
 import com.besa.boardShare.feature.user.routing.dto.request.UserCreationRequestDto
 import com.besa.boardShare.feature.user.routing.dto.response.SignInResponseDto
 import io.ktor.http.*
-import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
-import io.ktor.server.plugins.di.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 
-fun Application.userRoutes() {
-    val userService: UserService by dependencies
-    val idempotencyStore: IdempotencyStore by dependencies
-
-    routing {
-        authPublicRoutes(userService, idempotencyStore)
-        authProtectedRoutes(userService)
-    }
+fun Route.authRoutes(userService: UserService, idempotencyStore: IdempotencyStore) {
+    authPublicRoutes(userService, idempotencyStore)
+    authProtectedRoutes(userService)
 }
 
 private fun Route.authPublicRoutes(userService: UserService, idempotencyStore: IdempotencyStore) {
