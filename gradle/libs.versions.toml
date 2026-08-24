@@ -10,6 +10,7 @@ flyway = "12.8.1"
 kotlin-logging = "8.0.4"
 logstash-logback-encoder = "9.0"
 janino = "3.1.12"
+resend = "4.4.0"
 
 [libraries]
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
@@ -28,6 +29,7 @@ dotenv = { module = "io.github.cdimascio:dotenv-kotlin", version.ref = "dotenv" 
 password4j = { module = "com.password4j:password4j", version.ref = "password4j" }
 flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
 flyway-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
+resend = { module = "com.resend:resend-java", version.ref = "resend" }
 
 [plugins]
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

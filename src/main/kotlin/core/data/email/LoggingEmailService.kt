@@ -1,0 +1,31 @@
+package com.besa.boardShare.core.data.email
+
+import com.besa.boardShare.core.domain.email.EmailService
+import com.besa.boardShare.core.modules.AppConfig
+import io.github.oshai.kotlinlogging.KotlinLogging
+
+private val logger = KotlinLogging.logger {}
+
+/**
+ * Development-only email service that logs verification links to console.
+ * Used when no Resend API key is configured.
+ */
+class LoggingEmailService(private val config: AppConfig) : EmailService {
+
+    override suspend fun sendVerificationEmail(to: String, token: String) {
+        val verificationUrl = "${config.baseUrl}/api/v1/auth/verify-email?token=$token"
+
+        logger.info {
+            """
+            |
+            |╔══════════════════════════════════════════════════════════════╗
+            |║  VERIFICATION EMAIL (dev mode — not actually sent)         ║
+            |╠══════════════════════════════════════════════════════════════╣
+            |║  To:    $to
+            |║  Link:  $verificationUrl
+            |║  Token: $token
+            |╚══════════════════════════════════════════════════════════════╝
+            """.trimMargin()
+        }
+    }
+}

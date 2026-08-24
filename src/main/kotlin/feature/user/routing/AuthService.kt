@@ -13,6 +13,7 @@ import com.besa.boardShare.feature.user.domain.UserService
 import com.besa.boardShare.feature.user.domain.model.LoginError
 import com.besa.boardShare.feature.user.domain.model.RefreshError
 import com.besa.boardShare.feature.user.domain.model.RegisterError
+import com.besa.boardShare.feature.user.domain.model.VerifyEmailError
 import com.besa.boardShare.feature.user.routing.dto.request.LoginRequestDto
 import com.besa.boardShare.feature.user.routing.dto.request.LogoutRequestDto
 import com.besa.boardShare.feature.user.routing.dto.request.RefreshRequestDto
@@ -104,6 +105,23 @@ private fun Route.authPublicRoutes(userService: UserService, idempotencyStore: I
                     }
                 )
             }
+
+            get("/verify-email") {
+                val token = call.parameters["token"]
+                    ?: return@get call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = "MISSING_TOKEN"))
+
+                userService.verifyEmail(token).fold(
+                    onSuccess = { call.respond(HttpStatusCode.OK) },
+                    onError = { error ->
+                        val status = when (error) {
+                            VerifyEmailError.INVALID_TOKEN -> HttpStatusCode.BadRequest
+                            VerifyEmailError.EXPIRED_TOKEN -> HttpStatusCode.Gone
+                            VerifyEmailError.ALREADY_VERIFIED -> HttpStatusCode.Conflict
+                        }
+                        call.respond(status, ErrorResponse(error = error.name))
+                    }
+                )
+            }
         }
     }
 }
@@ -123,6 +141,25 @@ private fun Route.authProtectedRoutes(userService: UserService) {
                 val userId = principal.payload.getClaim(AuthConstants.CLAIM_USER_ID).asInt()
                 userService.logoutAllSessions(userId)
                 call.respond(HttpStatusCode.OK)
+            }
+
+            limitedPost("/resend-verification", timeout = RequestTimeout.FAST) {
+                val principal = call.principal<JWTPrincipal>()
+                    ?: return@limitedPost call.respond(HttpStatusCode.Unauthorized)
+
+                val userId = principal.payload.getClaim(AuthConstants.CLAIM_USER_ID).asInt()
+
+                userService.resendVerificationEmail(userId).fold(
+                    onSuccess = { call.respond(HttpStatusCode.OK) },
+                    onError = { error ->
+                        val status = when (error) {
+                            VerifyEmailError.ALREADY_VERIFIED -> HttpStatusCode.Conflict
+                            VerifyEmailError.INVALID_TOKEN -> HttpStatusCode.InternalServerError
+                            VerifyEmailError.EXPIRED_TOKEN -> HttpStatusCode.InternalServerError
+                        }
+                        call.respond(status, ErrorResponse(error = error.name))
+                    }
+                )
             }
         }
     }

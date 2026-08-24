@@ -1,10 +1,7 @@
 package com.besa.boardShare.feature.user.domain
 
 import com.besa.boardShare.core.domain.AppResult
-import com.besa.boardShare.feature.user.domain.model.AuthResponse
-import com.besa.boardShare.feature.user.domain.model.LoginError
-import com.besa.boardShare.feature.user.domain.model.RefreshError
-import com.besa.boardShare.feature.user.domain.model.RegisterError
+import com.besa.boardShare.feature.user.domain.model.*
 
 interface UserService {
     suspend fun createUser(
@@ -27,4 +24,8 @@ interface UserService {
     suspend fun refreshToken(
         oldRefreshToken: String,
     ): AppResult<AuthResponse, RefreshError>
+
+    suspend fun verifyEmail(token: String): AppResult<Unit, VerifyEmailError>
+
+    suspend fun resendVerificationEmail(userId: Int): AppResult<Unit, VerifyEmailError>
 }

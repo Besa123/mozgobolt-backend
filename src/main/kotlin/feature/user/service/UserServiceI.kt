@@ -2,14 +2,19 @@ package com.besa.boardShare.feature.user.service
 
 import com.besa.boardShare.core.database.TransactionalRunner
 import com.besa.boardShare.core.domain.AppResult
+import com.besa.boardShare.core.domain.email.EmailService
 import com.besa.boardShare.core.domain.security.PasswordService
+import com.besa.boardShare.core.domain.security.SecureTokenGenerator
 import com.besa.boardShare.core.domain.security.TokenManager
 import com.besa.boardShare.core.domain.validation.EmailValidator
 import com.besa.boardShare.core.domain.validation.PasswordValidator
+import com.besa.boardShare.core.modules.AppConfig
 import com.besa.boardShare.feature.user.domain.UserRepository
 import com.besa.boardShare.feature.user.domain.UserService
 import com.besa.boardShare.feature.user.domain.model.*
 import io.github.oshai.kotlinlogging.KotlinLogging
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.*
 
 private val logger = KotlinLogging.logger {}
@@ -20,6 +25,8 @@ class UserServiceI(
     private val tokenManager: TokenManager,
     private val passwordValidator: PasswordValidator,
     private val emailValidator: EmailValidator,
+    private val emailService: EmailService,
+    private val appConfig: AppConfig,
     private val tx: TransactionalRunner,
 ) : UserService {
 
@@ -39,17 +46,27 @@ class UserServiceI(
 
         val hashedPassword = passwordService.hashPassword(password)
 
-        return tx.transactional {
+        val result = tx.transactional {
             val existing = userRepository.findUser(normalizedEmail)
-            if (existing != null) return@transactional AppResult.Error(RegisterError.ALREADY_EXISTS)
+            if (existing != null) return@transactional null
 
-            userRepository.createUser(
+            val newUser = userRepository.createUser(
                 email = normalizedEmail,
                 password = hashedPassword,
                 name = name
             )
-            AppResult.Success(Unit)
-        }
+
+            val verificationToken = SecureTokenGenerator.generate()
+            val expiresAt = Instant.now().plus(appConfig.email.verificationTokenExpirationHours, ChronoUnit.HOURS)
+            userRepository.createVerificationToken(newUser.id, verificationToken, expiresAt)
+
+            newUser to verificationToken
+        } ?: return AppResult.Error(RegisterError.ALREADY_EXISTS)
+
+        runCatching { emailService.sendVerificationEmail(result.first.email, result.second) }
+            .onFailure { logger.error(it) { "Failed to send verification email to ${result.first.email}" } }
+
+        return AppResult.Success(Unit)
     }
 
     override suspend fun signInUser(
@@ -148,5 +165,54 @@ class UserServiceI(
                 }
             }
         }
+    }
+
+    override suspend fun verifyEmail(token: String): AppResult<Unit, VerifyEmailError> {
+        return tx.transactional {
+            val record = userRepository.findVerificationToken(token)
+                ?: return@transactional AppResult.Error(VerifyEmailError.INVALID_TOKEN)
+
+            if (record.used) {
+                return@transactional AppResult.Error(VerifyEmailError.INVALID_TOKEN)
+            }
+
+            if (record.expiresAt.isBefore(Instant.now())) {
+                return@transactional AppResult.Error(VerifyEmailError.EXPIRED_TOKEN)
+            }
+
+            val user = userRepository.findUserById(record.userId)
+            if (user?.isEmailVerified == true) {
+                return@transactional AppResult.Error(VerifyEmailError.ALREADY_VERIFIED)
+            }
+
+            userRepository.markTokenUsed(record.id)
+            userRepository.markEmailVerified(record.userId)
+            userRepository.invalidateVerificationTokens(record.userId)
+
+            logger.info { "Email verified for user ${record.userId}" }
+            AppResult.Success(Unit)
+        }
+    }
+
+    override suspend fun resendVerificationEmail(userId: Int): AppResult<Unit, VerifyEmailError> {
+        val user = tx.transactional { userRepository.findUserById(userId) }
+            ?: return AppResult.Error(VerifyEmailError.INVALID_TOKEN)
+
+        if (user.isEmailVerified) {
+            return AppResult.Error(VerifyEmailError.ALREADY_VERIFIED)
+        }
+
+        val verificationToken = SecureTokenGenerator.generate()
+        val expiresAt = Instant.now().plus(appConfig.email.verificationTokenExpirationHours, ChronoUnit.HOURS)
+
+        tx.transactional {
+            userRepository.invalidateVerificationTokens(userId)
+            userRepository.createVerificationToken(userId, verificationToken, expiresAt)
+        }
+
+        runCatching { emailService.sendVerificationEmail(user.email, verificationToken) }
+            .onFailure { logger.error(it) { "Failed to resend verification email to ${user.email}" } }
+
+        return AppResult.Success(Unit)
     }
 }

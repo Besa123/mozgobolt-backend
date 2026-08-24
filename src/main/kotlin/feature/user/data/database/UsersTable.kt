@@ -13,6 +13,7 @@ data object UsersTable : IntIdTable("users") {
     val passwordHash = varchar("password_hash", 255)
     val failedLoginAttempts = integer("failed_login_attempts").default(0)
     val lockedUntil = timestamp("locked_until").nullable()
+    val isEmailVerified = bool("is_email_verified").default(false)
 }
 
 class UserEntity(id: EntityID<Int>) : IntEntity(id) {
@@ -23,4 +24,5 @@ class UserEntity(id: EntityID<Int>) : IntEntity(id) {
     var passwordHash by UsersTable.passwordHash
     var failedLoginAttempts by UsersTable.failedLoginAttempts
     var lockedUntil by UsersTable.lockedUntil
+    var isEmailVerified by UsersTable.isEmailVerified
 }

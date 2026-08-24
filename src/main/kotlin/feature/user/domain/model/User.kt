@@ -9,6 +9,7 @@ data class User(
     val passwordHash: String,
     val failedLoginAttempts: Int = 0,
     val lockedUntil: Instant? = null,
+    val isEmailVerified: Boolean = false,
 ) {
     val isLocked: Boolean
         get() = lockedUntil != null && lockedUntil.isAfter(Instant.now())

@@ -1,5 +1,7 @@
 package com.besa.boardShare.core.di
 
+import com.besa.boardShare.core.data.email.LoggingEmailService
+import com.besa.boardShare.core.data.email.ResendEmailService
 import com.besa.boardShare.core.data.idempotency.ExposedIdempotencyStore
 import com.besa.boardShare.core.data.idempotency.IdempotencyStore
 import com.besa.boardShare.core.data.security.JwtTokenManager
@@ -10,6 +12,7 @@ import com.besa.boardShare.core.database.DatabaseFactory.createDatabase
 import com.besa.boardShare.core.database.DatabaseFactory.createHikariDataSource
 import com.besa.boardShare.core.database.ExposedTransactionalRunner
 import com.besa.boardShare.core.database.TransactionalRunner
+import com.besa.boardShare.core.domain.email.EmailService
 import com.besa.boardShare.core.domain.security.PasswordService
 import com.besa.boardShare.core.domain.security.TokenManager
 import com.besa.boardShare.core.domain.validation.EmailValidator
@@ -52,6 +55,14 @@ fun Application.configureDependencyInjection() {
                 issuer = appConfig.jwt.issuer,
                 audience = appConfig.jwt.audience,
             )
+        }
+
+        provide<EmailService> {
+            if (appConfig.email.resendApiKey.isNotBlank()) {
+                ResendEmailService(appConfig)
+            } else {
+                LoggingEmailService(appConfig)
+            }
         }
     }
 

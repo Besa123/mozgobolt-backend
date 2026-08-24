@@ -1,13 +1,11 @@
 package com.besa.boardShare.feature.user.data.repository
 
-import com.besa.boardShare.feature.user.data.database.RefreshTokenEntity
-import com.besa.boardShare.feature.user.data.database.RefreshTokensTable
-import com.besa.boardShare.feature.user.data.database.UserEntity
-import com.besa.boardShare.feature.user.data.database.UsersTable
+import com.besa.boardShare.feature.user.data.database.*
 import com.besa.boardShare.feature.user.data.mapper.toUser
 import com.besa.boardShare.feature.user.domain.UserRepository
 import com.besa.boardShare.feature.user.domain.model.TokenValidationResult
 import com.besa.boardShare.feature.user.domain.model.User
+import com.besa.boardShare.feature.user.domain.model.VerificationTokenRecord
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.plus
@@ -96,6 +94,7 @@ class UserRepositoryI : UserRepository {
     }
 
     override suspend fun revokeTokenFamily(familyId: String) {
+        if (familyId.isBlank()) return
         RefreshTokensTable.update(
             where = { RefreshTokensTable.familyId eq familyId }
         ) {
@@ -114,6 +113,52 @@ class UserRepositoryI : UserRepository {
         RefreshTokensTable.update(
             where = { RefreshTokensTable.token eq token }) {
             it[isRevoked] = true
+        }
+    }
+
+    override suspend fun createVerificationToken(userId: Int, token: String, expiresAt: Instant) {
+        EmailVerificationTokenEntity.new {
+            this.user = UserEntity[userId]
+            this.token = token
+            this.expiresAt = expiresAt
+            this.createdAt = Instant.now()
+        }
+    }
+
+    override suspend fun findVerificationToken(token: String): VerificationTokenRecord? {
+        return EmailVerificationTokenEntity
+            .find { EmailVerificationTokensTable.token eq token }
+            .singleOrNull()
+            ?.let { entity ->
+                VerificationTokenRecord(
+                    id = entity.id.value,
+                    userId = entity.user.id.value,
+                    token = entity.token,
+                    expiresAt = entity.expiresAt,
+                    used = entity.used,
+                )
+            }
+    }
+
+    override suspend fun markTokenUsed(tokenId: Int) {
+        EmailVerificationTokensTable.update(
+            where = { EmailVerificationTokensTable.id eq tokenId }
+        ) {
+            it[used] = true
+        }
+    }
+
+    override suspend fun markEmailVerified(userId: Int) {
+        UsersTable.update(where = { UsersTable.id eq userId }) {
+            it[isEmailVerified] = true
+        }
+    }
+
+    override suspend fun invalidateVerificationTokens(userId: Int) {
+        EmailVerificationTokensTable.update(
+            where = { EmailVerificationTokensTable.userId eq userId }
+        ) {
+            it[used] = true
         }
     }
 }

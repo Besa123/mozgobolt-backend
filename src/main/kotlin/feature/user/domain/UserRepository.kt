@@ -2,6 +2,7 @@ package com.besa.boardShare.feature.user.domain
 
 import com.besa.boardShare.feature.user.domain.model.TokenValidationResult
 import com.besa.boardShare.feature.user.domain.model.User
+import com.besa.boardShare.feature.user.domain.model.VerificationTokenRecord
 import java.time.Instant
 
 interface UserRepository {
@@ -39,4 +40,14 @@ interface UserRepository {
     suspend fun revokeAllTokensForUser(userId: Int)
 
     suspend fun revokeSpecificRefreshToken(token: String)
+
+    suspend fun createVerificationToken(userId: Int, token: String, expiresAt: Instant)
+
+    suspend fun findVerificationToken(token: String): VerificationTokenRecord?
+
+    suspend fun markTokenUsed(tokenId: Int)
+
+    suspend fun markEmailVerified(userId: Int)
+
+    suspend fun invalidateVerificationTokens(userId: Int)
 }

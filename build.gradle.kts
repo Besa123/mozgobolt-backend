@@ -49,6 +49,7 @@ dependencies {
     implementation(libs.password4j)
     implementation(libs.flyway.core)
     implementation(libs.flyway.postgresql)
+    implementation(libs.resend)
 
     testImplementation(kotlin("test"))
     testImplementation(ktorLibs.server.testHost)

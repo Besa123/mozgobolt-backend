@@ -4,10 +4,12 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class AppConfig(
+    val baseUrl: String = "http://localhost:8080",
     val database: Database,
     val jwt: Jwt,
     val security: Security,
     val cors: Cors,
+    val email: Email,
 ) {
     @Serializable
     data class Database(
@@ -40,4 +42,11 @@ data class AppConfig(
             .map { it.trim() }
             .filter { it.isNotBlank() }
     }
+
+    @Serializable
+    data class Email(
+        val resendApiKey: String = "",
+        val fromAddress: String = "noreply@example.com",
+        val verificationTokenExpirationHours: Long = 24,
+    )
 }
