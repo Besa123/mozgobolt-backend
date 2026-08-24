@@ -1,7 +1,7 @@
-package com.besa.boardShare.feature.user.data.mapper
+package com.besa.shelflife.feature.user.data.mapper
 
-import com.besa.boardShare.feature.user.data.database.UserEntity
-import com.besa.boardShare.feature.user.domain.model.User
+import com.besa.shelflife.feature.user.data.database.UserEntity
+import com.besa.shelflife.feature.user.domain.model.User
 
 fun UserEntity.toUser() = User(
     id = id.value,

@@ -18,5 +18,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "boardGameShare"
+rootProject.name = "shelflife"
 

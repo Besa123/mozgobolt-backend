@@ -1,7 +1,7 @@
-package com.besa.boardShare.core.data.email
+package com.besa.shelflife.core.data.email
 
-import com.besa.boardShare.core.domain.email.EmailService
-import com.besa.boardShare.core.modules.AppConfig
+import com.besa.shelflife.core.domain.email.EmailService
+import com.besa.shelflife.core.modules.AppConfig
 import com.resend.Resend
 import com.resend.services.emails.model.CreateEmailOptions
 import io.github.oshai.kotlinlogging.KotlinLogging

@@ -1,7 +1,7 @@
-package com.besa.boardShare.feature.user.domain
+package com.besa.shelflife.feature.user.domain
 
-import com.besa.boardShare.core.domain.AppResult
-import com.besa.boardShare.feature.user.domain.model.*
+import com.besa.shelflife.core.domain.AppResult
+import com.besa.shelflife.feature.user.domain.model.*
 
 interface UserService {
     suspend fun createUser(

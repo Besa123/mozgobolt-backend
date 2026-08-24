@@ -1,11 +1,11 @@
-package com.besa.boardShare.feature.user.data.repository
+package com.besa.shelflife.feature.user.data.repository
 
-import com.besa.boardShare.feature.user.data.database.*
-import com.besa.boardShare.feature.user.data.mapper.toUser
-import com.besa.boardShare.feature.user.domain.UserRepository
-import com.besa.boardShare.feature.user.domain.model.TokenValidationResult
-import com.besa.boardShare.feature.user.domain.model.User
-import com.besa.boardShare.feature.user.domain.model.VerificationTokenRecord
+import com.besa.shelflife.feature.user.data.database.*
+import com.besa.shelflife.feature.user.data.mapper.toUser
+import com.besa.shelflife.feature.user.domain.UserRepository
+import com.besa.shelflife.feature.user.domain.model.TokenValidationResult
+import com.besa.shelflife.feature.user.domain.model.User
+import com.besa.shelflife.feature.user.domain.model.VerificationTokenRecord
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.plus

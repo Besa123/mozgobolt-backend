@@ -1,6 +1,6 @@
-package com.besa.boardShare.core.modules.plugin
+package com.besa.shelflife.core.modules.plugin
 
-import com.besa.boardShare.core.routing.dto.response.ErrorResponse
+import com.besa.shelflife.core.routing.dto.response.ErrorResponse
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.*
 import io.ktor.server.application.*

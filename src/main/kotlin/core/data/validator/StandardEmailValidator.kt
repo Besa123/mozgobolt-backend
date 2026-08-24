@@ -1,6 +1,6 @@
-package com.besa.boardShare.core.data.validator
+package com.besa.shelflife.core.data.validator
 
-import com.besa.boardShare.core.domain.validation.EmailValidator
+import com.besa.shelflife.core.domain.validation.EmailValidator
 
 class StandardEmailValidator : EmailValidator {
 

@@ -1,4 +1,4 @@
-package com.besa.boardShare.core.domain.validation
+package com.besa.shelflife.core.domain.validation
 
 interface EmailValidator {
     fun normalize(email: String): String

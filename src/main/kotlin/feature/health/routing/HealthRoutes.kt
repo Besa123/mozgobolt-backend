@@ -1,4 +1,4 @@
-package com.besa.boardShare.feature.health.routing
+package com.besa.shelflife.feature.health.routing
 
 import io.ktor.http.*
 import io.ktor.server.response.*

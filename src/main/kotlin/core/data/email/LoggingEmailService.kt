@@ -1,7 +1,7 @@
-package com.besa.boardShare.core.data.email
+package com.besa.shelflife.core.data.email
 
-import com.besa.boardShare.core.domain.email.EmailService
-import com.besa.boardShare.core.modules.AppConfig
+import com.besa.shelflife.core.domain.email.EmailService
+import com.besa.shelflife.core.modules.AppConfig
 import io.github.oshai.kotlinlogging.KotlinLogging
 
 private val logger = KotlinLogging.logger {}

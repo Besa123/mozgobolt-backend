@@ -1,4 +1,4 @@
-package com.besa.boardShare.core.domain.security
+package com.besa.shelflife.core.domain.security
 
 import java.security.SecureRandom
 import java.util.*

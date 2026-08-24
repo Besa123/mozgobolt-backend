@@ -1,6 +1,6 @@
-package com.besa.boardShare.core.modules.plugin
+package com.besa.shelflife.core.modules.plugin
 
-import com.besa.boardShare.core.domain.validation.ValidatedRequest
+import com.besa.shelflife.core.domain.validation.ValidatedRequest
 import io.ktor.server.application.*
 import io.ktor.server.plugins.requestvalidation.*
 

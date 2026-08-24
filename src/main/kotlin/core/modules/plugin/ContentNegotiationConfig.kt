@@ -1,4 +1,4 @@
-package com.besa.boardShare.core.modules.plugin
+package com.besa.shelflife.core.modules.plugin
 
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*

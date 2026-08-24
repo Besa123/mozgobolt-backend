@@ -1,4 +1,4 @@
-package com.besa.boardShare.feature.user.domain.model
+package com.besa.shelflife.feature.user.domain.model
 
 sealed interface TokenValidationResult {
     data class Valid(val familyId: String) : TokenValidationResult

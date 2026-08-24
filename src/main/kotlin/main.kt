@@ -1,4 +1,4 @@
-package com.besa.boardShare
+package com.besa.shelflife
 
 import io.github.cdimascio.dotenv.dotenv
 import io.ktor.server.netty.*

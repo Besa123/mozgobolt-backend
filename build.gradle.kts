@@ -4,7 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-group = "com.besa.boardShare"
+group = "com.besa.shelflife"
 version = "1.0.0-SNAPSHOT"
 
 application {

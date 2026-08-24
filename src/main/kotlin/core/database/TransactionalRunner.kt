@@ -1,4 +1,4 @@
-package com.besa.boardShare.core.database
+package com.besa.shelflife.core.database
 
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction

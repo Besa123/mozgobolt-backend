@@ -1,4 +1,4 @@
-package com.besa.boardShare.core.utility.functions
+package com.besa.shelflife.core.utility.functions
 
 import kotlin.coroutines.cancellation.CancellationException
 

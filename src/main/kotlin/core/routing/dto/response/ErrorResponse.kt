@@ -1,4 +1,4 @@
-package com.besa.boardShare.core.routing.dto.response
+package com.besa.shelflife.core.routing.dto.response
 
 import kotlinx.serialization.Serializable
 

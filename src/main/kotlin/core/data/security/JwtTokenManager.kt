@@ -1,11 +1,11 @@
-package com.besa.boardShare.core.data.security
+package com.besa.shelflife.core.data.security
 
 import com.auth0.jwt.JWT
 import com.auth0.jwt.JWTVerifier
 import com.auth0.jwt.algorithms.Algorithm
 import com.auth0.jwt.exceptions.JWTVerificationException
-import com.besa.boardShare.core.domain.security.AuthConstants
-import com.besa.boardShare.core.domain.security.TokenManager
+import com.besa.shelflife.core.domain.security.AuthConstants
+import com.besa.shelflife.core.domain.security.TokenManager
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.temporal.ChronoUnit

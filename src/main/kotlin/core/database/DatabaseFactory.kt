@@ -1,4 +1,4 @@
-package com.besa.boardShare.core.database
+package com.besa.shelflife.core.database
 
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
@@ -21,7 +21,7 @@ object DatabaseFactory {
             jdbcUrl = dbUrl
             username = dbUser
             password = dbPassword
-            poolName = "BoardGameShare-Pool"
+            poolName = "ShelfLife-Pool"
             maximumPoolSize = poolSize
             minimumIdle = 2
             isAutoCommit = false

@@ -1,4 +1,4 @@
-package com.besa.boardShare.core.data.idempotency
+package com.besa.shelflife.core.data.idempotency
 
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.javatime.timestamp

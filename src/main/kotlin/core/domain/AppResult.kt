@@ -1,4 +1,4 @@
-package com.besa.boardShare.core.domain
+package com.besa.shelflife.core.domain
 
 sealed class AppResult<out T, out E> {
     data class Success<out T>(val data: T) : AppResult<T, Nothing>()

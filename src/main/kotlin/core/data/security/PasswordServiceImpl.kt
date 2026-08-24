@@ -1,6 +1,6 @@
-package com.besa.boardShare.core.data.security
+package com.besa.shelflife.core.data.security
 
-import com.besa.boardShare.core.domain.security.PasswordService
+import com.besa.shelflife.core.domain.security.PasswordService
 import com.password4j.Argon2Function
 import com.password4j.Password
 import com.password4j.types.Argon2

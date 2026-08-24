@@ -1,8 +1,8 @@
-package com.besa.boardShare.core.utility.functions
+package com.besa.shelflife.core.utility.functions
 
-import com.besa.boardShare.core.domain.security.AuthConstants.PROTECT_ENDPOINT_JWT
-import com.besa.boardShare.core.modules.plugin.API_LIMIT
-import com.besa.boardShare.core.modules.plugin.AUTH_LIMIT
+import com.besa.shelflife.core.domain.security.AuthConstants.PROTECT_ENDPOINT_JWT
+import com.besa.shelflife.core.modules.plugin.API_LIMIT
+import com.besa.shelflife.core.modules.plugin.AUTH_LIMIT
 import io.ktor.server.auth.*
 import io.ktor.server.plugins.ratelimit.*
 import io.ktor.server.routing.*

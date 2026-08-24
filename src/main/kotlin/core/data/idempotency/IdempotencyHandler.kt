@@ -1,6 +1,6 @@
-package com.besa.boardShare.core.data.idempotency
+package com.besa.shelflife.core.data.idempotency
 
-import com.besa.boardShare.core.routing.dto.response.ErrorResponse
+import com.besa.shelflife.core.routing.dto.response.ErrorResponse
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*

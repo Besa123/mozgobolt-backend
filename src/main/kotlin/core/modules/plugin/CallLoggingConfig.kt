@@ -1,6 +1,6 @@
-package com.besa.boardShare.core.modules.plugin
+package com.besa.shelflife.core.modules.plugin
 
-import com.besa.boardShare.core.domain.security.AuthConstants.CLAIM_USER_ID
+import com.besa.shelflife.core.domain.security.AuthConstants.CLAIM_USER_ID
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*

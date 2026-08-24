@@ -1,6 +1,6 @@
-package com.besa.boardShare.core.modules
+package com.besa.shelflife.core.modules
 
-import com.besa.boardShare.core.modules.plugin.*
+import com.besa.shelflife.core.modules.plugin.*
 import io.ktor.server.application.*
 import io.ktor.server.plugins.autohead.*
 import io.ktor.server.resources.*

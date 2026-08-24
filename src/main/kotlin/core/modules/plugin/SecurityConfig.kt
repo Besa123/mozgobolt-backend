@@ -1,11 +1,11 @@
-package com.besa.boardShare.core.modules.plugin
+package com.besa.shelflife.core.modules.plugin
 
-import com.besa.boardShare.core.data.security.JwtTokenManager
-import com.besa.boardShare.core.domain.security.AuthConstants.CLAIM_TOKEN_TYPE
-import com.besa.boardShare.core.domain.security.AuthConstants.CLAIM_USER_ID
-import com.besa.boardShare.core.domain.security.AuthConstants.PROTECT_ENDPOINT_JWT
-import com.besa.boardShare.core.domain.security.AuthConstants.TOKEN_TYPE_ACCESS
-import com.besa.boardShare.core.domain.security.TokenManager
+import com.besa.shelflife.core.data.security.JwtTokenManager
+import com.besa.shelflife.core.domain.security.AuthConstants.CLAIM_TOKEN_TYPE
+import com.besa.shelflife.core.domain.security.AuthConstants.CLAIM_USER_ID
+import com.besa.shelflife.core.domain.security.AuthConstants.PROTECT_ENDPOINT_JWT
+import com.besa.shelflife.core.domain.security.AuthConstants.TOKEN_TYPE_ACCESS
+import com.besa.shelflife.core.domain.security.TokenManager
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*

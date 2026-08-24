@@ -1,4 +1,4 @@
-package com.besa.boardShare.core.domain.security
+package com.besa.shelflife.core.domain.security
 
 object AuthConstants {
     const val CLAIM_USER_ID = "userId"

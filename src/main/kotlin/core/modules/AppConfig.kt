@@ -1,4 +1,4 @@
-package com.besa.boardShare.core.modules
+package com.besa.shelflife.core.modules
 
 import kotlinx.serialization.Serializable
 

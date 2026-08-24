@@ -1,4 +1,4 @@
-package com.besa.boardShare.core.routing
+package com.besa.shelflife.core.routing
 
 import io.ktor.server.routing.*
 
