@@ -13,7 +13,7 @@ private val REQUIRED_ENV_VARS =
 
 class ServerTest {
     @Test
-    fun `test root endpoint`() =
+    fun `the app boots for real and reports healthy`() =
         testApplication {
             val missing = REQUIRED_ENV_VARS.filter { System.getenv(it) == null }
             assumeTrue(
@@ -25,6 +25,6 @@ class ServerTest {
                 config = ApplicationConfig("application.conf")
             }
 
-            assertEquals(HttpStatusCode.OK, client.get("/").status)
+            assertEquals(HttpStatusCode.OK, client.get("/health").status)
         }
 }
