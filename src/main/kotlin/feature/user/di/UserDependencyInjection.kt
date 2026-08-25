@@ -4,8 +4,8 @@ import com.besa.shelflife.feature.user.data.repository.UserRepositoryI
 import com.besa.shelflife.feature.user.domain.UserRepository
 import com.besa.shelflife.feature.user.domain.UserService
 import com.besa.shelflife.feature.user.service.UserServiceI
-import io.ktor.server.application.*
-import io.ktor.server.plugins.di.*
+import io.ktor.server.application.Application
+import io.ktor.server.plugins.di.dependencies
 
 fun Application.configureAuthDependencyInjection() {
     dependencies {

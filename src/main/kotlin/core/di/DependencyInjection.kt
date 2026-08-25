@@ -19,9 +19,10 @@ import com.besa.shelflife.core.domain.validation.EmailValidator
 import com.besa.shelflife.core.domain.validation.PasswordValidator
 import com.besa.shelflife.core.modules.AppConfig
 import com.besa.shelflife.feature.user.di.configureAuthDependencyInjection
-import io.ktor.server.application.*
-import io.ktor.server.config.*
-import io.ktor.server.plugins.di.*
+import io.ktor.server.application.Application
+import io.ktor.server.config.property
+import io.ktor.server.plugins.di.dependencies
+import io.ktor.server.plugins.di.provide
 import javax.sql.DataSource
 
 fun Application.configureDependencyInjection() {

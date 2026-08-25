@@ -11,11 +11,17 @@ import com.besa.shelflife.core.domain.validation.PasswordValidator
 import com.besa.shelflife.core.modules.AppConfig
 import com.besa.shelflife.feature.user.domain.UserRepository
 import com.besa.shelflife.feature.user.domain.UserService
-import com.besa.shelflife.feature.user.domain.model.*
+import com.besa.shelflife.feature.user.domain.model.AuthResponse
+import com.besa.shelflife.feature.user.domain.model.LockoutPolicy
+import com.besa.shelflife.feature.user.domain.model.LoginError
+import com.besa.shelflife.feature.user.domain.model.RefreshError
+import com.besa.shelflife.feature.user.domain.model.RegisterError
+import com.besa.shelflife.feature.user.domain.model.TokenValidationResult
+import com.besa.shelflife.feature.user.domain.model.VerifyEmailError
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import java.util.*
+import java.util.UUID
 
 private val logger = KotlinLogging.logger {}
 

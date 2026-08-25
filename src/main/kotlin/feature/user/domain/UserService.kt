@@ -1,7 +1,11 @@
 package com.besa.shelflife.feature.user.domain
 
 import com.besa.shelflife.core.domain.AppResult
-import com.besa.shelflife.feature.user.domain.model.*
+import com.besa.shelflife.feature.user.domain.model.AuthResponse
+import com.besa.shelflife.feature.user.domain.model.LoginError
+import com.besa.shelflife.feature.user.domain.model.RefreshError
+import com.besa.shelflife.feature.user.domain.model.RegisterError
+import com.besa.shelflife.feature.user.domain.model.VerifyEmailError
 
 interface UserService {
     suspend fun createUser(

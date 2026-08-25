@@ -1,7 +1,7 @@
 package com.besa.shelflife
 
 import io.github.cdimascio.dotenv.dotenv
-import io.ktor.server.netty.*
+import io.ktor.server.netty.EngineMain
 
 fun main(args: Array<String>) {
     dotenv {

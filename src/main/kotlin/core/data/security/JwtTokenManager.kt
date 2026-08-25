@@ -9,7 +9,7 @@ import com.besa.shelflife.core.domain.security.TokenManager
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import java.util.*
+import java.util.UUID
 
 class JwtTokenManager(
     secret: String,

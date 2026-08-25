@@ -5,7 +5,11 @@ import com.besa.shelflife.core.data.idempotency.IdempotentResult
 import com.besa.shelflife.core.data.idempotency.idempotent
 import com.besa.shelflife.core.data.idempotency.idempotentResult
 import com.besa.shelflife.core.domain.security.AuthConstants
-import com.besa.shelflife.core.modules.plugin.*
+import com.besa.shelflife.core.modules.plugin.AUTH_LIMIT
+import com.besa.shelflife.core.modules.plugin.BodyLimit
+import com.besa.shelflife.core.modules.plugin.RequestTimeout
+import com.besa.shelflife.core.modules.plugin.limitedPost
+import com.besa.shelflife.core.modules.plugin.validatedPost
 import com.besa.shelflife.core.routing.dto.response.ErrorResponse
 import com.besa.shelflife.core.utility.functions.protectedApi
 import com.besa.shelflife.core.utility.functions.publicRateLimitedApi
@@ -19,11 +23,13 @@ import com.besa.shelflife.feature.user.routing.dto.request.LogoutRequestDto
 import com.besa.shelflife.feature.user.routing.dto.request.RefreshRequestDto
 import com.besa.shelflife.feature.user.routing.dto.request.UserCreationRequestDto
 import com.besa.shelflife.feature.user.routing.dto.response.SignInResponseDto
-import io.ktor.http.*
-import io.ktor.server.auth.*
-import io.ktor.server.auth.jwt.*
-import io.ktor.server.response.*
-import io.ktor.server.routing.*
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.auth.jwt.JWTPrincipal
+import io.ktor.server.auth.principal
+import io.ktor.server.response.respond
+import io.ktor.server.routing.Route
+import io.ktor.server.routing.get
+import io.ktor.server.routing.route
 
 fun Route.authRoutes(
     userService: UserService,
@@ -83,7 +89,7 @@ private fun Route.authPublicRoutes(
                                 LoginError.ACCOUNT_LOCKED ->
                                     call.respond(
                                         HttpStatusCode.TooManyRequests,
-                                        ErrorResponse(error = "ACCOUNT_LOCKED")
+                                        ErrorResponse(error = "ACCOUNT_LOCKED"),
                                     )
 
                                 LoginError.INVALID_CREDENTIALS ->
@@ -112,7 +118,7 @@ private fun Route.authPublicRoutes(
                                 RefreshError.TOKEN_REUSE_DETECTED ->
                                     call.respond(
                                         HttpStatusCode.Unauthorized,
-                                        ErrorResponse(error = "TOKEN_REUSE_DETECTED")
+                                        ErrorResponse(error = "TOKEN_REUSE_DETECTED"),
                                     )
 
                                 RefreshError.INVALID_CREDENTIALS ->

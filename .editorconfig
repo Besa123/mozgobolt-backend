@@ -1,3 +1,8 @@
+root = true
+
+# ──────────────────────────────────────────
+# All files
+# ──────────────────────────────────────────
 [*]
 charset = utf-8
 end_of_line = lf
@@ -5,3 +10,65 @@ indent_size = 4
 indent_style = space
 insert_final_newline = true
 trim_trailing_whitespace = true
+max_line_length = 120
+
+# ──────────────────────────────────────────
+# Kotlin entry point — exempt from PascalCase filename rule
+# ──────────────────────────────────────────
+[src/main/kotlin/main.kt]
+ktlint_standard_filename = disabled
+
+# ──────────────────────────────────────────
+# Kotlin source & build scripts
+# ──────────────────────────────────────────
+[*.{kt,kts}]
+max_line_length = 120
+indent_size = 4
+
+ktlint_code_style = ktlint_official
+
+ktlint_standard_trailing-comma-on-call-site = enabled
+ktlint_standard_trailing-comma-on-declaration-site = enabled
+
+ktlint_function_signature_body_expression_wrapping = multiline
+
+ij_kotlin_packages_to_use_import_on_demand = unset
+ij_kotlin_name_count_to_use_star_import = 99
+ij_kotlin_name_count_to_use_star_import_for_members = 99
+
+# ──────────────────────────────────────────
+# JSON
+# ──────────────────────────────────────────
+[*.json]
+indent_size = 2
+
+# ──────────────────────────────────────────
+# YAML (CI pipelines, Docker Compose, etc.)
+# ──────────────────────────────────────────
+[*.{yml,yaml}]
+indent_size = 2
+
+# ──────────────────────────────────────────
+# TOML (libs.versions.toml version catalog)
+# ──────────────────────────────────────────
+[*.toml]
+indent_size = 4
+
+# ──────────────────────────────────────────
+# Markdown
+# ──────────────────────────────────────────
+[*.md]
+trim_trailing_whitespace = false
+max_line_length = unset
+
+# ──────────────────────────────────────────
+# Shell scripts
+# ──────────────────────────────────────────
+[*.sh]
+indent_size = 2
+
+# ──────────────────────────────────────────
+# XML
+# ──────────────────────────────────────────
+[*.xml]
+indent_size = 4

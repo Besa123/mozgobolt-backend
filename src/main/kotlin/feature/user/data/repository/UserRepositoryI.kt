@@ -1,6 +1,11 @@
 package com.besa.shelflife.feature.user.data.repository
 
-import com.besa.shelflife.feature.user.data.database.*
+import com.besa.shelflife.feature.user.data.database.EmailVerificationTokenEntity
+import com.besa.shelflife.feature.user.data.database.EmailVerificationTokensTable
+import com.besa.shelflife.feature.user.data.database.RefreshTokenEntity
+import com.besa.shelflife.feature.user.data.database.RefreshTokensTable
+import com.besa.shelflife.feature.user.data.database.UserEntity
+import com.besa.shelflife.feature.user.data.database.UsersTable
 import com.besa.shelflife.feature.user.data.mapper.toUser
 import com.besa.shelflife.feature.user.domain.UserRepository
 import com.besa.shelflife.feature.user.domain.model.TokenValidationResult
@@ -18,7 +23,11 @@ class UserRepositoryI : UserRepository {
         UserEntity.find { UsersTable.email eq email }.firstOrNull()?.toUser()
 
     override suspend fun findUserById(userId: Int): User? =
-        UserEntity.find { UsersTable.id eq userId }.firstOrNull()?.toUser()
+        UserEntity
+            .find {
+                UsersTable.id eq userId
+            }.firstOrNull()
+            ?.toUser()
 
     override suspend fun createUser(
         email: String,

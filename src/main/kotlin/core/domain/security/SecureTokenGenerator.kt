@@ -1,7 +1,7 @@
 package com.besa.shelflife.core.domain.security
 
 import java.security.SecureRandom
-import java.util.*
+import java.util.Base64
 
 object SecureTokenGenerator {
     private val secureRandom = SecureRandom()

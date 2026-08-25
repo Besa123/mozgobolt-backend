@@ -6,11 +6,13 @@ import com.besa.shelflife.core.domain.security.AuthConstants.CLAIM_USER_ID
 import com.besa.shelflife.core.domain.security.AuthConstants.PROTECT_ENDPOINT_JWT
 import com.besa.shelflife.core.domain.security.AuthConstants.TOKEN_TYPE_ACCESS
 import com.besa.shelflife.core.domain.security.TokenManager
-import io.ktor.http.*
-import io.ktor.server.application.*
-import io.ktor.server.auth.*
-import io.ktor.server.auth.jwt.*
-import io.ktor.server.plugins.di.*
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.Application
+import io.ktor.server.application.install
+import io.ktor.server.auth.Authentication
+import io.ktor.server.auth.jwt.JWTPrincipal
+import io.ktor.server.auth.jwt.jwt
+import io.ktor.server.plugins.di.dependencies
 
 fun Application.configureSecurity() {
     val jwtRealm = "KockaKölcsönző Zárt Rendszer"

@@ -1,11 +1,14 @@
 package com.besa.shelflife.core.data.idempotency
 
 import com.besa.shelflife.core.routing.dto.response.ErrorResponse
-import io.ktor.http.*
-import io.ktor.server.application.*
-import io.ktor.server.request.*
-import io.ktor.server.response.*
-import io.ktor.server.routing.*
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCall
+import io.ktor.server.request.header
+import io.ktor.server.response.header
+import io.ktor.server.response.respond
+import io.ktor.server.response.respondText
+import io.ktor.server.routing.RoutingContext
 import kotlinx.serialization.json.Json
 import java.security.MessageDigest
 import java.time.Instant

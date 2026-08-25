@@ -1,9 +1,10 @@
 package com.besa.shelflife.core.modules.plugin
 
-import io.ktor.http.*
-import io.ktor.server.application.*
-import io.ktor.server.plugins.callid.*
-import java.util.*
+import io.ktor.http.HttpHeaders
+import io.ktor.server.application.Application
+import io.ktor.server.application.install
+import io.ktor.server.plugins.callid.CallId
+import java.util.UUID
 
 fun Application.configureCallId() {
     install(CallId) {

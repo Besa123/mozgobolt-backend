@@ -1,6 +1,7 @@
 package com.besa.shelflife.core.routing
 
-import io.ktor.server.routing.*
+import io.ktor.server.routing.Route
+import io.ktor.server.routing.route
 
 /**
  * Defines a versioned API route group.
