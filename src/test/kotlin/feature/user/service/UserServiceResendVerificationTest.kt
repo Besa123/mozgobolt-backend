@@ -1,6 +1,6 @@
-package com.besa.shelflife.feature.user.service
+package com.shelflife.feature.user.service
 
-import com.besa.shelflife.feature.user.domain.model.VerifyEmailError
+import com.shelflife.feature.user.domain.model.VerifyEmailError
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test

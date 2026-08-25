@@ -1,4 +1,4 @@
-package com.besa.shelflife.feature.health.routing
+package com.shelflife.feature.health.routing
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond

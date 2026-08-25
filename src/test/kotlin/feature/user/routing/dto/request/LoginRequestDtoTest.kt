@@ -1,4 +1,4 @@
-package com.besa.shelflife.feature.user.routing.dto.request
+package com.shelflife.feature.user.routing.dto.request
 
 import kotlin.test.Test
 import kotlin.test.assertTrue

@@ -1,8 +1,8 @@
-package com.besa.shelflife.core.utility.functions
+package com.shelflife.core.utility.functions
 
-import com.besa.shelflife.core.domain.security.AuthConstants.PROTECT_ENDPOINT_JWT
-import com.besa.shelflife.core.modules.plugin.API_LIMIT
-import com.besa.shelflife.core.modules.plugin.AUTH_LIMIT
+import com.shelflife.core.domain.security.AuthConstants.PROTECT_ENDPOINT_JWT
+import com.shelflife.core.modules.plugin.API_LIMIT
+import com.shelflife.core.modules.plugin.AUTH_LIMIT
 import io.ktor.server.auth.authenticate
 import io.ktor.server.plugins.ratelimit.RateLimitName
 import io.ktor.server.plugins.ratelimit.rateLimit

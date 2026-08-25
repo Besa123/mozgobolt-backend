@@ -1,4 +1,4 @@
-package com.besa.shelflife.core.data.validator
+package com.shelflife.core.data.validator
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

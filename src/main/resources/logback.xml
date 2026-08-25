@@ -82,14 +82,14 @@
 
     <if condition='p("ENVIRONMENT").equals("production")'>
         <then>
-            <logger name="com.besa.shelflife" level="INFO"/>
+            <logger name="com.shelflife" level="INFO"/>
             <root level="WARN">
                 <appender-ref ref="ASYNC_JSON_FILE" />
                 <appender-ref ref="ASYNC_ERROR_FILE" />
             </root>
         </then>
         <else>
-            <logger name="com.besa.shelflife" level="DEBUG"/>
+            <logger name="com.shelflife" level="DEBUG"/>
             <root level="INFO">
                 <appender-ref ref="CONSOLE" />
                 <appender-ref ref="ASYNC_JSON_FILE" />

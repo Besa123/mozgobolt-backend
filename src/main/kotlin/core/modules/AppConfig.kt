@@ -1,4 +1,4 @@
-package com.besa.shelflife.core.modules
+package com.shelflife.core.modules
 
 import kotlinx.serialization.Serializable
 

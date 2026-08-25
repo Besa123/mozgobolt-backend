@@ -1,6 +1,6 @@
-package com.besa.shelflife.core.data.idempotency
+package com.shelflife.core.data.idempotency
 
-import com.besa.shelflife.core.routing.dto.response.ErrorResponse
+import com.shelflife.core.routing.dto.response.ErrorResponse
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall

@@ -1,4 +1,4 @@
-package com.besa.shelflife.core.data.idempotency
+package com.shelflife.core.data.idempotency
 
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.jdbc.Database

@@ -1,8 +1,8 @@
-package com.besa.shelflife.feature.user.domain
+package com.shelflife.feature.user.domain
 
-import com.besa.shelflife.feature.user.domain.model.TokenValidationResult
-import com.besa.shelflife.feature.user.domain.model.User
-import com.besa.shelflife.feature.user.domain.model.VerificationTokenRecord
+import com.shelflife.feature.user.domain.model.TokenValidationResult
+import com.shelflife.feature.user.domain.model.User
+import com.shelflife.feature.user.domain.model.VerificationTokenRecord
 import java.time.Instant
 
 interface UserRepository {

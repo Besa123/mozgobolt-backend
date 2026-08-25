@@ -1,6 +1,6 @@
-package com.besa.shelflife.feature.user.service
+package com.shelflife.feature.user.service
 
-import com.besa.shelflife.feature.user.domain.model.RegisterError
+import com.shelflife.feature.user.domain.model.RegisterError
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test

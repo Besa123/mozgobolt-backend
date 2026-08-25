@@ -1,6 +1,6 @@
-package com.besa.shelflife.feature.user.routing.dto.request
+package com.shelflife.feature.user.routing.dto.request
 
-import com.besa.shelflife.core.domain.validation.ValidatedRequest
+import com.shelflife.core.domain.validation.ValidatedRequest
 import kotlinx.serialization.Serializable
 
 @Serializable

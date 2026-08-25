@@ -1,4 +1,4 @@
-package com.besa.shelflife.core.routing
+package com.shelflife.core.routing
 
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.route

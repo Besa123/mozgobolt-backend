@@ -1,8 +1,8 @@
-package com.besa.shelflife.core.data.security
+package com.shelflife.core.data.security
 
 import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
-import com.besa.shelflife.core.domain.security.AuthConstants
+import com.shelflife.core.domain.security.AuthConstants
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import kotlin.test.Test

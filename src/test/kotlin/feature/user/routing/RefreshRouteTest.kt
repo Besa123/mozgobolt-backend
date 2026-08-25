@@ -1,9 +1,9 @@
-package com.besa.shelflife.feature.user.routing
+package com.shelflife.feature.user.routing
 
-import com.besa.shelflife.core.configureTestEnvironment
-import com.besa.shelflife.core.domain.AppResult
-import com.besa.shelflife.feature.user.domain.model.AuthResponse
-import com.besa.shelflife.feature.user.domain.model.RefreshError
+import com.shelflife.core.configureTestEnvironment
+import com.shelflife.core.domain.AppResult
+import com.shelflife.feature.user.domain.model.AuthResponse
+import com.shelflife.feature.user.domain.model.RefreshError
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication

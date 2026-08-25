@@ -1,11 +1,11 @@
-package com.besa.shelflife.core.data.security
+package com.shelflife.core.data.security
 
 import com.auth0.jwt.JWT
 import com.auth0.jwt.JWTVerifier
 import com.auth0.jwt.algorithms.Algorithm
 import com.auth0.jwt.exceptions.JWTVerificationException
-import com.besa.shelflife.core.domain.security.AuthConstants
-import com.besa.shelflife.core.domain.security.TokenManager
+import com.shelflife.core.domain.security.AuthConstants
+import com.shelflife.core.domain.security.TokenManager
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID

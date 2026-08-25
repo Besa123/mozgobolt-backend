@@ -1,6 +1,6 @@
-package com.besa.shelflife.core.modules.plugin
+package com.shelflife.core.modules.plugin
 
-import com.besa.shelflife.core.domain.validation.ValidatedRequest
+import com.shelflife.core.domain.validation.ValidatedRequest
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.contentLength
 import io.ktor.server.request.receive

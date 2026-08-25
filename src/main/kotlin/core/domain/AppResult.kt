@@ -1,4 +1,4 @@
-package com.besa.shelflife.core.domain
+package com.shelflife.core.domain
 
 sealed class AppResult<out T, out E> {
     data class Success<out T>(

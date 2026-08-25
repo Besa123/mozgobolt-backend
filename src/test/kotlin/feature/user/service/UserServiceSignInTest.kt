@@ -1,6 +1,6 @@
-package com.besa.shelflife.feature.user.service
+package com.shelflife.feature.user.service
 
-import com.besa.shelflife.feature.user.domain.model.LoginError
+import com.shelflife.feature.user.domain.model.LoginError
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals

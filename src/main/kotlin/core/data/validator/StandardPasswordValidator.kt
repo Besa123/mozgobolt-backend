@@ -1,6 +1,6 @@
-package com.besa.shelflife.core.data.validator
+package com.shelflife.core.data.validator
 
-import com.besa.shelflife.core.domain.validation.PasswordValidator
+import com.shelflife.core.domain.validation.PasswordValidator
 
 class StandardPasswordValidator : PasswordValidator {
     override fun isValid(password: String): Boolean {

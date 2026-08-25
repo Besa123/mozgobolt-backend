@@ -1,4 +1,4 @@
-package com.besa.shelflife.core.data.idempotency
+package com.shelflife.core.data.idempotency
 
 import java.time.Instant
 

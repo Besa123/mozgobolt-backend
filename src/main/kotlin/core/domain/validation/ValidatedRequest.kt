@@ -1,4 +1,4 @@
-package com.besa.shelflife.core.domain.validation
+package com.shelflife.core.domain.validation
 
 interface ValidatedRequest {
     fun validate(): List<String>

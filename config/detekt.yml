@@ -341,7 +341,7 @@ naming:
     excludeClassPattern: '$^'
   InvalidPackageDeclaration:
     active: true
-    rootPackage: 'com.besa.shelflife'
+    rootPackage: 'com.shelflife'
     requireRootInDeclaration: false
   LambdaParameterNaming:
     active: true              # ← off by default, enforces readable lambda param names

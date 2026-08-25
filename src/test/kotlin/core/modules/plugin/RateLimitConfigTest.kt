@@ -1,9 +1,9 @@
-package com.besa.shelflife.core.modules.plugin
+package com.shelflife.core.modules.plugin
 
-import com.besa.shelflife.core.configureTestEnvironment
-import com.besa.shelflife.core.installTestModules
-import com.besa.shelflife.core.testAccessTokenFor
-import com.besa.shelflife.core.utility.functions.protectedApi
+import com.shelflife.core.configureTestEnvironment
+import com.shelflife.core.installTestModules
+import com.shelflife.core.testAccessTokenFor
+import com.shelflife.core.utility.functions.protectedApi
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
 import io.ktor.client.request.post

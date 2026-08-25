@@ -1,4 +1,4 @@
-package com.besa.shelflife
+package com.shelflife
 
 import io.ktor.client.request.get
 import io.ktor.http.HttpStatusCode

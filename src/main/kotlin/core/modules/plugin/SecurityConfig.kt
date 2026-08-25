@@ -1,11 +1,11 @@
-package com.besa.shelflife.core.modules.plugin
+package com.shelflife.core.modules.plugin
 
-import com.besa.shelflife.core.data.security.JwtTokenManager
-import com.besa.shelflife.core.domain.security.AuthConstants.CLAIM_TOKEN_TYPE
-import com.besa.shelflife.core.domain.security.AuthConstants.CLAIM_USER_ID
-import com.besa.shelflife.core.domain.security.AuthConstants.PROTECT_ENDPOINT_JWT
-import com.besa.shelflife.core.domain.security.AuthConstants.TOKEN_TYPE_ACCESS
-import com.besa.shelflife.core.domain.security.TokenManager
+import com.shelflife.core.data.security.JwtTokenManager
+import com.shelflife.core.domain.security.AuthConstants.CLAIM_TOKEN_TYPE
+import com.shelflife.core.domain.security.AuthConstants.CLAIM_USER_ID
+import com.shelflife.core.domain.security.AuthConstants.PROTECT_ENDPOINT_JWT
+import com.shelflife.core.domain.security.AuthConstants.TOKEN_TYPE_ACCESS
+import com.shelflife.core.domain.security.TokenManager
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
@@ -16,7 +16,7 @@ import io.ktor.server.plugins.di.dependencies
 import io.ktor.server.response.respond
 
 fun Application.configureSecurity() {
-    val jwtRealm = "KockaKölcsönző Zárt Rendszer"
+    val jwtRealm = "ShelfLife"
     val tokenManager: TokenManager by dependencies
     val jwtTokenManager = tokenManager as JwtTokenManager
 

@@ -1,6 +1,6 @@
-package com.besa.shelflife.core.modules.plugin
+package com.shelflife.core.modules.plugin
 
-import com.besa.shelflife.core.domain.security.AuthConstants.CLAIM_USER_ID
+import com.shelflife.core.domain.security.AuthConstants.CLAIM_USER_ID
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.Application
 import io.ktor.server.application.install

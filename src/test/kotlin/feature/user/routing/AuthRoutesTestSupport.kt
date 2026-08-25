@@ -1,10 +1,10 @@
-package com.besa.shelflife.feature.user.routing
+package com.shelflife.feature.user.routing
 
-import com.besa.shelflife.core.data.idempotency.FakeIdempotencyStore
-import com.besa.shelflife.core.data.idempotency.IdempotencyStore
-import com.besa.shelflife.core.installTestModules
-import com.besa.shelflife.core.routing.apiV1
-import com.besa.shelflife.core.routing.dto.response.ErrorResponse
+import com.shelflife.core.data.idempotency.FakeIdempotencyStore
+import com.shelflife.core.data.idempotency.IdempotencyStore
+import com.shelflife.core.installTestModules
+import com.shelflife.core.routing.apiV1
+import com.shelflife.core.routing.dto.response.ErrorResponse
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody

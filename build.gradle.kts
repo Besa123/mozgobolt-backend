@@ -10,7 +10,7 @@ plugins {
     jacoco
 }
 
-group = "com.besa.shelflife"
+group = "com.shelflife"
 version = "1.0.0-SNAPSHOT"
 
 application {

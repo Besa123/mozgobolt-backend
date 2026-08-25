@@ -1,4 +1,4 @@
-package com.besa.shelflife.core.utility.functions
+package com.shelflife.core.utility.functions
 
 import kotlin.coroutines.cancellation.CancellationException
 

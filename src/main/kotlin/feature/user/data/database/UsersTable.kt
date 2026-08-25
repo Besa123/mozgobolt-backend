@@ -1,4 +1,4 @@
-package com.besa.shelflife.feature.user.data.database
+package com.shelflife.feature.user.data.database
 
 import org.jetbrains.exposed.v1.core.dao.id.EntityID
 import org.jetbrains.exposed.v1.core.dao.id.IntIdTable

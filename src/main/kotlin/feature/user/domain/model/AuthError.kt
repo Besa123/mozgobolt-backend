@@ -1,4 +1,4 @@
-package com.besa.shelflife.feature.user.domain.model
+package com.shelflife.feature.user.domain.model
 
 enum class RegisterError {
     ALREADY_EXISTS,

@@ -1,7 +1,7 @@
-package com.besa.shelflife.feature.user.data.mapper
+package com.shelflife.feature.user.data.mapper
 
-import com.besa.shelflife.feature.user.data.database.UserEntity
-import com.besa.shelflife.feature.user.domain.model.User
+import com.shelflife.feature.user.data.database.UserEntity
+import com.shelflife.feature.user.domain.model.User
 
 fun UserEntity.toUser() =
     User(

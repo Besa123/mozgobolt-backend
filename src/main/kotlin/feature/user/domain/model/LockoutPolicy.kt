@@ -1,4 +1,4 @@
-package com.besa.shelflife.feature.user.domain.model
+package com.shelflife.feature.user.domain.model
 
 import java.time.Duration
 import java.time.Instant

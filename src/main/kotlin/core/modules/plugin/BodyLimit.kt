@@ -1,4 +1,4 @@
-package com.besa.shelflife.core.modules.plugin
+package com.shelflife.core.modules.plugin
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application

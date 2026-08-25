@@ -1,4 +1,4 @@
-package com.besa.shelflife.core.domain.security
+package com.shelflife.core.domain.security
 
 import java.security.SecureRandom
 import java.util.Base64

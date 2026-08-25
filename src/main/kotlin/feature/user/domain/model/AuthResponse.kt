@@ -1,4 +1,4 @@
-package com.besa.shelflife.feature.user.domain.model
+package com.shelflife.feature.user.domain.model
 
 data class AuthResponse(
     val accessToken: String,

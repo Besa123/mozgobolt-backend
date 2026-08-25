@@ -1,4 +1,4 @@
-package com.besa.shelflife.core.utility.functions
+package com.shelflife.core.utility.functions
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay

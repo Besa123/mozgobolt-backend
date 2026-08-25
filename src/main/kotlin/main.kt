@@ -1,4 +1,4 @@
-package com.besa.shelflife
+package com.shelflife
 
 import io.github.cdimascio.dotenv.dotenv
 import io.ktor.server.netty.EngineMain

@@ -1,9 +1,9 @@
-package com.besa.shelflife.core.data.security
+package com.shelflife.core.data.security
 
-import com.besa.shelflife.core.domain.security.PasswordService
 import com.password4j.Argon2Function
 import com.password4j.Password
 import com.password4j.types.Argon2
+import com.shelflife.core.domain.security.PasswordService
 import io.github.oshai.kotlinlogging.KotlinLogging
 
 private val logger = KotlinLogging.logger {}

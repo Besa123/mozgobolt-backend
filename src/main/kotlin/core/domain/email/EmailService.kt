@@ -1,4 +1,4 @@
-package com.besa.shelflife.core.domain.email
+package com.shelflife.core.domain.email
 
 interface EmailService {
     suspend fun sendVerificationEmail(

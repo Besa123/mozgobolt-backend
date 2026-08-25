@@ -1,4 +1,4 @@
-package com.besa.shelflife.core.data.security
+package com.shelflife.core.data.security
 
 import kotlin.test.Test
 import kotlin.test.assertFailsWith

@@ -1,4 +1,4 @@
-package com.besa.shelflife.feature.user.routing
+package com.shelflife.feature.user.routing
 
 object AuthPaths {
     private const val BASE = "/api/v1/auth"

@@ -1,11 +1,11 @@
-package com.besa.shelflife.feature.user.routing
+package com.shelflife.feature.user.routing
 
-import com.besa.shelflife.core.TEST_JWT_AUDIENCE
-import com.besa.shelflife.core.TEST_JWT_ISSUER
-import com.besa.shelflife.core.TEST_JWT_SECRET
-import com.besa.shelflife.core.configureTestEnvironment
-import com.besa.shelflife.core.data.security.JwtTokenManager
-import com.besa.shelflife.core.testAccessTokenFor
+import com.shelflife.core.TEST_JWT_AUDIENCE
+import com.shelflife.core.TEST_JWT_ISSUER
+import com.shelflife.core.TEST_JWT_SECRET
+import com.shelflife.core.configureTestEnvironment
+import com.shelflife.core.data.security.JwtTokenManager
+import com.shelflife.core.testAccessTokenFor
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.header
 import io.ktor.client.request.post

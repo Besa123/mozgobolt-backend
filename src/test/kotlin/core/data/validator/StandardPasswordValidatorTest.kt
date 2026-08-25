@@ -1,6 +1,6 @@
-package com.besa.shelflife.core.data.validator
+package com.shelflife.core.data.validator
 
-import com.besa.shelflife.core.data.validator.StandardPasswordValidator.Companion.MAX_PASSWORD_LENGTH
+import com.shelflife.core.data.validator.StandardPasswordValidator.Companion.MAX_PASSWORD_LENGTH
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue

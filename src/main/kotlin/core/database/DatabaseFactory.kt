@@ -1,4 +1,4 @@
-package com.besa.shelflife.core.database
+package com.shelflife.core.database
 
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource

@@ -1,6 +1,6 @@
-package com.besa.shelflife.core.data.validator
+package com.shelflife.core.data.validator
 
-import com.besa.shelflife.core.domain.validation.EmailValidator
+import com.shelflife.core.domain.validation.EmailValidator
 
 class StandardEmailValidator : EmailValidator {
     override fun normalize(email: String): String = email.trim().lowercase()

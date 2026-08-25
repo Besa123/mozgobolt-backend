@@ -1,8 +1,8 @@
-package com.besa.shelflife.feature.user.routing
+package com.shelflife.feature.user.routing
 
-import com.besa.shelflife.core.configureTestEnvironment
-import com.besa.shelflife.core.domain.AppResult
-import com.besa.shelflife.feature.user.domain.model.RegisterError
+import com.shelflife.core.configureTestEnvironment
+import com.shelflife.core.domain.AppResult
+import com.shelflife.feature.user.domain.model.RegisterError
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody

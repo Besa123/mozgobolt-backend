@@ -1,9 +1,9 @@
-package com.besa.shelflife.feature.user.routing
+package com.shelflife.feature.user.routing
 
-import com.besa.shelflife.core.configureTestEnvironment
-import com.besa.shelflife.core.domain.AppResult
-import com.besa.shelflife.core.testAccessTokenFor
-import com.besa.shelflife.feature.user.domain.model.VerifyEmailError
+import com.shelflife.core.configureTestEnvironment
+import com.shelflife.core.domain.AppResult
+import com.shelflife.core.testAccessTokenFor
+import com.shelflife.feature.user.domain.model.VerifyEmailError
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.post
 import io.ktor.http.HttpStatusCode
