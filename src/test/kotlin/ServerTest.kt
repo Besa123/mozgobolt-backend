@@ -25,10 +25,6 @@ class ServerTest {
                 config = ApplicationConfig("application.conf")
             }
 
-            application {
-                rootModule()
-            }
-
             assertEquals(HttpStatusCode.OK, client.get("/").status)
         }
 }
