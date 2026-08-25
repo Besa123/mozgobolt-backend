@@ -1,0 +1,28 @@
+version: 2
+updates:
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    groups:
+      ktor:
+        patterns:
+          - "io.ktor:*"
+      kotlin:
+        patterns:
+          - "org.jetbrains.kotlin:*"
+          - "org.jetbrains.kotlin.*"
+    labels:
+      - "dependencies"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "ci"

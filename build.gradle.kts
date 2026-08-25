@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ktlint)
     alias(libs.plugins.detekt)
+    jacoco
 }
 
 group = "com.besa.shelflife"
@@ -59,6 +60,23 @@ tasks.withType<Detekt>().configureEach {
 
 tasks.withType<io.gitlab.arturbosch.detekt.DetektCreateBaselineTask>().configureEach {
     jvmTarget = "21"
+}
+
+jacoco {
+    toolVersion = "0.8.13"
+}
+
+tasks.test {
+    finalizedBy(tasks.jacocoTestReport)
+}
+
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+    reports {
+        html.required.set(true)
+        xml.required.set(true)
+        csv.required.set(false)
+    }
 }
 
 dependencies {
