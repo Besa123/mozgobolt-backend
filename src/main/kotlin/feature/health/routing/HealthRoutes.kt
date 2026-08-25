@@ -10,7 +10,7 @@ private const val STATUS_KEY = "status"
 
 fun Route.infrastructureRoutes(dataSource: DataSource) {
     get("/health") {
-        val dbHealthy = runCatching { dataSource.connection.use { it.isValid(2) } }.isSuccess
+        val dbHealthy = runCatching { dataSource.connection.use { it.isValid(2) } }.getOrDefault(false)
 
         if (dbHealthy) {
             call.respond(HttpStatusCode.OK, mapOf(STATUS_KEY to "healthy"))

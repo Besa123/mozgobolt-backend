@@ -16,6 +16,6 @@ class StandardPasswordValidator : PasswordValidator {
 
     companion object {
         private const val MIN_PASSWORD_LENGTH = 8
-        private const val MAX_PASSWORD_LENGTH = 128
+        const val MAX_PASSWORD_LENGTH = 128
     }
 }

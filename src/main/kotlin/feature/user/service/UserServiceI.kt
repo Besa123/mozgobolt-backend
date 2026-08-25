@@ -9,6 +9,7 @@ import com.besa.shelflife.core.domain.security.TokenManager
 import com.besa.shelflife.core.domain.validation.EmailValidator
 import com.besa.shelflife.core.domain.validation.PasswordValidator
 import com.besa.shelflife.core.modules.AppConfig
+import com.besa.shelflife.core.utility.functions.runSuspendCatching
 import com.besa.shelflife.feature.user.domain.UserRepository
 import com.besa.shelflife.feature.user.domain.UserService
 import com.besa.shelflife.feature.user.domain.model.AuthResponse
@@ -35,6 +36,10 @@ class UserServiceI(
     private val appConfig: AppConfig,
     private val tx: TransactionalRunner,
 ) : UserService {
+    private val dummyPasswordHash: String by lazy {
+        passwordService.hashPassword("no-such-account-timing-safety-placeholder")
+    }
+
     @Suppress("ReturnCount")
     override suspend fun createUser(
         password: String,
@@ -71,7 +76,7 @@ class UserServiceI(
                 newUser to verificationToken
             } ?: return AppResult.Error(RegisterError.ALREADY_EXISTS)
 
-        runCatching { emailService.sendVerificationEmail(result.first.email, result.second) }
+        runSuspendCatching { emailService.sendVerificationEmail(result.first.email, result.second) }
             .onFailure { logger.error(it) { "Failed to send verification email to ${result.first.email}" } }
 
         return AppResult.Success(Unit)
@@ -85,8 +90,10 @@ class UserServiceI(
 
         return tx.transactional {
             val user =
-                userRepository.findUser(normalizedEmail)
-                    ?: return@transactional AppResult.Error(LoginError.INVALID_CREDENTIALS)
+                userRepository.findUser(normalizedEmail) ?: run {
+                    passwordService.verifyPassword(password = password, hash = dummyPasswordHash)
+                    return@transactional AppResult.Error(LoginError.INVALID_CREDENTIALS)
+                }
 
             if (user.isLocked) {
                 logger.warn { "Login attempt on locked account: ${user.id}" }
@@ -226,7 +233,7 @@ class UserServiceI(
             userRepository.createVerificationToken(userId, verificationToken, expiresAt)
         }
 
-        runCatching { emailService.sendVerificationEmail(user.email, verificationToken) }
+        runSuspendCatching { emailService.sendVerificationEmail(user.email, verificationToken) }
             .onFailure { logger.error(it) { "Failed to resend verification email to ${user.email}" } }
 
         return AppResult.Success(Unit)

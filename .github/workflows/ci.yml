@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Test-only credentials for the throwaway Postgres service container below — never used outside CI.
+  DB_URL: jdbc:postgresql://localhost:5432/shelflife
+  DB_USER: shelflife
+  DB_PASSWORD: shelflife
+  JWT_SECRET: ci-only-test-secret-not-used-anywhere-real
+  JWT_ISSUER: shelflife-ci
+  JWT_AUDIENCE: shelflife-ci
+  PASSWORD_PEPPER: ci-only-test-pepper-not-used-anywhere-real
+  ENVIRONMENT: test
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: shelflife
+          POSTGRES_PASSWORD: shelflife
+          POSTGRES_DB: shelflife
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Lint (ktlint)
+        run: ./gradlew ktlintCheck --console=plain
+
+      - name: Static analysis (detekt)
+        run: ./gradlew detekt --console=plain
+
+      - name: Test
+        run: ./gradlew test --console=plain
+
+      - name: Assemble
+        run: ./gradlew assemble --console=plain
+
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: build/reports/tests/test
+          retention-days: 7
+
+      - name: Upload ktlint/detekt reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-reports
+          path: |
+            build/reports/ktlint
+            build/reports/detekt
+          retention-days: 7

@@ -13,6 +13,7 @@ janino = "3.1.12"
 resend = "4.4.0"
 ktlint-plugin = "14.2.0"
 detekt = "1.23.8"
+testcontainers = "2.0.5"
 
 [libraries]
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
@@ -32,6 +33,8 @@ password4j = { module = "com.password4j:password4j", version.ref = "password4j" 
 flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
 flyway-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
 resend = { module = "com.resend:resend-java", version.ref = "resend" }
+testcontainers-core = { module = "org.testcontainers:testcontainers", version.ref = "testcontainers" }
+testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
 
 [plugins]
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

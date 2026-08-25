@@ -4,6 +4,9 @@ import com.besa.shelflife.core.domain.security.PasswordService
 import com.password4j.Argon2Function
 import com.password4j.Password
 import com.password4j.types.Argon2
+import io.github.oshai.kotlinlogging.KotlinLogging
+
+private val logger = KotlinLogging.logger {}
 
 class PasswordServiceImpl(
     private val pepper: String,
@@ -33,10 +36,15 @@ class PasswordServiceImpl(
         hash: String,
     ): Boolean =
         password.length <= MAX_PASSWORD_LENGTH &&
-            Password
-                .check(password, hash)
-                .addPepper(pepper)
-                .with(argon2)
+            runCatching {
+                Password
+                    .check(password, hash)
+                    .addPepper(pepper)
+                    .with(argon2)
+            }.getOrElse { error ->
+                logger.warn(error) { "Password hash could not be parsed during verification" }
+                false
+            }
 
     companion object {
         const val MAX_PASSWORD_LENGTH = 128

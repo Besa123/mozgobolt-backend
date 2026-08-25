@@ -23,7 +23,7 @@ object LockoutPolicy {
     private val BASE_LOCKOUT_DURATION: Duration = Duration.ofMinutes(1)
 
     fun calculateLockUntil(failedAttempts: Int): Instant? {
-        val attemptsOverThreshold = failedAttempts - MAX_ATTEMPTS_BEFORE_LOCK + 1
+        val attemptsOverThreshold = failedAttempts.coerceAtLeast(0) - MAX_ATTEMPTS_BEFORE_LOCK + 1
 
         if (attemptsOverThreshold <= 0) return null
 
