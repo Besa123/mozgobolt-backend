@@ -1,0 +1,16 @@
+{
+    "hooks": {
+        "Stop": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "./gradlew ktlintFormat --quiet 2>/dev/null || true",
+                        "timeout": 60,
+                        "statusMessage": "Running ktlint format..."
+                    }
+                ]
+            }
+        ]
+    }
+}
