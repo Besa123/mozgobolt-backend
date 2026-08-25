@@ -7,6 +7,7 @@ import com.shelflife.core.modules.AppConfig
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.IOException
 
 private val logger = KotlinLogging.logger {}
 
@@ -38,7 +39,7 @@ class ResendEmailService(
                 @Suppress("TooGenericExceptionCaught") e: Exception,
             ) {
                 logger.error(e) { "Resend API failed for $to" }
-                throw EmailDeliveryException("Failed to send verification email to $to")
+                throw e.toEmailDeliveryException(to)
             }
         }
     }
@@ -54,6 +55,44 @@ class ResendEmailService(
         """.trimIndent()
 }
 
-class EmailDeliveryException(
+private val HTTP_STATUS_CODE_REGEX = Regex("""Failed to send email: (\d{3})""")
+private const val HTTP_TOO_MANY_REQUESTS = 429
+private const val HTTP_SERVER_ERROR_THRESHOLD = 500
+
+internal fun Exception.toEmailDeliveryException(to: String): EmailDeliveryException {
+    val statusCode =
+        HTTP_STATUS_CODE_REGEX
+            .find(message.orEmpty())
+            ?.groupValues
+            ?.get(1)
+            ?.toIntOrNull()
+
+    return when {
+        cause is IOException ->
+            TransientEmailDeliveryException("Network failure sending email to $to", this)
+
+        statusCode == HTTP_TOO_MANY_REQUESTS || (statusCode != null && statusCode >= HTTP_SERVER_ERROR_THRESHOLD) ->
+            TransientEmailDeliveryException("Resend API returned $statusCode for $to", this)
+
+        statusCode != null ->
+            PermanentEmailDeliveryException("Resend API returned $statusCode for $to", this)
+
+        else ->
+            TransientEmailDeliveryException("Failed to send verification email to $to", this)
+    }
+}
+
+sealed class EmailDeliveryException(
     message: String,
-) : RuntimeException(message)
+    cause: Throwable? = null,
+) : RuntimeException(message, cause)
+
+class TransientEmailDeliveryException(
+    message: String,
+    cause: Throwable? = null,
+) : EmailDeliveryException(message, cause)
+
+class PermanentEmailDeliveryException(
+    message: String,
+    cause: Throwable? = null,
+) : EmailDeliveryException(message, cause)

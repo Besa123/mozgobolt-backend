@@ -13,17 +13,19 @@ decisions (refresh-token rotation, results-over-exceptions, etc.).
 - **JWT** auth (access + refresh tokens, refresh-token family rotation with theft detection — see
   [ADR 0004](docs/adr/0004-refresh-token-family-rotation.md))
 - Structured JSON logging (Logback + Logstash encoder), request-correlated via call IDs
+- **Resilience4j** retry + circuit-breaker around external API calls (email today — see
+  [ADR 0005](docs/adr/0005-resilience4j-for-external-calls.md))
 - **detekt** + **ktlint** (zero-tolerance, gated in CI) + **Jacoco** coverage reporting
 
 ## Features
 
-| Area          | Description                                                                                   |
-|---------------|-----------------------------------------------------------------------------------------------|
-| Auth          | Register, login, refresh (rotating), logout, logout-all, email verification/resend            |
-| Rate limiting | Global 150 req/min baseline + tiered named limits (`AUTH_LIMIT`, `API_LIMIT`, `UPLOAD_LIMIT`) |
-| Security      | CORS, CSP/HSTS/security headers, password peppering (password4j), account lockout policy      |
-| Reliability   | Idempotency keys on mutating endpoints, request timeouts, body-size limits, graceful shutdown |
-| Observability | `/health` (DB connectivity) and `/ready` endpoints, structured logs, request correlation IDs  |
+| Area          | Description                                                                                                        |
+|---------------|--------------------------------------------------------------------------------------------------------------------|
+| Auth          | Register, login, refresh (rotating), logout, logout-all, email verification/resend                                 |
+| Rate limiting | Global 150 req/min baseline + tiered named limits (`AUTH_LIMIT`, `API_LIMIT`, `UPLOAD_LIMIT`)                      |
+| Security      | CORS, CSP/HSTS/security headers, password peppering (password4j), account lockout policy                           |
+| Reliability   | Idempotency keys, request timeouts, body-size limits, graceful shutdown, retry + circuit-breaker on external calls |
+| Observability | `/health` (DB connectivity) and `/ready` endpoints, structured logs, request correlation IDs                       |
 
 ## Getting started
 

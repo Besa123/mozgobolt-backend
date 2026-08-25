@@ -115,6 +115,9 @@ dependencies {
     implementation(libs.flyway.core)
     implementation(libs.flyway.postgresql)
     implementation(libs.resend)
+    implementation(libs.resilience4j.kotlin)
+    implementation(libs.resilience4j.retry)
+    implementation(libs.resilience4j.circuitbreaker)
 
     testImplementation(kotlin("test"))
     testImplementation(ktorLibs.server.testHost)

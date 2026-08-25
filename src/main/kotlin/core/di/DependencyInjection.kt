@@ -2,6 +2,7 @@ package com.shelflife.core.di
 
 import com.shelflife.core.data.email.LoggingEmailService
 import com.shelflife.core.data.email.ResendEmailService
+import com.shelflife.core.data.email.ResilientEmailService
 import com.shelflife.core.data.idempotency.ExposedIdempotencyStore
 import com.shelflife.core.data.idempotency.IdempotencyStore
 import com.shelflife.core.data.security.JwtTokenManager
@@ -59,11 +60,14 @@ fun Application.configureDependencyInjection() {
         }
 
         provide<EmailService> {
-            if (appConfig.email.resendApiKey.isNotBlank()) {
-                ResendEmailService(appConfig)
-            } else {
-                LoggingEmailService(appConfig)
-            }
+            val baseService =
+                if (appConfig.email.resendApiKey.isNotBlank()) {
+                    ResendEmailService(appConfig) as EmailService
+                } else {
+                    LoggingEmailService(appConfig) as EmailService
+                }
+
+            ResilientEmailService(baseService)
         }
     }
 

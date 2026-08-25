@@ -56,6 +56,8 @@ alike) and [ARCHITECTURE.md](ARCHITECTURE.md). The short version:
 - **No wildcard imports.**
 - **`runSuspendCatching`, not `runCatching`** — the latter swallows `CancellationException` and breaks coroutine
   cancellation.
+- **External API calls use Resilience4j.** Wrap third-party calls with a `withXResilience { }` helper (e.g.
+  `withEmailResilience { }`) — see `core/modules/plugin/ResilienceConfig.kt`.
 
 ## Security ground rules
 

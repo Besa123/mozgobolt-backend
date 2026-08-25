@@ -11,6 +11,7 @@ kotlin-logging = "8.0.4"
 logstash-logback-encoder = "9.0"
 janino = "3.1.12"
 resend = "4.4.0"
+resilience4j = "2.1.0"
 ktlint-plugin = "14.2.0"
 detekt = "1.23.8"
 testcontainers = "2.0.5"
@@ -33,6 +34,9 @@ password4j = { module = "com.password4j:password4j", version.ref = "password4j" 
 flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
 flyway-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
 resend = { module = "com.resend:resend-java", version.ref = "resend" }
+resilience4j-kotlin = { module = "io.github.resilience4j:resilience4j-kotlin", version.ref = "resilience4j" }
+resilience4j-retry = { module = "io.github.resilience4j:resilience4j-retry", version.ref = "resilience4j" }
+resilience4j-circuitbreaker = { module = "io.github.resilience4j:resilience4j-circuitbreaker", version.ref = "resilience4j" }
 testcontainers-core = { module = "org.testcontainers:testcontainers", version.ref = "testcontainers" }
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
 

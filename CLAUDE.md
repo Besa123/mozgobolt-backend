@@ -33,6 +33,9 @@ features follow the same structure.
   naturally idempotent or self-consistent operations
 - **`runSuspendCatching` over `runCatching`:** `runCatching` swallows `CancellationException` and breaks coroutine
   cancellation; use `runSuspendCatching` from `core/utility/functions/`
+- **External API calls use Resilience4j:** wrap with a `withXResilience { }` helper backed by a `Retry`/
+  `CircuitBreaker` pair per dependency (`core/modules/plugin/ResilienceConfig.kt`), never a hand-rolled retry loop —
+  see [ADR 0005](docs/adr/0005-resilience4j-for-external-calls.md)
 - **No wildcard imports**
 
 ## Security

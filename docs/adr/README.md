@@ -28,3 +28,4 @@ category or a change to the auth model does.
 | [0002](0002-feature-based-clean-architecture.md)           | Feature-based Clean Architecture layout              | Accepted |
 | [0003](0003-results-over-exceptions-for-business-logic.md) | `AppResult<T, E>` over exceptions for business logic | Accepted |
 | [0004](0004-refresh-token-family-rotation.md)              | Refresh-token family rotation with theft detection   | Accepted |
+| [0005](0005-resilience4j-for-external-calls.md)            | Resilience4j for external API calls                  | Accepted |

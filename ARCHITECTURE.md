@@ -109,6 +109,16 @@ Refresh tokens belong to a "family." Each use rotates the token; reuse of an alr
 and invalidates the *entire* family, not just the one token. This is deliberately not simplified to single-token
 revocation — see [docs/adr/](docs/adr/) for the reasoning once recorded.
 
+### Resilience for external calls
+
+External dependencies (currently: the Resend email API) are wrapped with retry + circuit-breaker via
+[Resilience4j](https://resilience4j.readme.io/) — see `core/modules/plugin/ResilienceConfig.kt` and
+[ADR 0005](docs/adr/0005-resilience4j-for-external-calls.md) for the full reasoning, including two easy-to-get-backwards
+details (wrapping order, and scoping retry to failures classified as transient rather than "retry on anything").
+`ResilienceRegistry` holds one `Retry` + `CircuitBreaker` pair per dependency; a `suspend fun withXResilience { }`
+wrapper (e.g. `withEmailResilience`) is the call-site API, and `ResilientEmailService` is the decorator that applies it
+to `EmailService`. New external dependencies should follow the same decorator + registry-entry shape.
+
 ## Configuration
 
 `AppConfig` (`core/modules/AppConfig.kt`) is a typed, `@Serializable` data class bound from
@@ -130,6 +140,9 @@ correlation is the current substitute. See the project's known-gaps list before 
 ## Current known gaps
 
 This document describes the architecture as built, not an aspirational end state. As of the last audit, notably missing:
-containerization (Dockerfile/compose), a CD stage, OpenAPI/Swagger documentation, a coverage gate (Jacoco reports are
-generated but not enforced), and circuit-breakers/retries around the one outbound integration (email). Don't assume any
-of these exist without checking.
+containerization (Dockerfile/compose), a CD stage, metrics (Micrometer/Prometheus), distributed tracing (OpenTelemetry),
+and a coverage gate (Jacoco reports are generated but not enforced). OpenAPI/Swagger documentation and
+retry/circuit-breaker resilience for external calls (email) have since been added — see
+`src/main/resources/openapi/documentation.json` and `core/modules/plugin/ResilienceConfig.kt` respectively. Don't assume
+anything not listed here exists without checking; this list itself may drift, so verify against the code for anything
+load-bearing.
