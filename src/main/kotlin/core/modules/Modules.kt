@@ -13,6 +13,7 @@ import com.shelflife.core.modules.plugin.configureRequestTimeout
 import com.shelflife.core.modules.plugin.configureRequestValidation
 import com.shelflife.core.modules.plugin.configureSecurity
 import com.shelflife.core.modules.plugin.configureStatusPages
+import com.shelflife.core.modules.plugin.configureSwagger
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.plugins.autohead.AutoHeadResponse
@@ -23,6 +24,7 @@ fun Application.configureModules() {
     install(AutoHeadResponse)
     configureDefaultHeaders()
     configureForwardedHeaders()
+    configureSwagger()
     configureGlobalBodyLimit()
     configureRequestTimeout()
     configureSecurity()

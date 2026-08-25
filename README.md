@@ -61,19 +61,16 @@ All business routes are versioned under `/api/v1`
 (see [Request lifecycle in ARCHITECTURE.md](ARCHITECTURE.md#request-lifecycle)); breaking changes get an `/api/v2` added
 alongside rather than replacing v1.
 
-| Method | Path                               | Notes                                     |
-|--------|------------------------------------|-------------------------------------------|
-| GET    | `/health`                          | Checks DB connectivity                    |
-| GET    | `/ready`                           | Readiness probe                           |
-| POST   | `/api/v1/auth/register`            | Rate-limited (`AUTH_LIMIT`)               |
-| POST   | `/api/v1/auth/login`               | Rate-limited (`AUTH_LIMIT`)               |
-| POST   | `/api/v1/auth/refresh`             | Rotates the refresh token                 |
-| GET    | `/api/v1/auth/verify-email`        | Consumes an email-verification token      |
-| POST   | `/api/v1/auth/logout`              | Authenticated                             |
-| POST   | `/api/v1/auth/logout-all`          | Authenticated — invalidates every session |
-| POST   | `/api/v1/auth/resend-verification` | Authenticated                             |
+**Interactive documentation:** Start the server and visit `http://localhost:8080/swagger-ui` for an interactive Swagger
+UI with the full OpenAPI spec (`src/main/resources/openapi/documentation.json`).
 
-There's no generated OpenAPI/Swagger spec yet — this table is hand-maintained until that gap is closed.
+Current endpoints:
+
+- Infrastructure: `/health`, `/ready`
+- Authentication: register, login, logout, refresh tokens, email verification, resend verification
+
+To add or update an endpoint, edit both the route handler and the OpenAPI spec. See the spec file for current
+request/response schemas and rate-limit tiers.
 
 ## Contributing
 

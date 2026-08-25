@@ -69,6 +69,9 @@ secrets come from `AppConfig`/env only, and every new endpoint needs a deliberat
 - Keep commits scoped to one logical change; write the message in the imperative ("Add X", not "Added X").
 - If a change touches an existing architectural decision, add or update an ADR in `docs/adr/` rather than letting the
   rationale live only in the PR description.
+- **API changes must include OpenAPI spec updates.** Edit `src/main/resources/openapi/documentation.json` to reflect new
+  endpoints or changed request/response schemas. The OpenAPI spec is the contract; keeping it in sync ensures the
+  Swagger UI (`/swagger-ui`) stays accurate.
 - Update `CHANGELOG.md` for any user-visible or API-visible change (once it exists — see the project's open gaps if it
   doesn't yet).
 
