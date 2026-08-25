@@ -5,9 +5,10 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class LogoutRequestDto(
-    val refreshToken: String
+    val refreshToken: String,
 ) : ValidatedRequest {
-    override fun validate() = buildList {
-        if (refreshToken.isBlank()) add("Refresh token is required")
-    }
+    override fun validate() =
+        buildList {
+            if (refreshToken.isBlank()) add("Refresh token is required")
+        }
 }

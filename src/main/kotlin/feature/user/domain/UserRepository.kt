@@ -6,13 +6,9 @@ import com.besa.shelflife.feature.user.domain.model.VerificationTokenRecord
 import java.time.Instant
 
 interface UserRepository {
-    suspend fun findUser(
-        email: String,
-    ): User?
+    suspend fun findUser(email: String): User?
 
-    suspend fun findUserById(
-        userId: Int
-    ): User?
+    suspend fun findUserById(userId: Int): User?
 
     suspend fun createUser(
         email: String,
@@ -28,10 +24,13 @@ interface UserRepository {
 
     suspend fun validateAndRevokeRefreshToken(
         userId: Int,
-        token: String
+        token: String,
     ): TokenValidationResult
 
-    suspend fun recordFailedLogin(userId: Int, lockUntil: Instant?)
+    suspend fun recordFailedLogin(
+        userId: Int,
+        lockUntil: Instant?,
+    )
 
     suspend fun resetFailedLogins(userId: Int)
 
@@ -41,7 +40,11 @@ interface UserRepository {
 
     suspend fun revokeSpecificRefreshToken(token: String)
 
-    suspend fun createVerificationToken(userId: Int, token: String, expiresAt: Instant)
+    suspend fun createVerificationToken(
+        userId: Int,
+        token: String,
+        expiresAt: Instant,
+    )
 
     suspend fun findVerificationToken(token: String): VerificationTokenRecord?
 

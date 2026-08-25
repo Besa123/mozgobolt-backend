@@ -11,7 +11,6 @@ import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
 import io.ktor.server.plugins.di.*
-import io.ktor.server.response.*
 
 fun Application.configureSecurity() {
     val jwtRealm = "KockaKölcsönző Zárt Rendszer"

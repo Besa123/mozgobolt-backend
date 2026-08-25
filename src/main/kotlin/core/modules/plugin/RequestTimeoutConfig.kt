@@ -12,11 +12,13 @@ import kotlin.time.Duration.Companion.seconds
 
 private val logger = KotlinLogging.logger {}
 
-enum class RequestTimeout(val duration: Duration) {
-    FAST(10.seconds),       // Auth, simple lookups
-    STANDARD(30.seconds),   // Normal CRUD
-    SLOW(60.seconds),       // Complex queries, reports
-    UPLOAD(120.seconds),    // File uploads, heavy processing
+enum class RequestTimeout(
+    val duration: Duration,
+) {
+    FAST(10.seconds), // Auth, simple lookups
+    STANDARD(30.seconds), // Normal CRUD
+    SLOW(60.seconds), // Complex queries, reports
+    UPLOAD(120.seconds), // File uploads, heavy processing
 }
 
 private val GLOBAL_SAFETY_NET = 180.seconds
@@ -30,10 +32,11 @@ fun Application.configureRequestTimeout() {
         } catch (e: TimeoutCancellationException) {
             logger.error { "Request exceeded safety net: ${call.request.local.method.value} ${call.request.local.uri}" }
             call.respond(
-                HttpStatusCode.GatewayTimeout, ErrorResponse(
+                HttpStatusCode.GatewayTimeout,
+                ErrorResponse(
                     error = "REQUEST_TIMEOUT",
-                    message = "Request exceeded the global safety net timeout"
-                )
+                    message = "Request exceeded the global safety net timeout",
+                ),
             )
         }
     }

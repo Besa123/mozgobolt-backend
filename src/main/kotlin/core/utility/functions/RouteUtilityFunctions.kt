@@ -9,7 +9,7 @@ import io.ktor.server.routing.*
 
 fun Route.protectedApi(
     limitName: String = API_LIMIT,
-    build: Route.() -> Unit
+    build: Route.() -> Unit,
 ) {
     authenticate(PROTECT_ENDPOINT_JWT) {
         rateLimit(RateLimitName(limitName)) {
@@ -20,7 +20,7 @@ fun Route.protectedApi(
 
 fun Route.publicRateLimitedApi(
     limitName: String = AUTH_LIMIT,
-    build: Route.() -> Unit
+    build: Route.() -> Unit,
 ) {
     rateLimit(RateLimitName(limitName)) {
         build()

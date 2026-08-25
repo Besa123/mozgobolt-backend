@@ -14,7 +14,7 @@ fun Application.configureDefaultHeaders() {
         header("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
         header(
             "Content-Security-Policy",
-            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
         )
 
         header("Cross-Origin-Opener-Policy", "same-origin")

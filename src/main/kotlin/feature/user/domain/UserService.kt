@@ -15,15 +15,11 @@ interface UserService {
         email: String,
     ): AppResult<AuthResponse, LoginError>
 
-    suspend fun logoutUser(
-        refreshToken: String
-    )
+    suspend fun logoutUser(refreshToken: String)
 
     suspend fun logoutAllSessions(userId: Int)
 
-    suspend fun refreshToken(
-        oldRefreshToken: String,
-    ): AppResult<AuthResponse, RefreshError>
+    suspend fun refreshToken(oldRefreshToken: String): AppResult<AuthResponse, RefreshError>
 
     suspend fun verifyEmail(token: String): AppResult<Unit, VerifyEmailError>
 

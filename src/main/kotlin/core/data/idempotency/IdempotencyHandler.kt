@@ -23,13 +23,14 @@ data class IdempotentResult(
 suspend fun RoutingContext.idempotent(
     store: IdempotencyStore,
     requestFingerprint: String = "",
-    handler: suspend RoutingContext.() -> IdempotentResult
+    handler: suspend RoutingContext.() -> IdempotentResult,
 ) {
-    val key = call.extractIdempotencyKey() ?: run {
-        val result = handler()
-        call.respondText(result.body, ContentType.Application.Json, result.statusCode)
-        return
-    }
+    val key =
+        call.extractIdempotencyKey() ?: run {
+            val result = handler()
+            call.respondText(result.body, ContentType.Application.Json, result.statusCode)
+            return
+        }
 
     val fingerprintHash = hashFingerprint(requestFingerprint)
 
@@ -49,17 +50,24 @@ suspend fun RoutingContext.idempotent(
     }
 }
 
-inline fun <reified T> idempotentResult(statusCode: HttpStatusCode, body: T): IdempotentResult {
-    return IdempotentResult(statusCode, Json.encodeToString(body))
-}
-
+inline fun <reified T> idempotentResult(
+    statusCode: HttpStatusCode,
+    body: T,
+): IdempotentResult = IdempotentResult(statusCode, Json.encodeToString(body))
 
 private sealed interface KeyState {
-    data class Completed(val statusCode: HttpStatusCode, val body: String) : KeyState
-    data class Rejected(val statusCode: HttpStatusCode, val error: String) : KeyState
+    data class Completed(
+        val statusCode: HttpStatusCode,
+        val body: String,
+    ) : KeyState
+
+    data class Rejected(
+        val statusCode: HttpStatusCode,
+        val error: String,
+    ) : KeyState
+
     data object Available : KeyState
 }
-
 
 private fun ApplicationCall.extractIdempotencyKey(): String? {
     val key = request.header(IDEMPOTENCY_KEY_HEADER)
@@ -69,7 +77,7 @@ private fun ApplicationCall.extractIdempotencyKey(): String? {
 private suspend fun lookupKey(
     store: IdempotencyStore,
     key: String,
-    fingerprintHash: String
+    fingerprintHash: String,
 ): KeyState {
     if (key.length > MAX_KEY_LENGTH || !key.matches(KEY_PATTERN)) {
         return KeyState.Rejected(HttpStatusCode.BadRequest, "INVALID_IDEMPOTENCY_KEY")
@@ -81,19 +89,20 @@ private suspend fun lookupKey(
         return KeyState.Rejected(HttpStatusCode.UnprocessableEntity, "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD")
     }
 
-    val statusCode = existing.statusCode
-        ?: return handleLockedKey(store, key, existing.createdAt)
+    val statusCode =
+        existing.statusCode
+            ?: return handleLockedKey(store, key, existing.createdAt)
 
     return KeyState.Completed(
         statusCode = HttpStatusCode.fromValue(statusCode),
-        body = existing.responseBody
+        body = existing.responseBody,
     )
 }
 
 private suspend fun handleLockedKey(
     store: IdempotencyStore,
     key: String,
-    createdAt: Instant
+    createdAt: Instant,
 ): KeyState {
     val isZombie = createdAt.isBefore(Instant.now().minusSeconds(LOCK_TIMEOUT_SECONDS))
 
@@ -109,7 +118,7 @@ private suspend fun RoutingContext.executeWithLock(
     store: IdempotencyStore,
     key: String,
     fingerprintHash: String,
-    handler: suspend RoutingContext.() -> IdempotentResult
+    handler: suspend RoutingContext.() -> IdempotentResult,
 ) {
     val inserted = store.acquireLock(key, fingerprintHash)
 
@@ -127,7 +136,8 @@ private suspend fun RoutingContext.executeWithLock(
 
 private fun hashFingerprint(fingerprint: String): String {
     if (fingerprint.isEmpty()) return ""
-    return MessageDigest.getInstance("SHA-256")
+    return MessageDigest
+        .getInstance("SHA-256")
         .digest(fingerprint.toByteArray())
         .toHexString()
 }

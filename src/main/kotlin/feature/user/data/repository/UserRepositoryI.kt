@@ -14,29 +14,31 @@ import java.time.Duration
 import java.time.Instant
 
 class UserRepositoryI : UserRepository {
+    override suspend fun findUser(email: String): User? =
+        UserEntity.find { UsersTable.email eq email }.firstOrNull()?.toUser()
 
-    override suspend fun findUser(email: String): User? {
-        return UserEntity.find { UsersTable.email eq email }.firstOrNull()?.toUser()
-    }
-
-    override suspend fun findUserById(userId: Int): User? {
-        return UserEntity.find { UsersTable.id eq userId }.firstOrNull()?.toUser()
-    }
+    override suspend fun findUserById(userId: Int): User? =
+        UserEntity.find { UsersTable.id eq userId }.firstOrNull()?.toUser()
 
     override suspend fun createUser(
         email: String,
         password: String,
-        name: String
+        name: String,
     ): User {
-        val entity = UserEntity.new {
-            this.email = email
-            this.name = name
-            this.passwordHash = password
-        }
+        val entity =
+            UserEntity.new {
+                this.email = email
+                this.name = name
+                this.passwordHash = password
+            }
         return entity.toUser()
     }
 
-    override suspend fun saveRefreshToken(userId: Int, token: String, familyId: String) {
+    override suspend fun saveRefreshToken(
+        userId: Int,
+        token: String,
+        familyId: String,
+    ) {
         val now = Instant.now()
         RefreshTokenEntity.new {
             this.user = UserEntity[userId]
@@ -49,13 +51,14 @@ class UserRepositoryI : UserRepository {
 
     override suspend fun validateAndRevokeRefreshToken(
         userId: Int,
-        token: String
+        token: String,
     ): TokenValidationResult {
         val now = Instant.now()
-        val tokenRow = RefreshTokenEntity
-            .find { (RefreshTokensTable.userId eq userId) and (RefreshTokensTable.token eq token) }
-            .singleOrNull()
-            ?: return TokenValidationResult.NotFound
+        val tokenRow =
+            RefreshTokenEntity
+                .find { (RefreshTokensTable.userId eq userId) and (RefreshTokensTable.token eq token) }
+                .singleOrNull()
+                ?: return TokenValidationResult.NotFound
 
         if (tokenRow.expiresAt.isBefore(now)) return TokenValidationResult.NotFound
 
@@ -63,14 +66,15 @@ class UserRepositoryI : UserRepository {
             return TokenValidationResult.AlreadyRevoked(familyId = tokenRow.familyId)
         }
 
-        val updated = RefreshTokensTable.update(
-            where = {
-                (RefreshTokensTable.id eq tokenRow.id.value) and
+        val updated =
+            RefreshTokensTable.update(
+                where = {
+                    (RefreshTokensTable.id eq tokenRow.id.value) and
                         (RefreshTokensTable.isRevoked eq false)
+                },
+            ) {
+                it[isRevoked] = true
             }
-        ) {
-            it[isRevoked] = true
-        }
 
         if (updated == 0) {
             return TokenValidationResult.AlreadyRevoked(familyId = tokenRow.familyId)
@@ -79,7 +83,10 @@ class UserRepositoryI : UserRepository {
         return TokenValidationResult.Valid(familyId = tokenRow.familyId)
     }
 
-    override suspend fun recordFailedLogin(userId: Int, lockUntil: Instant?) {
+    override suspend fun recordFailedLogin(
+        userId: Int,
+        lockUntil: Instant?,
+    ) {
         UsersTable.update(where = { UsersTable.id eq userId }) {
             it[failedLoginAttempts] = failedLoginAttempts + 1
             it[UsersTable.lockedUntil] = lockUntil
@@ -96,7 +103,7 @@ class UserRepositoryI : UserRepository {
     override suspend fun revokeTokenFamily(familyId: String) {
         if (familyId.isBlank()) return
         RefreshTokensTable.update(
-            where = { RefreshTokensTable.familyId eq familyId }
+            where = { RefreshTokensTable.familyId eq familyId },
         ) {
             it[isRevoked] = true
         }
@@ -104,19 +111,25 @@ class UserRepositoryI : UserRepository {
 
     override suspend fun revokeAllTokensForUser(userId: Int) {
         RefreshTokensTable.update(
-            where = { RefreshTokensTable.userId eq userId }) {
+            where = { RefreshTokensTable.userId eq userId },
+        ) {
             it[isRevoked] = true
         }
     }
 
     override suspend fun revokeSpecificRefreshToken(token: String) {
         RefreshTokensTable.update(
-            where = { RefreshTokensTable.token eq token }) {
+            where = { RefreshTokensTable.token eq token },
+        ) {
             it[isRevoked] = true
         }
     }
 
-    override suspend fun createVerificationToken(userId: Int, token: String, expiresAt: Instant) {
+    override suspend fun createVerificationToken(
+        userId: Int,
+        token: String,
+        expiresAt: Instant,
+    ) {
         EmailVerificationTokenEntity.new {
             this.user = UserEntity[userId]
             this.token = token
@@ -125,8 +138,8 @@ class UserRepositoryI : UserRepository {
         }
     }
 
-    override suspend fun findVerificationToken(token: String): VerificationTokenRecord? {
-        return EmailVerificationTokenEntity
+    override suspend fun findVerificationToken(token: String): VerificationTokenRecord? =
+        EmailVerificationTokenEntity
             .find { EmailVerificationTokensTable.token eq token }
             .singleOrNull()
             ?.let { entity ->
@@ -138,11 +151,10 @@ class UserRepositoryI : UserRepository {
                     used = entity.used,
                 )
             }
-    }
 
     override suspend fun markTokenUsed(tokenId: Int) {
         EmailVerificationTokensTable.update(
-            where = { EmailVerificationTokensTable.id eq tokenId }
+            where = { EmailVerificationTokensTable.id eq tokenId },
         ) {
             it[used] = true
         }
@@ -156,7 +168,7 @@ class UserRepositoryI : UserRepository {
 
     override suspend fun invalidateVerificationTokens(userId: Int) {
         EmailVerificationTokensTable.update(
-            where = { EmailVerificationTokensTable.userId eq userId }
+            where = { EmailVerificationTokensTable.userId eq userId },
         ) {
             it[used] = true
         }

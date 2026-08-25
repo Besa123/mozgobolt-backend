@@ -26,7 +26,12 @@ fun Application.configureRateLimit() {
 
             requestKey { call ->
                 val principal = call.principal<JWTPrincipal>()
-                val userId = principal?.payload?.getClaim("userId")?.asInt()?.toString()
+                val userId =
+                    principal
+                        ?.payload
+                        ?.getClaim("userId")
+                        ?.asInt()
+                        ?.toString()
                 userId ?: call.request.origin.remoteHost
             }
         }

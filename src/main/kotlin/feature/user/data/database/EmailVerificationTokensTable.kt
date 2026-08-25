@@ -8,18 +8,21 @@ import org.jetbrains.exposed.v1.dao.IntEntityClass
 import org.jetbrains.exposed.v1.javatime.timestamp
 
 object EmailVerificationTokensTable : IntIdTable("email_verification_tokens") {
-    val userId = reference(
-        name = "user_id",
-        refColumn = UsersTable.id,
-        onDelete = ReferenceOption.CASCADE
-    ).index()
+    val userId =
+        reference(
+            name = "user_id",
+            refColumn = UsersTable.id,
+            onDelete = ReferenceOption.CASCADE,
+        ).index()
     val token = varchar("token", 64).uniqueIndex()
     val expiresAt = timestamp("expires_at")
     val used = bool("used").default(false)
     val createdAt = timestamp("created_at")
 }
 
-class EmailVerificationTokenEntity(id: EntityID<Int>) : IntEntity(id) {
+class EmailVerificationTokenEntity(
+    id: EntityID<Int>,
+) : IntEntity(id) {
     companion object : IntEntityClass<EmailVerificationTokenEntity>(EmailVerificationTokensTable)
 
     var user by UserEntity referencedOn EmailVerificationTokensTable.userId

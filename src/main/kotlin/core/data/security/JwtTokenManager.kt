@@ -16,11 +16,11 @@ class JwtTokenManager(
     private val audience: String,
     private val issuer: String,
 ) : TokenManager {
-
     private val algorithm = Algorithm.HMAC256(secret)
 
     private val refreshTokenVerifier: JWTVerifier by lazy {
-        JWT.require(algorithm)
+        JWT
+            .require(algorithm)
             .withAudience(audience)
             .withIssuer(issuer)
             .withClaim(AuthConstants.CLAIM_TOKEN_TYPE, AuthConstants.TOKEN_TYPE_REFRESH)
@@ -28,7 +28,8 @@ class JwtTokenManager(
     }
 
     val accessTokenVerifier: JWTVerifier by lazy {
-        JWT.require(algorithm)
+        JWT
+            .require(algorithm)
             .withAudience(audience)
             .withIssuer(issuer)
             .withClaim(AuthConstants.CLAIM_TOKEN_TYPE, AuthConstants.TOKEN_TYPE_ACCESS)
@@ -38,7 +39,8 @@ class JwtTokenManager(
     override fun generateAccessToken(userId: Int): String {
         val expirationDate = Instant.now().plus(15, ChronoUnit.MINUTES)
 
-        return JWT.create()
+        return JWT
+            .create()
             .withAudience(audience)
             .withIssuer(issuer)
             .withJWTId(UUID.randomUUID().toString())
@@ -51,7 +53,8 @@ class JwtTokenManager(
     override fun generateRefreshToken(userId: Int): String {
         val expirationDate = Instant.now().plus(30, ChronoUnit.DAYS)
 
-        return JWT.create()
+        return JWT
+            .create()
             .withAudience(audience)
             .withIssuer(issuer)
             .withJWTId(UUID.randomUUID().toString())
@@ -61,12 +64,13 @@ class JwtTokenManager(
             .sign(algorithm)
     }
 
-    override fun verifyAndGetUserIdFromRefreshToken(token: String) = try {
-        val decodedJWT = refreshTokenVerifier.verify(token)
-        decodedJWT.getClaim(AuthConstants.CLAIM_USER_ID).asInt()
-    } catch (_: JWTVerificationException) {
-        null
-    }
+    override fun verifyAndGetUserIdFromRefreshToken(token: String) =
+        try {
+            val decodedJWT = refreshTokenVerifier.verify(token)
+            decodedJWT.getClaim(AuthConstants.CLAIM_USER_ID).asInt()
+        } catch (_: JWTVerificationException) {
+            null
+        }
 
     override fun hashTokenForStorage(token: String): String {
         val digest = MessageDigest.getInstance("SHA-256")

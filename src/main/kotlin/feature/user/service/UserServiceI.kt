@@ -29,7 +29,6 @@ class UserServiceI(
     private val appConfig: AppConfig,
     private val tx: TransactionalRunner,
 ) : UserService {
-
     override suspend fun createUser(
         password: String,
         email: String,
@@ -46,22 +45,24 @@ class UserServiceI(
 
         val hashedPassword = passwordService.hashPassword(password)
 
-        val result = tx.transactional {
-            val existing = userRepository.findUser(normalizedEmail)
-            if (existing != null) return@transactional null
+        val result =
+            tx.transactional {
+                val existing = userRepository.findUser(normalizedEmail)
+                if (existing != null) return@transactional null
 
-            val newUser = userRepository.createUser(
-                email = normalizedEmail,
-                password = hashedPassword,
-                name = name
-            )
+                val newUser =
+                    userRepository.createUser(
+                        email = normalizedEmail,
+                        password = hashedPassword,
+                        name = name,
+                    )
 
-            val verificationToken = SecureTokenGenerator.generate()
-            val expiresAt = Instant.now().plus(appConfig.email.verificationTokenExpirationHours, ChronoUnit.HOURS)
-            userRepository.createVerificationToken(newUser.id, verificationToken, expiresAt)
+                val verificationToken = SecureTokenGenerator.generate()
+                val expiresAt = Instant.now().plus(appConfig.email.verificationTokenExpirationHours, ChronoUnit.HOURS)
+                userRepository.createVerificationToken(newUser.id, verificationToken, expiresAt)
 
-            newUser to verificationToken
-        } ?: return AppResult.Error(RegisterError.ALREADY_EXISTS)
+                newUser to verificationToken
+            } ?: return AppResult.Error(RegisterError.ALREADY_EXISTS)
 
         runCatching { emailService.sendVerificationEmail(result.first.email, result.second) }
             .onFailure { logger.error(it) { "Failed to send verification email to ${result.first.email}" } }
@@ -71,23 +72,25 @@ class UserServiceI(
 
     override suspend fun signInUser(
         password: String,
-        email: String
+        email: String,
     ): AppResult<AuthResponse, LoginError> {
         val normalizedEmail = emailValidator.normalize(email)
 
         return tx.transactional {
-            val user = userRepository.findUser(normalizedEmail)
-                ?: return@transactional AppResult.Error(LoginError.INVALID_CREDENTIALS)
+            val user =
+                userRepository.findUser(normalizedEmail)
+                    ?: return@transactional AppResult.Error(LoginError.INVALID_CREDENTIALS)
 
             if (user.isLocked) {
                 logger.warn { "Login attempt on locked account: ${user.id}" }
                 return@transactional AppResult.Error(LoginError.ACCOUNT_LOCKED)
             }
 
-            val isPasswordValid = passwordService.verifyPassword(
-                password = password,
-                hash = user.passwordHash
-            )
+            val isPasswordValid =
+                passwordService.verifyPassword(
+                    password = password,
+                    hash = user.passwordHash,
+                )
 
             if (!isPasswordValid) {
                 val newAttemptCount = user.failedLoginAttempts + 1
@@ -112,28 +115,32 @@ class UserServiceI(
             userRepository.saveRefreshToken(user.id, tokenManager.hashTokenForStorage(refreshToken), familyId)
 
             AppResult.Success(
-                AuthResponse(accessToken = accessToken, refreshToken = refreshToken)
+                AuthResponse(accessToken = accessToken, refreshToken = refreshToken),
             )
         }
     }
 
-    override suspend fun logoutUser(refreshToken: String) = tx.transactional {
-        userRepository.revokeSpecificRefreshToken(token = tokenManager.hashTokenForStorage(refreshToken))
-    }
+    override suspend fun logoutUser(refreshToken: String) =
+        tx.transactional {
+            userRepository.revokeSpecificRefreshToken(token = tokenManager.hashTokenForStorage(refreshToken))
+        }
 
-    override suspend fun logoutAllSessions(userId: Int) = tx.transactional {
-        userRepository.revokeAllTokensForUser(userId)
-    }
+    override suspend fun logoutAllSessions(userId: Int) =
+        tx.transactional {
+            userRepository.revokeAllTokensForUser(userId)
+        }
 
     override suspend fun refreshToken(oldRefreshToken: String): AppResult<AuthResponse, RefreshError> {
-        val userId = tokenManager.verifyAndGetUserIdFromRefreshToken(oldRefreshToken)
-            ?: return AppResult.Error(RefreshError.INVALID_CREDENTIALS)
+        val userId =
+            tokenManager.verifyAndGetUserIdFromRefreshToken(oldRefreshToken)
+                ?: return AppResult.Error(RefreshError.INVALID_CREDENTIALS)
 
         val hashedOldToken = tokenManager.hashTokenForStorage(oldRefreshToken)
 
         return tx.transactional {
-            val user = userRepository.findUserById(userId)
-                ?: return@transactional AppResult.Error(RefreshError.INVALID_CREDENTIALS)
+            val user =
+                userRepository.findUserById(userId)
+                    ?: return@transactional AppResult.Error(RefreshError.INVALID_CREDENTIALS)
 
             when (val result = userRepository.validateAndRevokeRefreshToken(userId, hashedOldToken)) {
                 is TokenValidationResult.Valid -> {
@@ -143,18 +150,18 @@ class UserServiceI(
                     userRepository.saveRefreshToken(
                         user.id,
                         tokenManager.hashTokenForStorage(refreshToken),
-                        result.familyId
+                        result.familyId,
                     )
 
                     AppResult.Success(
-                        AuthResponse(accessToken = accessToken, refreshToken = refreshToken)
+                        AuthResponse(accessToken = accessToken, refreshToken = refreshToken),
                     )
                 }
 
                 is TokenValidationResult.AlreadyRevoked -> {
                     logger.warn {
                         "Refresh token reuse detected for user $userId, family ${result.familyId}. " +
-                                "Revoking entire token family — possible token theft."
+                            "Revoking entire token family — possible token theft."
                     }
                     userRepository.revokeTokenFamily(result.familyId)
                     AppResult.Error(RefreshError.TOKEN_REUSE_DETECTED)
@@ -169,8 +176,9 @@ class UserServiceI(
 
     override suspend fun verifyEmail(token: String): AppResult<Unit, VerifyEmailError> {
         return tx.transactional {
-            val record = userRepository.findVerificationToken(token)
-                ?: return@transactional AppResult.Error(VerifyEmailError.INVALID_TOKEN)
+            val record =
+                userRepository.findVerificationToken(token)
+                    ?: return@transactional AppResult.Error(VerifyEmailError.INVALID_TOKEN)
 
             if (record.used) {
                 return@transactional AppResult.Error(VerifyEmailError.INVALID_TOKEN)
@@ -195,8 +203,9 @@ class UserServiceI(
     }
 
     override suspend fun resendVerificationEmail(userId: Int): AppResult<Unit, VerifyEmailError> {
-        val user = tx.transactional { userRepository.findUserById(userId) }
-            ?: return AppResult.Error(VerifyEmailError.INVALID_TOKEN)
+        val user =
+            tx.transactional { userRepository.findUserById(userId) }
+                ?: return AppResult.Error(VerifyEmailError.INVALID_TOKEN)
 
         if (user.isEmailVerified) {
             return AppResult.Error(VerifyEmailError.ALREADY_VERIFIED)

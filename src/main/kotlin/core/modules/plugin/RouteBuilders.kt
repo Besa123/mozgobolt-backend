@@ -22,7 +22,7 @@ inline fun <reified T : ValidatedRequest> Route.validatedPost(
     path: String,
     limit: BodyLimit = BodyLimit.MEDIUM,
     timeout: RequestTimeout = RequestTimeout.STANDARD,
-    crossinline handler: suspend RoutingContext.(T) -> Unit
+    crossinline handler: suspend RoutingContext.(T) -> Unit,
 ) {
     post(path) {
         if (exceedsLimit(limit)) return@post
@@ -35,7 +35,7 @@ inline fun <reified T : ValidatedRequest> Route.validatedPut(
     path: String,
     limit: BodyLimit = BodyLimit.MEDIUM,
     timeout: RequestTimeout = RequestTimeout.STANDARD,
-    crossinline handler: suspend RoutingContext.(T) -> Unit
+    crossinline handler: suspend RoutingContext.(T) -> Unit,
 ) {
     put(path) {
         if (exceedsLimit(limit)) return@put
@@ -48,7 +48,7 @@ inline fun <reified T : ValidatedRequest> Route.validatedPatch(
     path: String,
     limit: BodyLimit = BodyLimit.MEDIUM,
     timeout: RequestTimeout = RequestTimeout.STANDARD,
-    crossinline handler: suspend RoutingContext.(T) -> Unit
+    crossinline handler: suspend RoutingContext.(T) -> Unit,
 ) {
     patch(path) {
         if (exceedsLimit(limit)) return@patch
@@ -61,7 +61,7 @@ fun Route.limitedPost(
     path: String,
     limit: BodyLimit = BodyLimit.TINY,
     timeout: RequestTimeout = RequestTimeout.STANDARD,
-    body: suspend RoutingContext.() -> Unit
+    body: suspend RoutingContext.() -> Unit,
 ) {
     post(path) {
         if (exceedsLimit(limit)) return@post

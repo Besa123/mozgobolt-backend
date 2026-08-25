@@ -37,10 +37,11 @@ data class AppConfig(
     data class Cors(
         val allowedHosts: String = "",
     ) {
-        fun hosts(): List<String> = allowedHosts
-            .split(",")
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
+        fun hosts(): List<String> =
+            allowedHosts
+                .split(",")
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
     }
 
     @Serializable

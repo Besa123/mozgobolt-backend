@@ -4,7 +4,6 @@ import org.jetbrains.exposed.v1.core.dao.id.EntityID
 import org.jetbrains.exposed.v1.core.dao.id.IntIdTable
 import org.jetbrains.exposed.v1.dao.IntEntity
 import org.jetbrains.exposed.v1.dao.IntEntityClass
-
 import org.jetbrains.exposed.v1.javatime.timestamp
 
 data object UsersTable : IntIdTable("users") {
@@ -16,7 +15,9 @@ data object UsersTable : IntIdTable("users") {
     val isEmailVerified = bool("is_email_verified").default(false)
 }
 
-class UserEntity(id: EntityID<Int>) : IntEntity(id) {
+class UserEntity(
+    id: EntityID<Int>,
+) : IntEntity(id) {
     companion object : IntEntityClass<UserEntity>(UsersTable)
 
     var email by UsersTable.email

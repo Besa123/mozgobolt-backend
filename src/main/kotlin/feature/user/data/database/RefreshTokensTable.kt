@@ -8,11 +8,12 @@ import org.jetbrains.exposed.v1.dao.IntEntityClass
 import org.jetbrains.exposed.v1.javatime.timestamp
 
 object RefreshTokensTable : IntIdTable("refresh_tokens") {
-    val userId = reference(
-        name = "user_id",
-        refColumn = UsersTable.id,
-        onDelete = ReferenceOption.CASCADE
-    ).index()
+    val userId =
+        reference(
+            name = "user_id",
+            refColumn = UsersTable.id,
+            onDelete = ReferenceOption.CASCADE,
+        ).index()
     val token = varchar("token", 64)
     val familyId = varchar("family_id", 36).index()
     val isRevoked = bool("is_revoked").default(false)
@@ -20,7 +21,9 @@ object RefreshTokensTable : IntIdTable("refresh_tokens") {
     val expiresAt = timestamp("expires_at")
 }
 
-class RefreshTokenEntity(id: EntityID<Int>) : IntEntity(id) {
+class RefreshTokenEntity(
+    id: EntityID<Int>,
+) : IntEntity(id) {
     companion object : IntEntityClass<RefreshTokenEntity>(RefreshTokensTable)
 
     var user by UserEntity referencedOn RefreshTokensTable.userId

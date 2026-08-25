@@ -25,7 +25,8 @@ interface TransactionalRunner {
     suspend fun <T> transactional(block: suspend () -> T): T
 }
 
-class ExposedTransactionalRunner(private val database: Database) : TransactionalRunner {
-    override suspend fun <T> transactional(block: suspend () -> T): T =
-        suspendTransaction(db = database) { block() }
+class ExposedTransactionalRunner(
+    private val database: Database,
+) : TransactionalRunner {
+    override suspend fun <T> transactional(block: suspend () -> T): T = suspendTransaction(db = database) { block() }
 }

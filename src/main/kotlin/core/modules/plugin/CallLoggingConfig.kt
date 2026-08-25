@@ -31,7 +31,8 @@ fun Application.configureCallLogging() {
         callIdMdc("requestId")
 
         mdc("userId") { call ->
-            call.principal<JWTPrincipal>()
+            call
+                .principal<JWTPrincipal>()
                 ?.payload
                 ?.getClaim(CLAIM_USER_ID)
                 ?.asInt()

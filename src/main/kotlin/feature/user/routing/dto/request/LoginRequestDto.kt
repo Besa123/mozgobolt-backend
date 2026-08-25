@@ -8,8 +8,9 @@ data class LoginRequestDto(
     val email: String,
     val password: String,
 ) : ValidatedRequest {
-    override fun validate() = buildList {
-        if (email.isBlank()) add("Email is required")
-        if (password.isBlank()) add("Password is required")
-    }
+    override fun validate() =
+        buildList {
+            if (email.isBlank()) add("Email is required")
+            if (password.isBlank()) add("Password is required")
+        }
 }

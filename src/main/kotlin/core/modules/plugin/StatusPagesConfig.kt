@@ -21,8 +21,8 @@ fun Application.configureStatusPages() {
                 ErrorResponse(
                     error = "VALIDATION_FAILED",
                     message = "Request validation failed",
-                    details = cause.reasons
-                )
+                    details = cause.reasons,
+                ),
             )
         }
 
@@ -32,8 +32,8 @@ fun Application.configureStatusPages() {
                 HttpStatusCode.GatewayTimeout,
                 ErrorResponse(
                     error = "REQUEST_TIMEOUT",
-                    message = "The server took too long to process this request"
-                )
+                    message = "The server took too long to process this request",
+                ),
             )
         }
 
@@ -43,8 +43,8 @@ fun Application.configureStatusPages() {
                 HttpStatusCode.BadRequest,
                 ErrorResponse(
                     error = "MALFORMED_REQUEST",
-                    message = "The request could not be understood"
-                )
+                    message = "The request could not be understood",
+                ),
             )
         }
 
@@ -54,8 +54,8 @@ fun Application.configureStatusPages() {
                 HttpStatusCode.BadRequest,
                 ErrorResponse(
                     error = "INVALID_BODY",
-                    message = "The request body is missing or malformed"
-                )
+                    message = "The request body is missing or malformed",
+                ),
             )
         }
 
@@ -65,8 +65,8 @@ fun Application.configureStatusPages() {
                 HttpStatusCode.InternalServerError,
                 ErrorResponse(
                     error = "INTERNAL_SERVER_ERROR",
-                    message = "An unexpected error occurred"
-                )
+                    message = "An unexpected error occurred",
+                ),
             )
         }
     }

@@ -33,5 +33,4 @@ object LockoutPolicy {
     }
 }
 
-private fun Duration.coerceAtMost(max: Duration): Duration =
-    if (this > max) max else this
+private fun Duration.coerceAtMost(max: Duration): Duration = if (this > max) max else this

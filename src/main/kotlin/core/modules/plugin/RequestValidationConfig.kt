@@ -8,8 +8,11 @@ fun Application.configureRequestValidation() {
     install(RequestValidation) {
         validate<ValidatedRequest> { dto ->
             val reasons = dto.validate()
-            if (reasons.isEmpty()) ValidationResult.Valid
-            else ValidationResult.Invalid(reasons)
+            if (reasons.isEmpty()) {
+                ValidationResult.Valid
+            } else {
+                ValidationResult.Invalid(reasons)
+            }
         }
     }
 }

@@ -5,10 +5,3 @@ indent_size = 4
 indent_style = space
 insert_final_newline = true
 trim_trailing_whitespace = true
-
-[*.kt]
-# ktlint configuration
-# Wildcard imports exist in the codebase; disable the rule rather than bulk-fix at once.
-ktlint_standard_no-wildcard-imports = disabled
-# main.kt is a conventional Kotlin entry-point name; exempt from PascalCase rule.
-ktlint_standard_filename = disabled

@@ -10,9 +10,13 @@ private val logger = KotlinLogging.logger {}
  * Development-only email service that logs verification links to console.
  * Used when no Resend API key is configured.
  */
-class LoggingEmailService(private val config: AppConfig) : EmailService {
-
-    override suspend fun sendVerificationEmail(to: String, token: String) {
+class LoggingEmailService(
+    private val config: AppConfig,
+) : EmailService {
+    override suspend fun sendVerificationEmail(
+        to: String,
+        token: String,
+    ) {
         val verificationUrl = "${config.baseUrl}/api/v1/auth/verify-email?token=$token"
 
         logger.info {

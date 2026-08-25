@@ -8,19 +8,20 @@ import com.password4j.types.Argon2
 class PasswordServiceImpl(
     private val pepper: String,
 ) : PasswordService {
-
-    private val argon2 = Argon2Function.getInstance(
-        65536,
-        3,
-        2,
-        64,
-        Argon2.ID
-    )
+    private val argon2 =
+        Argon2Function.getInstance(
+            65536,
+            3,
+            2,
+            64,
+            Argon2.ID,
+        )
 
     override fun hashPassword(password: String): String {
         require(password.length <= MAX_PASSWORD_LENGTH) { "Password too long" }
 
-        return Password.hash(password)
+        return Password
+            .hash(password)
             .addRandomSalt()
             .addPepper(pepper)
             .with(argon2)
@@ -30,11 +31,12 @@ class PasswordServiceImpl(
     override fun verifyPassword(
         password: String,
         hash: String,
-    ): Boolean {
-        return password.length <= MAX_PASSWORD_LENGTH && Password.check(password, hash)
-            .addPepper(pepper)
-            .with(argon2)
-    }
+    ): Boolean =
+        password.length <= MAX_PASSWORD_LENGTH &&
+            Password
+                .check(password, hash)
+                .addPepper(pepper)
+                .with(argon2)
 
     companion object {
         const val MAX_PASSWORD_LENGTH = 128

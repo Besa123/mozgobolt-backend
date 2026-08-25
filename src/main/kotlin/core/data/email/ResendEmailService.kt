@@ -10,19 +10,25 @@ import kotlinx.coroutines.withContext
 
 private val logger = KotlinLogging.logger {}
 
-class ResendEmailService(private val config: AppConfig) : EmailService {
-
+class ResendEmailService(
+    private val config: AppConfig,
+) : EmailService {
     private val resend = Resend(config.email.resendApiKey)
 
-    override suspend fun sendVerificationEmail(to: String, token: String) {
+    override suspend fun sendVerificationEmail(
+        to: String,
+        token: String,
+    ) {
         val verificationUrl = "${config.baseUrl}/api/v1/auth/verify-email?token=$token"
 
-        val params = CreateEmailOptions.builder()
-            .from(config.email.fromAddress)
-            .to(to)
-            .subject("Verify your email address")
-            .html(buildVerificationHtml(verificationUrl))
-            .build()
+        val params =
+            CreateEmailOptions
+                .builder()
+                .from(config.email.fromAddress)
+                .to(to)
+                .subject("Verify your email address")
+                .html(buildVerificationHtml(verificationUrl))
+                .build()
 
         withContext(Dispatchers.IO) {
             try {
@@ -35,13 +41,16 @@ class ResendEmailService(private val config: AppConfig) : EmailService {
         }
     }
 
-    private fun buildVerificationHtml(url: String): String = """
+    private fun buildVerificationHtml(url: String): String =
+        """
         <h2>Welcome!</h2>
         <p>Click the link below to verify your email:</p>
         <p><a href="$url">Verify Email</a></p>
         <p>This link expires in ${config.email.verificationTokenExpirationHours} hours.</p>
         <p>If you didn't create an account, ignore this email.</p>
-    """.trimIndent()
+        """.trimIndent()
 }
 
-class EmailDeliveryException(message: String) : RuntimeException(message)
+class EmailDeliveryException(
+    message: String,
+) : RuntimeException(message)

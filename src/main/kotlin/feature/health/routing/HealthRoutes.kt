@@ -14,7 +14,7 @@ fun Route.infrastructureRoutes(dataSource: DataSource) {
         } else {
             call.respond(
                 HttpStatusCode.ServiceUnavailable,
-                mapOf("status" to "unhealthy", "reason" to "database")
+                mapOf("status" to "unhealthy", "reason" to "database"),
             )
         }
     }

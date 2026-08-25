@@ -3,10 +3,7 @@ package com.besa.shelflife.core.data.validator
 import com.besa.shelflife.core.domain.validation.EmailValidator
 
 class StandardEmailValidator : EmailValidator {
-
-    override fun normalize(email: String): String {
-        return email.trim().lowercase()
-    }
+    override fun normalize(email: String): String = email.trim().lowercase()
 
     override fun isValid(email: String): Boolean {
         val normalized = normalize(email)
@@ -19,16 +16,19 @@ class StandardEmailValidator : EmailValidator {
     }
 
     companion object {
-        private val EMAIL_REGEX = Regex(
-            "^[a-z0-9]([a-z0-9._%+\\-]*[a-z0-9])?@[a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*\\.[a-z]{2,}$"
-        )
+        private val EMAIL_REGEX =
+            Regex(
+                "^[a-z0-9]([a-z0-9._%+\\-]*[a-z0-9])?@[a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*\\.[a-z]{2,}$",
+            )
 
         private val disposableDomains: Set<String> by lazy {
-            val resource = StandardEmailValidator::class.java.classLoader
-                .getResourceAsStream("disposable-email-domains.txt")
-                ?: error("disposable-email-domains.txt not found in resources")
+            val resource =
+                StandardEmailValidator::class.java.classLoader
+                    .getResourceAsStream("disposable-email-domains.txt")
+                    ?: error("disposable-email-domains.txt not found in resources")
 
-            resource.bufferedReader()
+            resource
+                .bufferedReader()
                 .lineSequence()
                 .map { it.trim().lowercase() }
                 .filter { it.isNotBlank() }
