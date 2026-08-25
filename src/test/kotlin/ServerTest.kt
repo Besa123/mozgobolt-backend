@@ -2,24 +2,33 @@ package com.besa.shelflife
 
 import io.ktor.client.request.get
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.config.ApplicationConfig
 import io.ktor.server.testing.testApplication
 import org.junit.Assume.assumeTrue
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
+private val REQUIRED_ENV_VARS =
+    listOf("DB_URL", "DB_USER", "DB_PASSWORD", "JWT_SECRET", "JWT_ISSUER", "JWT_AUDIENCE", "PASSWORD_PEPPER")
+
 class ServerTest {
     @Test
     fun `test root endpoint`() =
         testApplication {
+            val missing = REQUIRED_ENV_VARS.filter { System.getenv(it) == null }
             assumeTrue(
-                "DB_URL is not set — skipping (requires the env vars in .env.example plus a running Postgres)",
-                System.getenv("DB_URL") != null,
+                "Missing env vars $missing — skipping (requires everything in .env.example plus a running Postgres)",
+                missing.isEmpty(),
             )
+
+            environment {
+                config = ApplicationConfig("application.conf")
+            }
 
             application {
                 rootModule()
             }
-            // verify server root returns 200
+
             assertEquals(HttpStatusCode.OK, client.get("/").status)
         }
 }
