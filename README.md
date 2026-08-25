@@ -1,33 +1,80 @@
-# boardGameShare
+# ShelfLife
 
-This project was created using the [Ktor Project Generator](https://start.ktor.io).
+A Kotlin backend built on [Ktor](https://ktor.io), following feature-based Clean Architecture. See
+[ARCHITECTURE.md](ARCHITECTURE.md) for how the code is organized and why, [CONTRIBUTING.md](CONTRIBUTING.md)
+for local setup and the checks a PR needs to pass, and [docs/adr/](docs/adr/) for the reasoning behind specific
+decisions (refresh-token rotation, results-over-exceptions, etc.).
 
-Here are some useful links to get you started:
+## Stack
 
-* [Ktor Documentation](https://ktor.io/docs/home.html)
-* [Ktor GitHub page](https://github.com/ktorio/ktor)
-* [Ktor Slack chat](https://app.slack.com/client/T09229ZC6/C0A974TJ9). [Request an invite](https://surveys.jetbrains.com/s3/kotlin-slack-sign-up).
+- **Kotlin** 2.3.21 / **JVM** 21, **Ktor** 3.5.2 (Netty engine)
+- **PostgreSQL** via **Exposed** (ORM) + **HikariCP** (connection pooling) + **Flyway** (migrations, run automatically
+  on startup)
+- **JWT** auth (access + refresh tokens, refresh-token family rotation with theft detection — see
+  [ADR 0004](docs/adr/0004-refresh-token-family-rotation.md))
+- Structured JSON logging (Logback + Logstash encoder), request-correlated via call IDs
+- **detekt** + **ktlint** (zero-tolerance, gated in CI) + **Jacoco** coverage reporting
 
 ## Features
 
-Here's a list of features included in this project:
+| Area          | Description                                                                                   |
+|---------------|-----------------------------------------------------------------------------------------------|
+| Auth          | Register, login, refresh (rotating), logout, logout-all, email verification/resend            |
+| Rate limiting | Global 150 req/min baseline + tiered named limits (`AUTH_LIMIT`, `API_LIMIT`, `UPLOAD_LIMIT`) |
+| Security      | CORS, CSP/HSTS/security headers, password peppering (password4j), account lockout policy      |
+| Reliability   | Idempotency keys on mutating endpoints, request timeouts, body-size limits, graceful shutdown |
+| Observability | `/health` (DB connectivity) and `/ready` endpoints, structured logs, request correlation IDs  |
 
-| Name | Description |
-|------|-------------|
+## Getting started
 
-## Building & Running
+**Prerequisites:** JDK 21, a reachable PostgreSQL instance.
 
-To build or run the project, use one of the following tasks:
-
-| Task              | Description       |
-|-------------------|-------------------|
-| `./gradlew test`  | Run the tests     |
-| `./gradlew build` | Build the project |
-| `./gradlew run`   | Run the server    |
-
-If the server starts successfully, you'll see the following output:
-
+```bash
+cp .env.example .env      # fill in DB credentials, JWT secret, password pepper, etc.
+./gradlew run              # starts the server; Flyway migrations run automatically
 ```
-2024-12-04 14:32:45.584 [main] INFO  Application - Application started in 0.303 seconds.
-2024-12-04 14:32:45.682 [main] INFO  Application - Responding at http://0.0.0.0:8080
-```
+
+The server listens on `http://localhost:8080` by default (`PORT` env var to override). Console output is structured JSON
+(see [logback.xml](src/main/resources/logback.xml)); on startup look for `"message":
+"Application started in ... seconds."` followed by `"Responding at http://0.0.0.0:8080"`.
+
+See `.env.example` for the full list of configuration variables (database, JWT, CORS, email). Leaving
+`RESEND_API_KEY` blank falls back to a logging-only email service, which is convenient for local dev.
+
+## Common tasks
+
+| Task                                     | Description                                                               |
+|------------------------------------------|---------------------------------------------------------------------------|
+| `./gradlew run`                          | Start the server                                                          |
+| `./gradlew test`                         | Run the test suite (spins up Testcontainers Postgres)                     |
+| `./gradlew jacocoTestReport`             | Generate a coverage report at `build/reports/jacoco/test/html/index.html` |
+| `./gradlew ktlintCheck` / `ktlintFormat` | Check / auto-fix formatting                                               |
+| `./gradlew detekt`                       | Static analysis                                                           |
+| `./gradlew build`                        | Full build                                                                |
+
+CI (`.github/workflows/ci.yml`) runs ktlint, detekt, tests, and coverage reporting on every push/PR against a real
+Postgres service container.
+
+## API
+
+All business routes are versioned under `/api/v1`
+(see [Request lifecycle in ARCHITECTURE.md](ARCHITECTURE.md#request-lifecycle)); breaking changes get an `/api/v2` added
+alongside rather than replacing v1.
+
+| Method | Path                               | Notes                                     |
+|--------|------------------------------------|-------------------------------------------|
+| GET    | `/health`                          | Checks DB connectivity                    |
+| GET    | `/ready`                           | Readiness probe                           |
+| POST   | `/api/v1/auth/register`            | Rate-limited (`AUTH_LIMIT`)               |
+| POST   | `/api/v1/auth/login`               | Rate-limited (`AUTH_LIMIT`)               |
+| POST   | `/api/v1/auth/refresh`             | Rotates the refresh token                 |
+| GET    | `/api/v1/auth/verify-email`        | Consumes an email-verification token      |
+| POST   | `/api/v1/auth/logout`              | Authenticated                             |
+| POST   | `/api/v1/auth/logout-all`          | Authenticated — invalidates every session |
+| POST   | `/api/v1/auth/resend-verification` | Authenticated                             |
+
+There's no generated OpenAPI/Swagger spec yet — this table is hand-maintained until that gap is closed.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full local-setup and pre-PR checklist.
