@@ -6,29 +6,25 @@
 
 ## Context
 
-The codebase needed a structure that scales past a handful of endpoints without every feature becoming entangled with
-every other feature through shared top-level layers, while still keeping domain logic free of framework concerns (Ktor,
-Exposed) so it stays testable in isolation.
+The codebase needed a structure that scales past a handful of endpoints without features entangling through shared
+top-level layers, while keeping domain logic free of framework types (Ktor, Exposed) so it stays testable in isolation.
 
 ## Decision
 
 Organize by feature, not by technical layer: `feature/<name>/{domain,data,routing,di}`, with only genuinely
 cross-cutting infrastructure (auth plumbing, DB access, config, Ktor plugin setup) in `core/`. Within a feature,
-`domain/` defines interfaces with no framework dependencies; `data/`/`service/` provide implementations, suffixed `*I`
-(e.g. `UserRepositoryI` implements `UserRepository`); `di/` wires the two together.
+`domain/` defines framework-free interfaces; `data/`/`service/` implement them, suffixed `*I` (`UserRepositoryI`
+implements `UserRepository`); `di/` wires the two.
 
 ## Alternatives considered
 
-- **Layer-based (`controllers/`, `services/`, `repositories/` at the root)** — familiar, but touching one feature means
-  touching several unrelated top-level directories, and unrelated features tend to become coupled through a shared
-  "services" package over time.
-- **Single flat module with no enforced boundary** — fastest to start, but nothing stops domain logic from depending on
-  Ktor/Exposed types directly, which makes unit-testing business rules without a running server/DB harder as the
-  codebase grows.
+- **Layer-based (`controllers/`, `services/`, `repositories/` at the root)** — touching one feature means touching
+  several unrelated top-level directories, and features couple through shared "services" packages over time.
+- **Single flat module, no enforced boundary** — fastest to start, but nothing stops domain logic from depending on
+  Ktor/Exposed directly, making business rules untestable without a running server/DB.
 
 ## Consequences
 
-Adding a feature means creating a new `feature/<name>/` tree, not touching four existing directories. Removing a feature
-is close to deleting one directory. The cost is more directories/files for a given amount of logic than a flat layout,
-and the convention only holds if `core/` is kept free of business logic — if something there starts making domain
-decisions, it belongs in a feature instead.
+Adding a feature is a new `feature/<name>/` tree; removing one is close to deleting a directory. The cost is more files
+per unit of logic, and the convention only holds if `core/` stays free of business logic — anything there making domain
+decisions belongs in a feature.

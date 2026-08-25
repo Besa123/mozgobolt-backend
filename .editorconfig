@@ -43,7 +43,7 @@ ij_kotlin_name_count_to_use_star_import_for_members = 99
 indent_size = 2
 
 # ──────────────────────────────────────────
-# YAML (CI pipelines, Docker Compose, etc.)
+# YAML (CI pipelines)
 # ──────────────────────────────────────────
 [*.{yml,yaml}]
 indent_size = 2
@@ -60,12 +60,6 @@ indent_size = 4
 [*.md]
 trim_trailing_whitespace = false
 max_line_length = unset
-
-# ──────────────────────────────────────────
-# Shell scripts
-# ──────────────────────────────────────────
-[*.sh]
-indent_size = 2
 
 # ──────────────────────────────────────────
 # XML

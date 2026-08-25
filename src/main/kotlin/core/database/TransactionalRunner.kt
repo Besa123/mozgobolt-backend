@@ -4,22 +4,9 @@ import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction
 
 /**
- * Provides atomic transaction boundaries at the service layer.
- *
- * When a service method needs multiple repository calls to be atomic,
- * wrap them in [transactional]. Repository methods that already call
- * `suspendTransaction` will detect the active transaction and join it
- * (Exposed reuses the outer transaction on the same coroutine).
- *
- * Usage:
- * ```kotlin
- * class MyService(private val tx: TransactionalRunner) {
- *     suspend fun doAtomicWork() = tx.transactional {
- *         repo.step1()  // joins this transaction
- *         repo.step2()  // joins this transaction
- *     }
- * }
- * ```
+ * Atomic transaction boundary for the service layer. Repository methods that call
+ * `suspendTransaction` themselves join an active outer transaction (Exposed reuses
+ * it on the same coroutine), so nesting inside [transactional] is safe.
  */
 interface TransactionalRunner {
     suspend fun <T> transactional(block: suspend () -> T): T

@@ -2,20 +2,13 @@
   "openapi": "3.0.0",
   "info": {
     "title": "ShelfLife API",
-    "description": "Backend API for ShelfLife",
-    "version": "1.0.0",
-    "contact": {
-      "name": "ShelfLife Maintainers"
-    }
+    "description": "Backend API for ShelfLife.\n\nAll endpoints share a global rate limit of 150 requests/minute per client; every `/api/v1/auth/*` endpoint additionally enforces a 5 requests/minute limit (429). POST bodies are size-limited (413 when exceeded) and requests time out server-side (504). Error bodies, where present, use the `ErrorResponse` shape; `error` is a machine-readable code.",
+    "version": "1.0.0"
   },
   "servers": [
     {
       "url": "http://localhost:8080",
       "description": "Local development server"
-    },
-    {
-      "url": "https://api.shelflife.com",
-      "description": "Production server"
     }
   ],
   "paths": {
@@ -70,7 +63,6 @@
     "/ready": {
       "get": {
         "summary": "Readiness probe",
-        "description": "Returns readiness status of the service",
         "tags": [
           "Infrastructure"
         ],
@@ -98,11 +90,21 @@
     "/api/v1/auth/register": {
       "post": {
         "summary": "Register a new user",
-        "description": "Create a new user account with email and password",
+        "description": "Creates a user account and sends a verification email. Supports idempotent retries via the optional `Idempotency-Key` header: a replayed key with the same payload returns the original response (with `X-Idempotency-Replayed: true`); the same key with a different payload returns 422; a concurrent in-flight request with the same key returns 409 `REQUEST_IN_PROGRESS`.",
         "tags": [
           "Authentication"
         ],
         "operationId": "register",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -112,7 +114,7 @@
                 "required": [
                   "email",
                   "password",
-                  "appBaseUrl"
+                  "name"
                 ],
                 "properties": {
                   "email": {
@@ -124,12 +126,14 @@
                     "type": "string",
                     "format": "password",
                     "minLength": 8,
+                    "maxLength": 128,
                     "example": "SecurePassword123"
                   },
-                  "appBaseUrl": {
+                  "name": {
                     "type": "string",
-                    "format": "uri",
-                    "example": "https://myapp.example.com"
+                    "maxLength": 100,
+                    "description": "No leading/trailing spaces; must not contain < > \" ' & ;",
+                    "example": "Ada Lovelace"
                   }
                 }
               }
@@ -138,30 +142,37 @@
         },
         "responses": {
           "201": {
-            "description": "User registered successfully",
+            "description": "User registered; response body is empty"
+          },
+          "400": {
+            "description": "Validation failed (`VALIDATION_FAILED`), weak password (`WEAK_PASSWORD`), invalid email (`INVALID_EMAIL`), or invalid idempotency key (`INVALID_IDEMPOTENCY_KEY`)",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "userId": {
-                      "type": "integer",
-                      "example": 1
-                    },
-                    "email": {
-                      "type": "string",
-                      "example": "user@example.com"
-                    }
-                  }
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
           "409": {
-            "description": "Email already registered"
+            "description": "Email already registered (`ALREADY_EXISTS`) or an identical idempotent request is in flight (`REQUEST_IN_PROGRESS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Idempotency key reused with a different payload (`IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -172,7 +183,7 @@
     "/api/v1/auth/login": {
       "post": {
         "summary": "User login",
-        "description": "Authenticate user and receive access + refresh tokens",
+        "description": "Authenticate and receive access + refresh tokens",
         "tags": [
           "Authentication"
         ],
@@ -209,22 +220,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "accessToken": {
-                      "type": "string",
-                      "example": "eyJ..."
-                    },
-                    "refreshToken": {
-                      "type": "string",
-                      "example": "eyJ..."
-                    },
-                    "expiresIn": {
-                      "type": "integer",
-                      "description": "Access token expiration in seconds",
-                      "example": 900
-                    }
-                  }
+                  "$ref": "#/components/schemas/TokenPair"
                 }
               }
             }
@@ -233,10 +229,17 @@
             "$ref": "#/components/responses/BadRequest"
           },
           "401": {
-            "description": "Invalid credentials"
+            "description": "Invalid credentials; response body is empty"
           },
           "429": {
-            "$ref": "#/components/responses/TooManyRequests"
+            "description": "Rate limit exceeded (empty body), or account temporarily locked after repeated failed logins (`ACCOUNT_LOCKED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -244,7 +247,7 @@
     "/api/v1/auth/refresh": {
       "post": {
         "summary": "Refresh access token",
-        "description": "Use refresh token to get a new access token. The refresh token is rotated on each use.",
+        "description": "Exchanges a refresh token for a new token pair; the refresh token is rotated on each use. Reusing an already-rotated token invalidates the whole token family (theft detection).",
         "tags": [
           "Authentication"
         ],
@@ -270,27 +273,11 @@
         },
         "responses": {
           "200": {
-            "description": "Token refreshed successfully",
+            "description": "Token refreshed",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "accessToken": {
-                      "type": "string",
-                      "example": "eyJ..."
-                    },
-                    "refreshToken": {
-                      "type": "string",
-                      "description": "New refresh token (rotated)",
-                      "example": "eyJ..."
-                    },
-                    "expiresIn": {
-                      "type": "integer",
-                      "description": "Access token expiration in seconds",
-                      "example": 900
-                    }
-                  }
+                  "$ref": "#/components/schemas/TokenPair"
                 }
               }
             }
@@ -299,7 +286,14 @@
             "$ref": "#/components/responses/BadRequest"
           },
           "401": {
-            "description": "Invalid or expired refresh token"
+            "description": "Invalid/expired refresh token (empty body), or reuse of a rotated token (`TOKEN_REUSE_DETECTED` — the entire token family is now invalidated)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -310,7 +304,7 @@
     "/api/v1/auth/verify-email": {
       "get": {
         "summary": "Verify email address",
-        "description": "Consume an email verification token to mark the user's email as verified",
+        "description": "Consumes an email verification token; response bodies on success are empty",
         "tags": [
           "Authentication"
         ],
@@ -323,21 +317,45 @@
             "schema": {
               "type": "string"
             },
-            "description": "Email verification token from the verification email"
+            "description": "Token from the verification email"
           }
         ],
         "responses": {
           "200": {
-            "description": "Email verified successfully"
+            "description": "Email verified; response body is empty"
           },
           "400": {
-            "$ref": "#/components/responses/BadRequest"
+            "description": "Token missing (`MISSING_TOKEN`) or invalid (`INVALID_TOKEN`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Email already verified"
+            "description": "Email already verified (`ALREADY_VERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "410": {
-            "description": "Verification token expired"
+            "description": "Verification token expired (`EXPIRED_TOKEN`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -345,7 +363,7 @@
     "/api/v1/auth/logout": {
       "post": {
         "summary": "Logout user",
-        "description": "Invalidate the current refresh token",
+        "description": "Invalidates the presented refresh token",
         "tags": [
           "Authentication"
         ],
@@ -376,13 +394,16 @@
         },
         "responses": {
           "200": {
-            "description": "Logged out successfully"
+            "description": "Logged out; response body is empty"
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -390,7 +411,7 @@
     "/api/v1/auth/logout-all": {
       "post": {
         "summary": "Logout from all devices",
-        "description": "Invalidate all refresh tokens for this user (end all sessions)",
+        "description": "Invalidates all refresh tokens for the authenticated user",
         "tags": [
           "Authentication"
         ],
@@ -402,10 +423,13 @@
         ],
         "responses": {
           "200": {
-            "description": "Logged out from all devices"
+            "description": "All sessions ended; response body is empty"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -413,7 +437,7 @@
     "/api/v1/auth/resend-verification": {
       "post": {
         "summary": "Resend email verification",
-        "description": "Send a new email verification link to the user",
+        "description": "Sends a new verification email to the authenticated user. No request body.",
         "tags": [
           "Authentication"
         ],
@@ -423,102 +447,105 @@
             "bearerAuth": []
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "appBaseUrl"
-                ],
-                "properties": {
-                  "appBaseUrl": {
-                    "type": "string",
-                    "format": "uri",
-                    "example": "https://myapp.example.com"
-                  }
-                }
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
-            "description": "Verification email sent"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
+            "description": "Verification email sent; response body is empty"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
           "409": {
-            "description": "Email already verified"
+            "description": "Email already verified (`ALREADY_VERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "description": "Verification token could not be issued (`INVALID_TOKEN`/`EXPIRED_TOKEN`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
     }
   },
   "components": {
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Machine-readable code, e.g. VALIDATION_FAILED, ALREADY_EXISTS, ACCOUNT_LOCKED, TOKEN_REUSE_DETECTED",
+            "example": "VALIDATION_FAILED"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable explanation (may be empty)",
+            "example": ""
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Field-level issues (may be empty)",
+            "example": [
+              "Email is required"
+            ]
+          }
+        }
+      },
+      "TokenPair": {
+        "type": "object",
+        "required": [
+          "accessToken",
+          "refreshToken"
+        ],
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "example": "eyJ..."
+          },
+          "refreshToken": {
+            "type": "string",
+            "description": "Rotated on each /refresh call",
+            "example": "eyJ..."
+          }
+        }
+      }
+    },
     "responses": {
       "BadRequest": {
-        "description": "Bad request - validation failed",
+        "description": "Validation failed or malformed body (`VALIDATION_FAILED`, `MALFORMED_REQUEST`, `INVALID_BODY`)",
         "content": {
           "application/json": {
             "schema": {
-              "type": "object",
-              "properties": {
-                "error": {
-                  "type": "string",
-                  "example": "Invalid request"
-                },
-                "details": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "example": [
-                    "Field 'email' is required",
-                    "Field 'password' must be at least 8 characters"
-                  ]
-                }
-              }
+              "$ref": "#/components/schemas/ErrorResponse"
             }
           }
         }
       },
       "Unauthorized": {
-        "description": "Unauthorized - missing or invalid authentication",
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "properties": {
-                "error": {
-                  "type": "string",
-                  "example": "Token is not valid or has expired"
-                }
-              }
-            }
-          }
-        }
+        "description": "Missing or invalid JWT access token; response body is empty"
       },
       "TooManyRequests": {
-        "description": "Too many requests - rate limit exceeded",
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "properties": {
-                "error": {
-                  "type": "string",
-                  "example": "Rate limit exceeded"
-                }
-              }
-            }
-          }
-        }
+        "description": "Rate limit exceeded (auth endpoints: 5 requests/minute); response body is empty"
       }
     },
     "securitySchemes": {
@@ -526,7 +553,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "JWT access token. Obtain from /api/v1/auth/login or /api/v1/auth/refresh"
+        "description": "JWT access token from /api/v1/auth/login or /api/v1/auth/refresh"
       }
     }
   },

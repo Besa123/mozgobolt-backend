@@ -13,15 +13,10 @@ import io.ktor.server.routing.put
 import kotlinx.coroutines.withTimeout
 
 /**
- * Type-safe route builders that enforce body size limits, request timeouts,
- * and automatic deserialization + validation in a single declaration.
- *
- * Usage:
- * ```kotlin
- * validatedPost<LoginRequestDto>("/login", BodyLimit.TINY, RequestTimeout.FAST) { request ->
- *     // request is already validated
- * }
- * ```
+ * Route builders enforcing a body-size limit and request timeout per declaration; the
+ * `validated*` variants also deserialize into a [ValidatedRequest], whose `validate()`
+ * runs via the RequestValidation plugin on receive — handlers never see an invalid body.
+ * Pick the tightest [BodyLimit]/[RequestTimeout] per endpoint; don't default blindly.
  */
 inline fun <reified T : ValidatedRequest> Route.validatedPost(
     path: String,

@@ -1,11 +1,7 @@
 # Contributing to ShelfLife
 
-This is currently a single-maintainer project, but it's built to professional standards from day one — these are the
-rules the codebase already enforces in CI, written down so anyone (including future-you)
-can ramp up without archaeology.
-
-For the "why" behind the structure, see [ARCHITECTURE.md](ARCHITECTURE.md). For rationale behind specific decisions,
-see [docs/adr/](docs/adr/).
+The rules the codebase enforces in CI, written down. For the "why" behind the structure, see
+[ARCHITECTURE.md](ARCHITECTURE.md); for rationale behind specific decisions, see [docs/adr/](docs/adr/).
 
 ## Prerequisites
 
@@ -17,9 +13,9 @@ see [docs/adr/](docs/adr/).
 ## Local setup
 
 ```bash
-cp .env.example .env      # fill in DB credentials, JWT secret, etc.
-./gradlew test            # run the test suite (spins up Testcontainers Postgres)
-./gradlew run              # start the server
+cp .env.example .env    # fill in DB credentials, JWT secret, etc.
+./gradlew test          # run the test suite (Testcontainers tests skip without Docker)
+./gradlew run           # start the server
 ```
 
 Flyway migrations run automatically on startup — no manual migration step needed.
@@ -29,10 +25,10 @@ Flyway migrations run automatically on startup — no manual migration step need
 Run the same checks CI runs, in this order, and make sure all of them pass:
 
 ```bash
-./gradlew ktlintCheck   # formatting — auto-fixable with ./gradlew ktlintFormat
-./gradlew detekt         # static analysis, zero-tolerance (config/detekt.yml)
-./gradlew test           # unit + integration tests
-./gradlew jacocoTestReport   # coverage report at build/reports/jacoco/test/html/index.html
+./gradlew ktlintCheck         # formatting — auto-fixable with ./gradlew ktlintFormat
+./gradlew detekt              # static analysis, zero-tolerance (config/detekt.yml)
+./gradlew test                # unit + integration tests
+./gradlew jacocoTestReport    # coverage report at build/reports/jacoco/test/html/index.html
 ```
 
 CI (`.github/workflows/ci.yml`) gates on all of the above except the coverage report (report-only, no hard threshold
@@ -47,7 +43,8 @@ alike) and [ARCHITECTURE.md](ARCHITECTURE.md). The short version:
   goes in `core/`.
 - **Results over exceptions.** Business logic returns `AppResult<T, E>`; callers `.fold(onSuccess, onError)`. Don't
   throw for expected failure paths.
-- **Interface-first.** Domain defines the interface; `data/` implements it (`*I` suffix, e.g. `UserRepositoryI`).
+- **Interface-first.** Domain defines the interface; `data/`/`service/` implement it. Feature implementations use the
+  `*I` suffix (e.g. `UserRepositoryI`).
 - **Request DTOs implement `ValidatedRequest`** and provide `validate(): List<String>`. Never validate manually inside a
   handler — the `RequestValidation` plugin runs it for you.
 - **Use the route helpers**, never inline body-limit/timeout/auth/rate-limit concerns:
@@ -69,16 +66,7 @@ secrets come from `AppConfig`/env only, and every new endpoint needs a deliberat
 ## Commit & PR style
 
 - Keep commits scoped to one logical change; write the message in the imperative ("Add X", not "Added X").
-- If a change touches an existing architectural decision, add or update an ADR in `docs/adr/` rather than letting the
-  rationale live only in the PR description.
-- **API changes must include OpenAPI spec updates.** Edit `src/main/resources/openapi/documentation.json` to reflect new
-  endpoints or changed request/response schemas. The OpenAPI spec is the contract; keeping it in sync ensures the
-  Swagger UI (`/swagger-ui`) stays accurate.
-- Update `CHANGELOG.md` for any user-visible or API-visible change (once it exists — see the project's open gaps if it
-  doesn't yet).
-
-## Recording a new architectural decision
-
-Significant, hard-to-reverse choices (new dependency category, auth model change, data-store swap, etc.)
-should get an ADR. Copy `docs/adr/0000-template.md`, number it sequentially, and fill it in as part of the same PR that
-implements the decision — not after the fact.
+- Significant, hard-to-reverse choices get an ADR in the same PR — see [docs/adr/README.md](docs/adr/README.md) for when
+  and how.
+- **API changes must update the OpenAPI spec** (`src/main/resources/openapi/documentation.json`) — it's the contract
+  Swagger UI serves.

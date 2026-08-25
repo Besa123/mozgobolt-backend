@@ -3,19 +3,8 @@ package com.shelflife.core.routing.dto.response
 import kotlinx.serialization.Serializable
 
 /**
- * Unified error envelope for all API error responses.
- *
- * ```json
- * {
- *   "error": "VALIDATION_FAILED",
- *   "message": "Request validation failed",
- *   "details": ["email: must not be blank"]
- * }
- * ```
- *
- * - [error]: Machine-readable code (frontend switches on this)
- * - [message]: Human-readable explanation (for debugging/display)
- * - [details]: Optional list of specific issues (field errors, context)
+ * Unified envelope for all API error responses: [error] is the machine-readable code
+ * clients switch on; [message] and [details] are human-readable context only.
  */
 @Serializable
 data class ErrorResponse(

@@ -13,17 +13,17 @@ src/main/kotlin/
 │   ├── data/                 # email, idempotency, security (JWT, password) implementations
 │   ├── database/             # DataSource/HikariCP factory, transaction runner
 │   ├── di/                   # Ktor DI wiring
-│   ├── domain/                # AppResult, TokenManager/PasswordService interfaces, ValidatedRequest
-│   ├── modules/               # AppConfig + one file per Ktor plugin (cors, rate-limit, status-pages, ...)
-│   ├── routing/                # API versioning helper, shared ErrorResponse DTO
-│   └── utility/functions/     # runSuspendCatching, protectedApi/publicRateLimitedApi
+│   ├── domain/               # AppResult, TokenManager/PasswordService interfaces, ValidatedRequest
+│   ├── modules/              # AppConfig + one file per Ktor plugin (cors, rate-limit, status-pages, ...)
+│   ├── routing/              # API versioning helper, shared ErrorResponse DTO
+│   └── utility/functions/    # runSuspendCatching, protectedApi/publicRateLimitedApi
 │
-└── feature/<name>/            # one package per business capability
-    ├── domain/                # models + repository/service *interfaces* — no framework types
-    ├── data/                  # Exposed tables, mappers, repository implementations (*I suffix)
-    ├── service/                # domain service implementations
-    ├── routing/                # Ktor routes + request/response DTOs
-    └── di/                     # wires interface -> implementation for this feature
+└── feature/<name>/           # one package per business capability
+    ├── domain/               # models + repository/service *interfaces* — no framework types
+    ├── data/                 # Exposed tables, mappers, repository implementations (*I suffix)
+    ├── service/              # domain service implementations
+    ├── routing/              # Ktor routes + request/response DTOs
+    └── di/                   # wires interface -> implementation for this feature
 ```
 
 `feature/user/` is the reference implementation of the full pattern (auth, registration, tokens).
@@ -43,9 +43,10 @@ belongs in a feature instead.
 
 ## Request lifecycle
 
-1. **Ktor plugins** (`core/modules/plugin/`) run first, in the order configured in `Modules.kt`: default headers/CSP,
-   CORS, call ID (request correlation), call logging, rate limiting, content negotiation, request validation, status
-   pages.
+1. **Ktor plugins** (`core/modules/plugin/`) install in the order in `Modules.kt`: resources + auto-HEAD, default
+   headers (CSP/HSTS), forwarded headers, Swagger, global body limit, global request timeout, JWT auth, CORS, content
+   negotiation, rate limiting, call ID (request correlation), call logging, request validation, status pages, request
+   lifecycle.
 2. **Routing** (`Routing.kt` → `core/routing/ApiVersion.kt`) groups all business routes under `/api/v1`. A breaking
    change gets its own `apiV2` block, added alongside — not a replacement — so existing clients keep working.
 3. **Auth + rate limiting** are applied per route group via `protectedApi { }` (JWT-authenticated,
@@ -88,9 +89,9 @@ backed by a different store) a DI-wiring change, not a domain change.
 ### `ValidatedRequest` + route builders
 
 Every request DTO implements `validate(): List<String>`. Combined with `validatedPost`/`validatedPut`/
-`validatedPatch`, this means a handler never sees an invalid or oversized payload — validation, deserialization,
-body-size limiting, and timeout enforcement all happen before the handler body runs, and none of it is duplicated
-per-endpoint.
+`validatedPatch`, a handler never sees an invalid payload — validation, deserialization, body-size limiting, and timeout
+enforcement happen before the handler body runs, with nothing duplicated per-endpoint. Caveat: body-size limits are
+enforced via the `Content-Length` header, so a chunked request without one bypasses them.
 
 ### Auth & rate limiting
 
@@ -107,17 +108,15 @@ chosen deliberately per endpoint, not defaulted:
 
 Refresh tokens belong to a "family." Each use rotates the token; reuse of an already-rotated token is treated as theft
 and invalidates the *entire* family, not just the one token. This is deliberately not simplified to single-token
-revocation — see [docs/adr/](docs/adr/) for the reasoning once recorded.
+revocation — see [ADR 0004](docs/adr/0004-refresh-token-family-rotation.md).
 
 ### Resilience for external calls
 
-External dependencies (currently: the Resend email API) are wrapped with retry + circuit-breaker via
-[Resilience4j](https://resilience4j.readme.io/) — see `core/modules/plugin/ResilienceConfig.kt` and
-[ADR 0005](docs/adr/0005-resilience4j-for-external-calls.md) for the full reasoning, including two easy-to-get-backwards
-details (wrapping order, and scoping retry to failures classified as transient rather than "retry on anything").
-`ResilienceRegistry` holds one `Retry` + `CircuitBreaker` pair per dependency; a `suspend fun withXResilience { }`
-wrapper (e.g. `withEmailResilience`) is the call-site API, and `ResilientEmailService` is the decorator that applies it
-to `EmailService`. New external dependencies should follow the same decorator + registry-entry shape.
+External calls (currently the Resend email API) go through Resilience4j retry + circuit-breaker. `ResilienceRegistry`
+(`core/modules/plugin/ResilienceConfig.kt`) holds one `Retry` + `CircuitBreaker` pair per dependency;
+`withXResilience { }` (e.g. `withEmailResilience`) is the call-site API, applied via the `ResilientEmailService`
+decorator. New dependencies follow the same registry-entry + decorator shape. Wrapping order and transient-only retry
+classification are deliberate — see [ADR 0005](docs/adr/0005-resilience4j-for-external-calls.md).
 
 ## Configuration
 
@@ -139,10 +138,6 @@ correlation is the current substitute. See the project's known-gaps list before 
 
 ## Current known gaps
 
-This document describes the architecture as built, not an aspirational end state. As of the last audit, notably missing:
-containerization (Dockerfile/compose), a CD stage, metrics (Micrometer/Prometheus), distributed tracing (OpenTelemetry),
-and a coverage gate (Jacoco reports are generated but not enforced). OpenAPI/Swagger documentation and
-retry/circuit-breaker resilience for external calls (email) have since been added — see
-`src/main/resources/openapi/documentation.json` and `core/modules/plugin/ResilienceConfig.kt` respectively. Don't assume
-anything not listed here exists without checking; this list itself may drift, so verify against the code for anything
-load-bearing.
+This document describes the architecture as built. Notably missing: containerization (Dockerfile/compose), a CD stage,
+metrics (Micrometer/Prometheus), distributed tracing (OpenTelemetry), and a coverage gate (Jacoco reports are generated
+but not enforced). Verify against the code before assuming anything else exists.

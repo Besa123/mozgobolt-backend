@@ -2,10 +2,6 @@ build:
   maxIssues: 0
   excludeCorrectable: false
   weights:
-  # complexity: 2
-  # LongParameterList: 1
-  # style: 1
-  # comments: 1
 
 config:
   validation: true
@@ -17,18 +13,6 @@ processors:
   active: true
   exclude:
     - 'DetektProgressListener'
-  # - 'KtFileCountProcessor'
-  # - 'PackageCountProcessor'
-  # - 'ClassCountProcessor'
-  # - 'FunctionCountProcessor'
-  # - 'PropertyCountProcessor'
-  # - 'ProjectComplexityProcessor'
-  # - 'ProjectCognitiveComplexityProcessor'
-  # - 'ProjectLLOCProcessor'
-  # - 'ProjectCLOCProcessor'
-  # - 'ProjectLOCProcessor'
-  # - 'ProjectSLOCProcessor'
-  # - 'LicenseHeaderLoaderExtension'
 
 console-reports:
   active: true
@@ -38,16 +22,10 @@ console-reports:
     - 'NotificationReport'
     - 'FindingsReport'
     - 'FileBasedFindingsReport'
-  #  - 'LiteFindingsReport'
 
 output-reports:
   active: true
   exclude:
-  # - 'TxtOutputReport'
-  # - 'XmlOutputReport'
-  # - 'HtmlOutputReport'
-  # - 'MdOutputReport'
-  # - 'SarifOutputReport'
 
 comments:
   active: true
@@ -82,7 +60,7 @@ comments:
     searchInProtectedClass: false
     ignoreDefaultCompanionObject: false
   UndocumentedPublicFunction:
-    active: false             # ← same as above, turn on if you ship a public library
+    active: false
     excludes: [ '**/test/**', '**/androidTest/**', '**/commonTest/**', '**/jvmTest/**', '**/androidUnitTest/**', '**/androidInstrumentedTest/**', '**/jsTest/**', '**/iosTest/**' ]
     searchProtectedFunction: false
   UndocumentedPublicProperty:
@@ -93,20 +71,20 @@ comments:
 complexity:
   active: true
   CognitiveComplexMethod:
-    active: true              # ← off by default, turn on — better than cyclomatic for readability
+    active: true              # ← turn on — better than cyclomatic for readability
     threshold: 25
   ComplexCondition:
     active: true
     threshold: 3              # ← tightened from 4, 3 conditions is already hard to read
   ComplexInterface:
-    active: true              # ← off by default, catches bloated interfaces (ISP violations)
+    active: true              # ← catches bloated interfaces (ISP violations)
     threshold: 16
     includeStaticDeclarations: false
     includePrivateDeclarations: false
     ignoreOverloaded: false
   CyclomaticComplexMethod:
     active: true
-    threshold: 15             # ← tightened from 15, 15 is too lenient
+    threshold: 15
     ignoreSingleWhenExpression: true  # ← when() blocks inflate complexity unfairly, ignore them
     ignoreSimpleWhenEntries: false
     ignoreNestingFunctions: false
@@ -131,8 +109,8 @@ complexity:
     threshold: 110            # ← allows some complex routing handlers
   LongParameterList:
     active: true
-    functionThreshold: 6      # ← tightened from 6
-    constructorThreshold: 9   # ← tightened from 7
+    functionThreshold: 6
+    constructorThreshold: 9   # ← relaxed from default 7
     ignoreDefaultParameters: true   # ← Ktor route handlers use defaults heavily
     ignoreDataClasses: true
     ignoreAnnotatedParameter: [ ]
@@ -140,14 +118,14 @@ complexity:
     active: false
     threshold: 6
   NamedArguments:
-    active: true              # ← off by default, forces named args when calls get long
+    active: true              # ← forces named args when calls get long
     threshold: 3
     ignoreArgumentsMatchingNames: true  # ← skip when arg name matches param name anyway
   NestedBlockDepth:
     active: true
     threshold: 3              # ← tightened from 4
   NestedScopeFunctions:
-    active: true              # ← off by default, nested apply/let/run is a real Kotlin smell
+    active: true              # ← nested apply/let/run is a real Kotlin smell
     threshold: 1
     functions:
       - 'kotlin.apply'
@@ -158,7 +136,7 @@ complexity:
   ReplaceSafeCallChainWithRun:
     active: false
   StringLiteralDuplication:
-    active: true              # ← off by default, catches hardcoded strings (e.g. route paths)
+    active: true              # ← catches hardcoded strings (e.g. route paths)
     excludes: [ '**/test/**', '**/androidTest/**', '**/commonTest/**', '**/jvmTest/**', '**/androidUnitTest/**', '**/androidInstrumentedTest/**', '**/jsTest/**', '**/iosTest/**' ]
     threshold: 3
     ignoreAnnotation: true
@@ -180,7 +158,7 @@ complexity:
 coroutines:
   active: true
   GlobalCoroutineUsage:
-    active: true              # ← off by default, critical for Ktor — GlobalScope causes leaks
+    active: true              # ← critical for Ktor — GlobalScope causes leaks
   InjectDispatcher:
     active: true              # ← don't hardcode Dispatchers.IO, inject them
     dispatcherNames:
@@ -192,7 +170,7 @@ coroutines:
   SleepInsteadOfDelay:
     active: true              # ← Thread.sleep() inside a coroutine blocks the thread — real bug
   SuspendFunSwallowedCancellation:
-    active: true              # ← off by default, catching CancellationException is a Ktor bug
+    active: true              # ← catching CancellationException is a Ktor bug
   SuspendFunWithCoroutineScopeReceiver:
     active: false
   SuspendFunWithFlowReturnType:
@@ -246,9 +224,9 @@ exceptions:
     active: true
     excludes: [ '**/test/**', '**/androidTest/**', '**/commonTest/**', '**/jvmTest/**', '**/androidUnitTest/**', '**/androidInstrumentedTest/**', '**/jsTest/**', '**/iosTest/**' ]
   NotImplementedDeclaration:
-    active: true              # ← off by default, don't ship TODO() stubs
+    active: true              # ← don't ship TODO() stubs
   ObjectExtendsThrowable:
-    active: true              # ← off by default, object singletons as exceptions is an anti-pattern
+    active: true              # ← object singletons as exceptions is an anti-pattern
   PrintStackTrace:
     active: true              # ← use a logger, never printStackTrace()
   RethrowCaughtException:
@@ -308,7 +286,7 @@ exceptions:
 naming:
   active: true
   BooleanPropertyNaming:
-    active: true              # ← off by default, enforces isReady not ready, hasItems not items
+    active: true              # ← enforces isReady not ready, hasItems not items
     allowedPattern: '^(is|has|are)'
   ClassNaming:
     active: true
@@ -344,7 +322,7 @@ naming:
     rootPackage: 'com.shelflife'
     requireRootInDeclaration: false
   LambdaParameterNaming:
-    active: true              # ← off by default, enforces readable lambda param names
+    active: true              # ← enforces readable lambda param names
     parameterPattern: '[a-z][A-Za-z0-9]*|_'
   MatchingDeclarationName:
     active: true
@@ -366,7 +344,7 @@ naming:
   NoNameShadowing:
     active: true
   NonBooleanPropertyPrefixedWithIs:
-    active: true              # ← off by default, the other side of BooleanPropertyNaming
+    active: true              # ← the other side of BooleanPropertyNaming
   ObjectPropertyNaming:
     active: true
     constantPattern: '[A-Za-z][_A-Za-z0-9]*'
@@ -397,7 +375,7 @@ performance:
   ArrayPrimitive:
     active: true
   CouldBeSequence:
-    active: true              # ← off by default, catches inefficient chained collection ops
+    active: true              # ← catches inefficient chained collection ops
     threshold: 3
   ForEachOnRange:
     active: true
@@ -406,7 +384,7 @@ performance:
     active: true
     excludes: [ '**/test/**', '**/androidTest/**', '**/commonTest/**', '**/jvmTest/**', '**/androidUnitTest/**', '**/androidInstrumentedTest/**', '**/jsTest/**', '**/iosTest/**' ]
   UnnecessaryPartOfBinaryExpression:
-    active: true              # ← off by default, catches always-true/false conditions
+    active: true              # ← catches always-true/false conditions
   UnnecessaryTemporaryInstantiation:
     active: true
 
@@ -417,13 +395,13 @@ potential-bugs:
     forbiddenTypePatterns:
       - 'kotlin.String'
   CastNullableToNonNullableType:
-    active: true              # ← off by default, casting nullable to non-null is unsafe
+    active: true
   CastToNullableType:
     active: false
   Deprecation:
-    active: true              # ← off by default, flag usage of deprecated APIs
+    active: true
   DontDowncastCollectionTypes:
-    active: true              # ← off by default, downcasting List to MutableList is unsafe
+    active: true
   DoubleMutabilityForCollection:
     active: true
     mutableTypes:
@@ -436,14 +414,14 @@ potential-bugs:
       - 'java.util.LinkedHashMap'
       - 'java.util.HashMap'
   ElseCaseInsteadOfExhaustiveWhen:
-    active: true              # ← off by default, forces exhaustive when() — safer with sealed classes
+    active: true              # ← forces exhaustive when() — safer with sealed classes
     ignoredSubjectTypes: [ ]
   EqualsAlwaysReturnsTrueOrFalse:
     active: true
   EqualsWithHashCodeExist:
     active: true
   ExitOutsideMain:
-    active: true              # ← off by default, System.exit() in a Ktor handler is a hard crash
+    active: true              # ← System.exit() in a Ktor handler is a hard crash
   ExplicitGarbageCollectionCall:
     active: true
   HasPlatformType:
@@ -467,7 +445,7 @@ potential-bugs:
   ImplicitDefaultLocale:
     active: true
   ImplicitUnitReturnType:
-    active: true              # ← off by default, implicit Unit returns hide intent
+    active: true
     allowExplicitReturnType: true
   InvalidRange:
     active: true
@@ -482,18 +460,18 @@ potential-bugs:
   MapGetWithNotNullAssertionOperator:
     active: true
   MissingPackageDeclaration:
-    active: true              # ← off by default, all files should declare a package
+    active: true
     excludes: [ '**/*.kts' ]
   NullCheckOnMutableProperty:
-    active: true              # ← off by default, null-checking a var is a race condition
+    active: true              # ← null-checking a var is a race condition
   NullableToStringCall:
-    active: true              # ← off by default, null.toString() = "null" string — usually a bug
+    active: true              # ← null.toString() = "null" string — usually a bug
   PropertyUsedBeforeDeclaration:
-    active: true              # ← off by default, catches initialisation order bugs
+    active: true              # ← catches initialisation order bugs
   UnconditionalJumpStatementInLoop:
-    active: true              # ← off by default, break/return on first iteration is likely wrong
+    active: true              # ← break/return on first iteration is likely wrong
   UnnecessaryNotNullCheck:
-    active: true              # ← off by default, redundant !! checks are noise
+    active: true
   UnnecessaryNotNullOperator:
     active: true
   UnnecessarySafeCall:
@@ -517,9 +495,9 @@ potential-bugs:
 style:
   active: true
   AlsoCouldBeApply:
-    active: true              # ← off by default, also { x = it } should be apply { x = this }
+    active: true
   BracesOnIfStatements:
-    active: true              # ← off by default, always require braces — avoids dangling-else bugs
+    active: true              # ← always require braces — avoids dangling-else bugs
     singleLine: 'consistent'
     multiLine: 'always'
   BracesOnWhenStatements:
@@ -527,26 +505,26 @@ style:
     singleLine: 'necessary'
     multiLine: 'consistent'
   CanBeNonNullable:
-    active: true              # ← off by default, catches unnecessarily nullable types
+    active: true              # ← catches unnecessarily nullable types
   CascadingCallWrapping:
     active: false
     includeElvis: true
   ClassOrdering:
-    active: true              # ← off by default, consistent ordering inside classes
+    active: true              # ← consistent ordering inside classes
   CollapsibleIfStatements:
-    active: true              # ← off by default, if (a) { if (b) {} } → if (a && b) {}
+    active: true              # ← if (a) { if (b) {} } → if (a && b) {}
   DataClassContainsFunctions:
     active: false             # ← keep off, extension functions on data classes are fine in Ktor
     conversionFunctionPrefix:
       - 'to'
     allowOperators: false
   DataClassShouldBeImmutable:
-    active: true              # ← off by default, var in data classes is almost always wrong
+    active: true              # ← var in data classes is almost always wrong
   DestructuringDeclarationWithTooManyEntries:
     active: true
     maxDestructuringEntries: 3
   DoubleNegativeLambda:
-    active: true              # ← off by default, takeUnless { !x } is confusing
+    active: true              # ← takeUnless { !x } is confusing
     negativeFunctions:
       - reason: 'Use `takeIf` instead.'
         value: 'takeUnless'
@@ -558,13 +536,13 @@ style:
   EqualsNullCall:
     active: true
   EqualsOnSignatureLine:
-    active: true              # ← off by default, = on same line as fun signature
+    active: true              # ← = on same line as fun signature
   ExplicitCollectionElementAccessMethod:
-    active: true              # ← off by default, map["key"] over map.get("key")
+    active: true              # ← map["key"] over map.get("key")
   ExplicitItLambdaParameter:
     active: true
   ExpressionBodySyntax:
-    active: true              # ← off by default, fun foo() = bar() over fun foo() { return bar() }
+    active: true              # ← fun foo() = bar() over fun foo() { return bar() }
     includeLineWrapping: false
   ForbiddenAnnotation:
     active: false
@@ -598,7 +576,7 @@ style:
     imports: [ ]
     forbiddenPatterns: ''
   ForbiddenMethodCall:
-    active: true              # ← off by default, ban println() — use a proper logger in Ktor
+    active: true              # ← ban println() — use a proper logger in Ktor
     methods:
       - reason: 'Use a logger instead of print.'
         value: 'kotlin.io.print'
@@ -628,23 +606,23 @@ style:
       - '1'
       - '2'
     ignoreHashCodeFunction: true
-    ignorePropertyDeclaration: true    # ← relaxed from false, top-level val port = 8080 is fine
+    ignorePropertyDeclaration: true    # ← relaxed from false; applies to all property declarations
     ignoreLocalVariableDeclaration: false
     ignoreConstantDeclaration: true
     ignoreCompanionObjectPropertyDeclaration: true
     ignoreAnnotation: false
     ignoreNamedArgument: true
-    ignoreEnums: true                  # ← relaxed from false, enum ordinals are not magic
+    ignoreEnums: true                  # ← enum constructor args (BodyLimit, RequestTimeout) use literals
     ignoreRanges: false
     ignoreExtensionFunctions: true
   MandatoryBracesLoops:
-    active: true              # ← off by default, consistent with BracesOnIfStatements
+    active: true              # ← consistent with BracesOnIfStatements
   MaxChainedCallsOnSameLine:
-    active: true              # ← off by default, long chains on one line hurt readability
+    active: true              # ← long chains on one line hurt readability
     maxChainedCalls: 4        # ← tightened from 5
   MaxLineLength:
     active: true
-    maxLineLength: 120        # ← matches your .editorconfig
+    maxLineLength: 120        # ← matches .editorconfig
     excludePackageStatements: true
     excludeImportStatements: true
     excludeCommentStatements: false
@@ -654,9 +632,9 @@ style:
   ModifierOrder:
     active: true
   MultilineLambdaItParameter:
-    active: true              # ← off by default, multiline lambdas should name their parameter
+    active: true              # ← multiline lambdas should name their parameter
   MultilineRawStringIndentation:
-    active: true              # ← off by default, consistent indentation in trimIndent blocks
+    active: true              # ← consistent indentation in trimIndent blocks
     indentSize: 4
     trimmingMethods:
       - 'trimIndent'
@@ -666,9 +644,9 @@ style:
   NewLineAtEndOfFile:
     active: true
   NoTabs:
-    active: true              # ← off by default, tabs are banned by your .editorconfig too
+    active: true              # ← matches .editorconfig
   NullableBooleanCheck:
-    active: true              # ← off by default, Boolean? comparisons are easy to get wrong
+    active: true              # ← Boolean? comparisons are easy to get wrong
   ObjectLiteralToLambda:
     active: true
   OptionalAbstractKeyword:
@@ -676,15 +654,15 @@ style:
   OptionalUnit:
     active: false
   PreferToOverPairSyntax:
-    active: true              # ← off by default, a to b over Pair(a, b)
+    active: true              # ← a to b over Pair(a, b)
   ProtectedMemberInFinalClass:
     active: true
   RedundantExplicitType:
-    active: true              # ← off by default, val x: String = "foo" → val x = "foo"
+    active: true
   RedundantHigherOrderMapUsage:
     active: true
   RedundantVisibilityModifierRule:
-    active: true              # ← off by default, remove redundant `public` keywords
+    active: true
   ReturnCount:
     active: true
     max: 3                    # ← relaxed from 2, Ktor route handlers need guard clauses
@@ -698,9 +676,9 @@ style:
   SerialVersionUIDInSerializableClass:
     active: true
   SpacingBetweenPackageAndImports:
-    active: true              # ← off by default, consistent blank line after package declaration
+    active: true              # ← consistent blank line after package declaration
   StringShouldBeRawString:
-    active: true              # ← off by default, avoid escape hell — use triple-quoted strings
+    active: true              # ← avoid escape hell — use triple-quoted strings
     maxEscapedCharacterCount: 2
     ignoredCharacters: [ ]
   ThrowsCount:
@@ -708,41 +686,41 @@ style:
     max: 2
     excludeGuardClauses: true # ← same as ReturnCount, guard throws are fine
   TrailingWhitespace:
-    active: true              # ← off by default, already in .editorconfig but double-enforce
+    active: true              # ← matches .editorconfig
   TrimMultilineRawString:
-    active: true              # ← off by default, raw strings should use trimIndent()
+    active: true              # ← raw strings should use trimIndent()
     trimmingMethods:
       - 'trimIndent'
       - 'trimMargin'
   UnderscoresInNumericLiterals:
-    active: true              # ← off by default, 1_000_000 over 1000000
+    active: true              # ← 1_000_000 over 1000000
     acceptableLength: 4
     allowNonStandardGrouping: false
   UnnecessaryAbstractClass:
     active: true
   UnnecessaryAnnotationUseSiteTarget:
-    active: true              # ← off by default, remove redundant annotation targets
+    active: true
   UnnecessaryApply:
     active: true
   UnnecessaryBackticks:
-    active: true              # ← off by default, remove unnecessary backtick escaping
+    active: true
   UnnecessaryBracesAroundTrailingLambda:
-    active: true              # ← off by default, foo({ bar() }) → foo { bar() }
+    active: true              # ← foo({ bar() }) → foo { bar() }
   UnnecessaryFilter:
     active: true
   UnnecessaryInheritance:
     active: true
   UnnecessaryInnerClass:
-    active: true              # ← off by default, inner classes that don't use outer ref
+    active: true
   UnnecessaryLet:
-    active: true              # ← off by default, x.let { it.foo() } → x.foo()
+    active: true
   UnnecessaryParentheses:
-    active: true              # ← off by default, remove redundant parentheses
+    active: true
     allowForUnclearPrecedence: true  # ← but keep them when they clarify operator precedence
   UntilInsteadOfRangeTo:
-    active: true              # ← off by default, 0 until n over 0..n-1
+    active: true
   UnusedImports:
-    active: true              # ← off by default(!), always remove unused imports
+    active: true
   UnusedParameter:
     active: true
     allowedNames: 'ignored|expected'
@@ -763,12 +741,12 @@ style:
   UseCheckOrError:
     active: true
   UseDataClass:
-    active: true              # ← off by default, suggests data class when class only holds state
+    active: true
     allowVars: false
   UseEmptyCounterpart:
-    active: true              # ← off by default, emptyList() over listOf()
+    active: true
   UseIfEmptyOrIfBlank:
-    active: true              # ← off by default, str.ifEmpty {} idiom
+    active: true
   UseIfInsteadOfWhen:
     active: false             # ← keep off, when with 2 branches is still readable
     ignoreWhenContainingVariableDeclaration: false
@@ -783,7 +761,7 @@ style:
   UseRequireNotNull:
     active: true
   UseSumOfInsteadOfFlatMapSize:
-    active: true              # ← off by default, more efficient and readable
+    active: true
   UselessCallOnNotNull:
     active: true
   UtilityClassWithPublicConstructor:

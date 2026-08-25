@@ -6,32 +6,26 @@
 
 ## Context
 
-Refresh tokens are long-lived and, if a stored/hashed token is ever exfiltrated (compromised device, leaked log, DB
-read), a system that only rotates the single token in use gives an attacker no penalty for using a stolen token quietly,
-and gives the legitimate user no way to know a theft happened.
+Refresh tokens are long-lived. If one is exfiltrated (compromised device, leaked log, DB read), a system that only
+rotates the single token in use lets an attacker use it quietly, with no penalty and no signal to the legitimate user
+that theft occurred.
 
 ## Decision
 
-Refresh tokens belong to a "family," established at login. Every use of a refresh token rotates it to a new one in the
-same family, and the previous token is invalidated. If an already-rotated (i.e. previously used) token is presented
-again, that is treated as evidence of theft — the *entire family* is invalidated immediately, forcing re-authentication,
-not just the one reused token. Tokens are never stored in plain text; only their hash (via
-`tokenManager.hashTokenForStorage()`) is persisted.
+Refresh tokens belong to a "family," established at login. Every use rotates the token and invalidates the previous one.
+Presenting an already-rotated token is treated as evidence of theft: the *entire family* is invalidated immediately,
+forcing re-authentication. Only token hashes (`tokenManager.hashTokenForStorage()`) are persisted.
 
 ## Alternatives considered
 
-- **Single-token revocation on reuse** — simpler, but if a stolen token is used before the legitimate user's next
-  request, the attacker gets one valid rotation and the legitimate user is merely logged out with no signal that theft
-  occurred, rather than the whole session lineage being cut off immediately.
-- **No rotation, static long-lived refresh token** — minimal implementation, but a single leaked token stays valid for
-  its entire lifetime with no detection mechanism at all.
-- **Short-lived refresh tokens with no family tracking** — reduces the exposure window but still can't distinguish "the
-  legitimate user's own natural token expiry" from "someone replayed a stolen token,"
-  so it can't react to theft, only limit its duration.
+- **Single-token revocation on reuse** — if the stolen token is used first, the attacker gets a valid rotation and the
+  legitimate user is merely logged out, with no theft signal and the session lineage left alive.
+- **Static long-lived refresh token, no rotation** — a leaked token stays valid its whole lifetime, undetected.
+- **Short-lived refresh tokens, no family tracking** — shrinks the exposure window but can't distinguish natural expiry
+  from replay, so it limits theft rather than detecting it.
 
 ## Consequences
 
-This is intentionally *not* simplified to single-token revocation — a future contributor (or an AI assistant) proposing
-to drop family-wide invalidation as "unnecessary complexity" would be removing the theft-detection property this design
-exists for. The cost is more state to track per family (current token, prior-token lineage) and more nuanced tests
+Do *not* simplify this to single-token revocation — dropping family-wide invalidation as "unnecessary complexity"
+removes the theft-detection property the design exists for. Costs: per-family state to track and more nuanced tests
 (reuse-after-rotation must invalidate the whole family, not just fail one token check).
