@@ -8,8 +8,10 @@ import com.besa.shelflife.core.domain.security.AuthConstants
 import com.besa.shelflife.core.domain.security.TokenManager
 import java.security.MessageDigest
 import java.time.Instant
-import java.time.temporal.ChronoUnit
 import java.util.UUID
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.toJavaDuration
 
 class JwtTokenManager(
     secret: String,
@@ -37,7 +39,7 @@ class JwtTokenManager(
     }
 
     override fun generateAccessToken(userId: Int): String {
-        val expirationDate = Instant.now().plus(15, ChronoUnit.MINUTES)
+        val expirationDate = Instant.now().plus(ACCESS_TOKEN_EXPIRATION.toJavaDuration())
 
         return JWT
             .create()
@@ -51,7 +53,7 @@ class JwtTokenManager(
     }
 
     override fun generateRefreshToken(userId: Int): String {
-        val expirationDate = Instant.now().plus(30, ChronoUnit.DAYS)
+        val expirationDate = Instant.now().plus(REFRESH_TOKEN_EXPIRATION.toJavaDuration())
 
         return JWT
             .create()
@@ -75,5 +77,10 @@ class JwtTokenManager(
     override fun hashTokenForStorage(token: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
         return digest.digest(token.toByteArray(Charsets.UTF_8)).toHexString()
+    }
+
+    companion object {
+        private val ACCESS_TOKEN_EXPIRATION = 15.minutes
+        private val REFRESH_TOKEN_EXPIRATION = 30.days
     }
 }

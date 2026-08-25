@@ -34,13 +34,16 @@ class ResendEmailService(
             try {
                 val response = resend.emails().send(params)
                 logger.info { "Verification email sent to $to [id=${response.id}]" }
-            } catch (e: Exception) {
+            } catch (
+                @Suppress("TooGenericExceptionCaught") e: Exception,
+            ) {
                 logger.error(e) { "Resend API failed for $to" }
                 throw EmailDeliveryException("Failed to send verification email to $to")
             }
         }
     }
 
+    @Suppress("MultilineRawStringIndentation")
     private fun buildVerificationHtml(url: String): String =
         """
         <h2>Welcome!</h2>

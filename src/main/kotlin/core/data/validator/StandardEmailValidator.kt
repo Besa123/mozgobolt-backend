@@ -9,17 +9,19 @@ class StandardEmailValidator : EmailValidator {
         val normalized = normalize(email)
 
         if (!EMAIL_REGEX.matches(normalized)) return false
-        if (normalized.length > 254) return false
+        if (normalized.length > MAX_EMAIL_LENGTH) return false
 
         val domain = normalized.substringAfter("@")
         return domain !in disposableDomains
     }
 
     companion object {
-        private val EMAIL_REGEX =
-            Regex(
-                "^[a-z0-9]([a-z0-9._%+\\-]*[a-z0-9])?@[a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*\\.[a-z]{2,}$",
-            )
+        private const val MAX_EMAIL_LENGTH = 254
+
+        private const val EMAIL_PATTERN =
+            """^[a-z0-9]([a-z0-9._%+\-]*[a-z0-9])?@[a-z0-9]([a-z0-9\-]*[a-z0-9])?""" +
+                """(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*\.[a-z]{2,}$"""
+        private val EMAIL_REGEX = Regex(EMAIL_PATTERN)
 
         private val disposableDomains: Set<String> by lazy {
             val resource =

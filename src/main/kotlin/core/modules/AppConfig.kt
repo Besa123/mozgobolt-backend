@@ -25,7 +25,7 @@ data class AppConfig(
         val issuer: String,
         val audience: String,
         val accessTokenExpiration: Long = 15,
-        val refreshTokenExpiration: Long = 10080,
+        val refreshTokenExpiration: Long = 10_080,
     )
 
     @Serializable

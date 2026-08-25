@@ -10,10 +10,10 @@ class PasswordServiceImpl(
 ) : PasswordService {
     private val argon2 =
         Argon2Function.getInstance(
-            65536,
-            3,
-            2,
-            64,
+            ARGON2_MEMORY_KB,
+            ARGON2_ITERATIONS,
+            ARGON2_PARALLELISM,
+            ARGON2_LENGTH,
             Argon2.ID,
         )
 
@@ -40,5 +40,9 @@ class PasswordServiceImpl(
 
     companion object {
         const val MAX_PASSWORD_LENGTH = 128
+        private const val ARGON2_MEMORY_KB = 65_536
+        private const val ARGON2_ITERATIONS = 3
+        private const val ARGON2_PARALLELISM = 2
+        private const val ARGON2_LENGTH = 64
     }
 }

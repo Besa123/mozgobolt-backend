@@ -23,11 +23,11 @@ object EmailVerificationTokensTable : IntIdTable("email_verification_tokens") {
 class EmailVerificationTokenEntity(
     id: EntityID<Int>,
 ) : IntEntity(id) {
-    companion object : IntEntityClass<EmailVerificationTokenEntity>(EmailVerificationTokensTable)
-
     var user by UserEntity referencedOn EmailVerificationTokensTable.userId
     var token by EmailVerificationTokensTable.token
     var expiresAt by EmailVerificationTokensTable.expiresAt
     var used by EmailVerificationTokensTable.used
     var createdAt by EmailVerificationTokensTable.createdAt
+
+    companion object : IntEntityClass<EmailVerificationTokenEntity>(EmailVerificationTokensTable)
 }

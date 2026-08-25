@@ -18,6 +18,7 @@ import java.time.Instant
  */
 object LockoutPolicy {
     const val MAX_ATTEMPTS_BEFORE_LOCK = 5
+    private const val MAX_EXPONENT = 10
     private val MAX_LOCKOUT_DURATION: Duration = Duration.ofMinutes(30)
     private val BASE_LOCKOUT_DURATION: Duration = Duration.ofMinutes(1)
 
@@ -26,7 +27,7 @@ object LockoutPolicy {
 
         if (attemptsOverThreshold <= 0) return null
 
-        val multiplier = 1L shl (attemptsOverThreshold - 1).coerceAtMost(10)
+        val multiplier = 1L shl (attemptsOverThreshold - 1).coerceAtMost(MAX_EXPONENT)
         val lockDuration = BASE_LOCKOUT_DURATION.multipliedBy(multiplier).coerceAtMost(MAX_LOCKOUT_DURATION)
 
         return Instant.now().plus(lockDuration)

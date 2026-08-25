@@ -15,8 +15,9 @@ import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.plus
 import org.jetbrains.exposed.v1.jdbc.update
-import java.time.Duration
 import java.time.Instant
+import kotlin.time.Duration.Companion.days
+import kotlin.time.toJavaDuration
 
 class UserRepositoryI : UserRepository {
     override suspend fun findUser(email: String): User? =
@@ -54,10 +55,11 @@ class UserRepositoryI : UserRepository {
             this.token = token
             this.familyId = familyId
             this.createdAt = now
-            this.expiresAt = now.plus(Duration.ofDays(30))
+            this.expiresAt = now.plus(REFRESH_TOKEN_DURATION.toJavaDuration())
         }
     }
 
+    @Suppress("ReturnCount")
     override suspend fun validateAndRevokeRefreshToken(
         userId: Int,
         token: String,
@@ -181,5 +183,9 @@ class UserRepositoryI : UserRepository {
         ) {
             it[used] = true
         }
+    }
+
+    companion object {
+        private val REFRESH_TOKEN_DURATION = 30.days
     }
 }

@@ -24,12 +24,12 @@ object RefreshTokensTable : IntIdTable("refresh_tokens") {
 class RefreshTokenEntity(
     id: EntityID<Int>,
 ) : IntEntity(id) {
-    companion object : IntEntityClass<RefreshTokenEntity>(RefreshTokensTable)
-
     var user by UserEntity referencedOn RefreshTokensTable.userId
     var token by RefreshTokensTable.token
     var familyId by RefreshTokensTable.familyId
     var isRevoked by RefreshTokensTable.isRevoked
     var createdAt by RefreshTokensTable.createdAt
     var expiresAt by RefreshTokensTable.expiresAt
+
+    companion object : IntEntityClass<RefreshTokenEntity>(RefreshTokensTable)
 }

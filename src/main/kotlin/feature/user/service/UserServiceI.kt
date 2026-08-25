@@ -35,6 +35,7 @@ class UserServiceI(
     private val appConfig: AppConfig,
     private val tx: TransactionalRunner,
 ) : UserService {
+    @Suppress("ReturnCount")
     override suspend fun createUser(
         password: String,
         email: String,

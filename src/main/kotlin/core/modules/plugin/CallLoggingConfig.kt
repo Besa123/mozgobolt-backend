@@ -13,6 +13,8 @@ import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
 import org.slf4j.event.Level
 
+private const val MAX_USER_AGENT_LENGTH = 100
+
 fun Application.configureCallLogging() {
     install(CallLogging) {
         level = Level.INFO
@@ -47,7 +49,7 @@ fun Application.configureCallLogging() {
         }
 
         mdc("userAgent") { call ->
-            call.request.headers[HttpHeaders.UserAgent]?.take(100)
+            call.request.headers[HttpHeaders.UserAgent]?.take(MAX_USER_AGENT_LENGTH)
         }
 
         mdc("method") { call ->

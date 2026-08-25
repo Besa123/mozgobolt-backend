@@ -6,21 +6,23 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import javax.sql.DataSource
 
+private const val STATUS_KEY = "status"
+
 fun Route.infrastructureRoutes(dataSource: DataSource) {
     get("/health") {
         val dbHealthy = runCatching { dataSource.connection.use { it.isValid(2) } }.isSuccess
 
         if (dbHealthy) {
-            call.respond(HttpStatusCode.OK, mapOf("status" to "healthy"))
+            call.respond(HttpStatusCode.OK, mapOf(STATUS_KEY to "healthy"))
         } else {
             call.respond(
                 HttpStatusCode.ServiceUnavailable,
-                mapOf("status" to "unhealthy", "reason" to "database"),
+                mapOf(STATUS_KEY to "unhealthy", "reason" to "database"),
             )
         }
     }
 
     get("/ready") {
-        call.respond(HttpStatusCode.OK, mapOf("status" to "ready"))
+        call.respond(HttpStatusCode.OK, mapOf(STATUS_KEY to "ready"))
     }
 }

@@ -7,6 +7,9 @@ import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.config.property
 import io.ktor.server.plugins.cors.routing.CORS
+import kotlin.time.Duration.Companion.hours
+
+private val CORS_MAX_AGE_SECONDS = 1.hours
 
 fun Application.configureCors() {
     val corsConfig: AppConfig.Cors = property("app.cors")
@@ -38,6 +41,7 @@ fun Application.configureCors() {
         allowMethod(HttpMethod.Patch)
 
         allowCredentials = true
-        maxAgeInSeconds = 3600
+
+        maxAgeInSeconds = CORS_MAX_AGE_SECONDS.inWholeSeconds
     }
 }

@@ -18,12 +18,12 @@ data object UsersTable : IntIdTable("users") {
 class UserEntity(
     id: EntityID<Int>,
 ) : IntEntity(id) {
-    companion object : IntEntityClass<UserEntity>(UsersTable)
-
     var email by UsersTable.email
     var name by UsersTable.name
     var passwordHash by UsersTable.passwordHash
     var failedLoginAttempts by UsersTable.failedLoginAttempts
     var lockedUntil by UsersTable.lockedUntil
     var isEmailVerified by UsersTable.isEmailVerified
+
+    companion object : IntEntityClass<UserEntity>(UsersTable)
 }
