@@ -44,6 +44,34 @@ class ResendEmailService(
         }
     }
 
+    override suspend fun sendPasswordResetEmail(
+        to: String,
+        token: String,
+    ) {
+        val resetUrl = "${config.baseUrl}/reset?token=$token"
+
+        val params =
+            CreateEmailOptions
+                .builder()
+                .from(config.email.fromAddress)
+                .to(to)
+                .subject("Reset your password")
+                .html(buildPasswordResetHtml(resetUrl))
+                .build()
+
+        withContext(Dispatchers.IO) {
+            try {
+                val response = resend.emails().send(params)
+                logger.info { "Password reset email sent to $to [id=${response.id}]" }
+            } catch (
+                @Suppress("TooGenericExceptionCaught") e: Exception,
+            ) {
+                logger.error(e) { "Resend API failed for $to" }
+                throw e.toEmailDeliveryException(to)
+            }
+        }
+    }
+
     @Suppress("MultilineRawStringIndentation")
     private fun buildVerificationHtml(url: String): String =
         """
@@ -52,6 +80,16 @@ class ResendEmailService(
         <p><a href="$url">Verify Email</a></p>
         <p>This link expires in ${config.email.verificationTokenExpirationHours} hours.</p>
         <p>If you didn't create an account, ignore this email.</p>
+        """.trimIndent()
+
+    @Suppress("MultilineRawStringIndentation")
+    private fun buildPasswordResetHtml(url: String): String =
+        """
+        <h2>Reset Your Password</h2>
+        <p>Click the link below to reset your password:</p>
+        <p><a href="$url">Reset Password</a></p>
+        <p>This link expires in ${config.email.resetTokenExpirationMinutes} minutes.</p>
+        <p>If you didn't request a password reset, you can safely ignore this email.</p>
         """.trimIndent()
 }
 

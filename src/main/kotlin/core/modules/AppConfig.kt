@@ -49,5 +49,6 @@ data class AppConfig(
         val resendApiKey: String = "",
         val fromAddress: String = "noreply@example.com",
         val verificationTokenExpirationHours: Long = 24,
+        val resetTokenExpirationMinutes: Long = 15,
     )
 }

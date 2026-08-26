@@ -5,4 +5,9 @@ interface EmailService {
         to: String,
         token: String,
     )
+
+    suspend fun sendPasswordResetEmail(
+        to: String,
+        token: String,
+    )
 }

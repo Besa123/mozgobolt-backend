@@ -24,4 +24,20 @@ class ResilientEmailService(
             throw e
         }
     }
+
+    override suspend fun sendPasswordResetEmail(
+        to: String,
+        token: String,
+    ) {
+        try {
+            withEmailResilience {
+                delegate.sendPasswordResetEmail(to, token)
+            }
+        } catch (
+            @Suppress("TooGenericExceptionCaught") e: Exception,
+        ) {
+            logger.error(e) { "Email delivery failed for $to after retries and circuit-breaker" }
+            throw e
+        }
+    }
 }

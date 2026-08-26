@@ -15,11 +15,15 @@ import com.shelflife.core.utility.functions.protectedApi
 import com.shelflife.core.utility.functions.publicRateLimitedApi
 import com.shelflife.feature.user.domain.UserService
 import com.shelflife.feature.user.domain.model.LoginError
+import com.shelflife.feature.user.domain.model.PasswordResetError
 import com.shelflife.feature.user.domain.model.RefreshError
 import com.shelflife.feature.user.domain.model.RegisterError
 import com.shelflife.feature.user.domain.model.VerifyEmailError
 import com.shelflife.feature.user.routing.dto.request.LoginRequestDto
 import com.shelflife.feature.user.routing.dto.request.LogoutRequestDto
+import com.shelflife.feature.user.routing.dto.request.PasswordResetConfirmRequestDto
+import com.shelflife.feature.user.routing.dto.request.PasswordResetRequestDto
+import com.shelflife.feature.user.routing.dto.request.PasswordResetValidateRequestDto
 import com.shelflife.feature.user.routing.dto.request.RefreshRequestDto
 import com.shelflife.feature.user.routing.dto.request.UserCreationRequestDto
 import com.shelflife.feature.user.routing.dto.response.SignInResponseDto
@@ -39,6 +43,7 @@ fun Route.authRoutes(
     authProtectedRoutes(userService)
 }
 
+@Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
 private fun Route.authPublicRoutes(
     userService: UserService,
     idempotencyStore: IdempotencyStore,
@@ -141,6 +146,76 @@ private fun Route.authPublicRoutes(
                                 VerifyEmailError.INVALID_TOKEN -> HttpStatusCode.BadRequest
                                 VerifyEmailError.EXPIRED_TOKEN -> HttpStatusCode.Gone
                                 VerifyEmailError.ALREADY_VERIFIED -> HttpStatusCode.Conflict
+                            }
+                        call.respond(status, ErrorResponse(error = error.name))
+                    },
+                )
+            }
+
+            validatedPost<PasswordResetRequestDto>(
+                "/password-reset/request",
+                BodyLimit.TINY,
+                RequestTimeout.FAST,
+            ) { request ->
+                userService.requestPasswordReset(request.email).fold(
+                    onSuccess = {
+                        call.respond(
+                            HttpStatusCode.OK,
+                            mapOf("message" to "If an account exists, a password reset link has been sent."),
+                        )
+                    },
+                    onError = { error ->
+                        val status =
+                            when (error) {
+                                PasswordResetError.ACCOUNT_LOCKED -> HttpStatusCode.TooManyRequests
+                                else -> HttpStatusCode.BadRequest
+                            }
+                        call.respond(status, ErrorResponse(error = error.name))
+                    },
+                )
+            }
+
+            validatedPost<PasswordResetValidateRequestDto>(
+                "/password-reset/validate",
+                BodyLimit.SMALL,
+                RequestTimeout.FAST,
+            ) { request ->
+                userService.validatePasswordResetToken(request.token).fold(
+                    onSuccess = { email ->
+                        call.respond(
+                            HttpStatusCode.OK,
+                            mapOf("valid" to true, "email" to email),
+                        )
+                    },
+                    onError = { error ->
+                        val status =
+                            when (error) {
+                                PasswordResetError.EXPIRED_TOKEN -> HttpStatusCode.Gone
+                                else -> HttpStatusCode.BadRequest
+                            }
+                        call.respond(status, ErrorResponse(error = error.name))
+                    },
+                )
+            }
+
+            validatedPost<PasswordResetConfirmRequestDto>(
+                "/password-reset/confirm",
+                BodyLimit.SMALL,
+                RequestTimeout.FAST,
+            ) { request ->
+                userService.confirmPasswordReset(request.token, request.newPassword).fold(
+                    onSuccess = {
+                        call.respond(
+                            HttpStatusCode.OK,
+                            mapOf("message" to "Password reset successfully. You can now log in."),
+                        )
+                    },
+                    onError = { error ->
+                        val status =
+                            when (error) {
+                                PasswordResetError.EXPIRED_TOKEN -> HttpStatusCode.Gone
+                                PasswordResetError.ACCOUNT_LOCKED -> HttpStatusCode.TooManyRequests
+                                else -> HttpStatusCode.BadRequest
                             }
                         call.respond(status, ErrorResponse(error = error.name))
                     },

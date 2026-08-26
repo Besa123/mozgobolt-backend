@@ -15,6 +15,7 @@ import com.shelflife.feature.user.domain.UserService
 import com.shelflife.feature.user.domain.model.AuthResponse
 import com.shelflife.feature.user.domain.model.LockoutPolicy
 import com.shelflife.feature.user.domain.model.LoginError
+import com.shelflife.feature.user.domain.model.PasswordResetError
 import com.shelflife.feature.user.domain.model.RefreshError
 import com.shelflife.feature.user.domain.model.RegisterError
 import com.shelflife.feature.user.domain.model.TokenValidationResult
@@ -237,5 +238,101 @@ class UserServiceI(
             .onFailure { logger.error(it) { "Failed to resend verification email to ${user.email}" } }
 
         return AppResult.Success(Unit)
+    }
+
+    override suspend fun requestPasswordReset(email: String): AppResult<String, PasswordResetError> {
+        val normalizedEmail = emailValidator.normalize(email)
+
+        val user =
+            tx.transactional { userRepository.findUser(normalizedEmail) }
+                ?: run {
+                    val dummyToken = SecureTokenGenerator.generate()
+                    return AppResult.Success(dummyToken)
+                }
+
+        if (user.isLocked) {
+            logger.warn { "Password reset requested for locked account: ${user.id}" }
+            return AppResult.Error(PasswordResetError.ACCOUNT_LOCKED)
+        }
+
+        val resetToken = SecureTokenGenerator.generate()
+        val expiresAt = Instant.now().plus(appConfig.email.resetTokenExpirationMinutes, ChronoUnit.MINUTES)
+
+        val result =
+            tx.transactional {
+                userRepository.createPasswordResetToken(user.id, resetToken, expiresAt)
+                resetToken
+            }
+
+        runSuspendCatching { emailService.sendPasswordResetEmail(user.email, result) }
+            .onFailure { logger.error(it) { "Failed to send password reset email to ${user.email}" } }
+
+        return AppResult.Success(result)
+    }
+
+    override suspend fun validatePasswordResetToken(token: String): AppResult<String, PasswordResetError> {
+        val record =
+            tx.transactional { userRepository.findPasswordResetToken(token) }
+                ?: return AppResult.Error(PasswordResetError.INVALID_TOKEN)
+
+        if (record.used) {
+            return AppResult.Error(PasswordResetError.INVALID_TOKEN)
+        }
+
+        if (record.expiresAt.isBefore(Instant.now())) {
+            return AppResult.Error(PasswordResetError.EXPIRED_TOKEN)
+        }
+
+        val user =
+            tx.transactional { userRepository.findUserById(record.userId) }
+                ?: return AppResult.Error(PasswordResetError.USER_NOT_FOUND)
+
+        return AppResult.Success(user.email)
+    }
+
+    @Suppress("ReturnCount")
+    override suspend fun confirmPasswordReset(
+        token: String,
+        newPassword: String,
+    ): AppResult<Unit, PasswordResetError> {
+        val record =
+            tx.transactional { userRepository.findPasswordResetToken(token) }
+                ?: return AppResult.Error(PasswordResetError.INVALID_TOKEN)
+
+        if (record.used) {
+            return AppResult.Error(PasswordResetError.INVALID_TOKEN)
+        }
+
+        if (record.expiresAt.isBefore(Instant.now())) {
+            return AppResult.Error(PasswordResetError.EXPIRED_TOKEN)
+        }
+
+        val isPasswordValid = passwordValidator.isValid(newPassword)
+        if (!isPasswordValid) return AppResult.Error(PasswordResetError.WEAK_PASSWORD)
+
+        return tx.transactional {
+            val user =
+                userRepository.findUserById(record.userId)
+                    ?: return@transactional AppResult.Error(PasswordResetError.USER_NOT_FOUND)
+
+            if (user.isLocked) {
+                logger.warn { "Password reset attempt on locked account: ${user.id}" }
+                return@transactional AppResult.Error(PasswordResetError.ACCOUNT_LOCKED)
+            }
+
+            val isSameAsOld = passwordService.verifyPassword(password = newPassword, hash = user.passwordHash)
+            if (isSameAsOld) {
+                return@transactional AppResult.Error(PasswordResetError.SAME_AS_OLD)
+            }
+
+            val newHashedPassword = passwordService.hashPassword(newPassword)
+            userRepository.updatePassword(user.id, newHashedPassword)
+            userRepository.markPasswordResetTokenUsed(record.id, Instant.now())
+
+            userRepository.revokeAllTokensForUser(user.id)
+
+            logger.info { "Password reset completed for user ${user.id}" }
+            AppResult.Success(Unit)
+        }
     }
 }

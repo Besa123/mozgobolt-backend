@@ -32,4 +32,24 @@ class LoggingEmailService(
             """.trimMargin()
         }
     }
+
+    override suspend fun sendPasswordResetEmail(
+        to: String,
+        token: String,
+    ) {
+        val resetUrl = "${config.baseUrl}/reset?token=$token"
+
+        logger.info {
+            """
+                |
+                |╔══════════════════════════════════════════════════════════════╗
+                |║  PASSWORD RESET EMAIL (dev mode — not actually sent)       ║
+                |╠══════════════════════════════════════════════════════════════╣
+                |║  To:    $to
+                |║  Link:  $resetUrl
+                |║  Token: $token
+                |╚══════════════════════════════════════════════════════════════╝
+            """.trimMargin()
+        }
+    }
 }
