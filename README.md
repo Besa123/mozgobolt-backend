@@ -3,7 +3,8 @@
 A Kotlin backend built on [Ktor](https://ktor.io), following feature-based Clean Architecture. See
 [ARCHITECTURE.md](ARCHITECTURE.md) for how the code is organized and why, [CONTRIBUTING.md](CONTRIBUTING.md)
 for local setup and the checks a PR needs to pass, and [docs/adr/](docs/adr/) for the reasoning behind specific
-decisions (refresh-token rotation, results-over-exceptions, etc.).
+decisions (refresh-token rotation, results-over-exceptions, etc.). For the pantry-tracking product domain itself,
+see [docs/domain/pantry.md](docs/domain/pantry.md).
 
 ## Stack
 
