@@ -28,6 +28,8 @@ src/main/kotlin/
 
 `feature/user/` is the reference implementation of the full pattern (auth, registration, tokens).
 `feature/health/` is intentionally minimal — it has no domain logic, so it only needs `routing/`.
+`feature/product/` is the pantry-tracking core of the app — see [docs/domain/pantry.md](docs/domain/pantry.md) for the
+domain model and the reasoning behind its schema.
 
 ## Why feature-based, not layer-based
 
