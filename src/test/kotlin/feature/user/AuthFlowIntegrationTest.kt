@@ -190,5 +190,12 @@ class AuthFlowIntegrationTest {
         ) {
             sentTokens += to to token
         }
+
+        override suspend fun sendPasswordResetEmail(
+            to: String,
+            token: String,
+        ) {
+            sentTokens += to to token
+        }
     }
 }

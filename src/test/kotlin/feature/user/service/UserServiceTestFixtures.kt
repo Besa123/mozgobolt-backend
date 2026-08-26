@@ -9,6 +9,7 @@ import com.shelflife.core.domain.security.PasswordService
 import com.shelflife.core.domain.security.TokenManager
 import com.shelflife.core.modules.AppConfig
 import com.shelflife.feature.user.domain.UserRepository
+import com.shelflife.feature.user.domain.model.PasswordResetToken
 import com.shelflife.feature.user.domain.model.TokenValidationResult
 import com.shelflife.feature.user.domain.model.User
 import com.shelflife.feature.user.domain.model.VerificationTokenRecord
@@ -95,6 +96,7 @@ class FakeTokenManager : TokenManager {
 
 class RecordingEmailService : EmailService {
     val sentTokens = mutableListOf<Pair<String, String>>()
+    val sentPasswordResetTokens = mutableListOf<Pair<String, String>>()
 
     var failureToThrow: Throwable? = null
 
@@ -104,6 +106,14 @@ class RecordingEmailService : EmailService {
     ) {
         failureToThrow?.let { throw it }
         sentTokens += to to token
+    }
+
+    override suspend fun sendPasswordResetEmail(
+        to: String,
+        token: String,
+    ) {
+        failureToThrow?.let { throw it }
+        sentPasswordResetTokens += to to token
     }
 }
 
@@ -123,9 +133,11 @@ class FakeUserRepository : UserRepository {
     private val usersById = mutableMapOf<Int, User>()
     private val refreshTokens = mutableMapOf<Int, RefreshTokenRecord>()
     private val verificationTokens = mutableMapOf<Int, VerificationTokenRecord>()
+    private val passwordResetTokens = mutableMapOf<Int, PasswordResetToken>()
     private var nextUserId = 1
     private var nextRefreshTokenId = 1
     private var nextVerificationTokenId = 1
+    private var nextPasswordResetTokenId = 1
 
     fun seedVerifiedUser(
         email: String,
@@ -237,5 +249,50 @@ class FakeUserRepository : UserRepository {
 
     override suspend fun invalidateVerificationTokens(userId: Int) {
         verificationTokens.replaceAll { _, record -> if (record.userId == userId) record.copy(used = true) else record }
+    }
+
+    override suspend fun createPasswordResetToken(
+        userId: Int,
+        token: String,
+        expiresAt: Instant,
+    ) {
+        val id = nextPasswordResetTokenId++
+        passwordResetTokens[id] =
+            PasswordResetToken(
+                id = id,
+                userId = userId,
+                token = token,
+                expiresAt = expiresAt,
+                used = false,
+                usedAt = null,
+                createdAt = Instant.now(),
+            )
+    }
+
+    override suspend fun findPasswordResetToken(token: String): PasswordResetToken? =
+        passwordResetTokens.values.find { it.token == token }
+
+    override suspend fun markPasswordResetTokenUsed(
+        tokenId: Int,
+        usedAt: Instant,
+    ): Boolean {
+        val record = passwordResetTokens[tokenId] ?: return false
+        if (record.used) return false
+        passwordResetTokens[tokenId] = record.copy(used = true, usedAt = usedAt)
+        return true
+    }
+
+    override suspend fun invalidatePasswordResetTokens(userId: Int) {
+        passwordResetTokens.replaceAll { _, record ->
+            if (record.userId == userId) record.copy(used = true) else record
+        }
+    }
+
+    override suspend fun updatePassword(
+        userId: Int,
+        newPasswordHash: String,
+    ) {
+        val user = usersById[userId] ?: return
+        usersById[userId] = user.copy(passwordHash = newPasswordHash)
     }
 }

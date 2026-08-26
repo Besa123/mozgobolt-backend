@@ -9,4 +9,7 @@ object AuthPaths {
     const val LOGOUT = "$BASE/logout"
     const val LOGOUT_ALL = "$BASE/logout-all"
     const val RESEND_VERIFICATION = "$BASE/resend-verification"
+    const val PASSWORD_RESET_REQUEST = "$BASE/password-reset/request"
+    const val PASSWORD_RESET_VALIDATE = "$BASE/password-reset/validate"
+    const val PASSWORD_RESET_CONFIRM = "$BASE/password-reset/confirm"
 }

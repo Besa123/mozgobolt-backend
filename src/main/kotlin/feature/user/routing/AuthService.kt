@@ -26,6 +26,8 @@ import com.shelflife.feature.user.routing.dto.request.PasswordResetRequestDto
 import com.shelflife.feature.user.routing.dto.request.PasswordResetValidateRequestDto
 import com.shelflife.feature.user.routing.dto.request.RefreshRequestDto
 import com.shelflife.feature.user.routing.dto.request.UserCreationRequestDto
+import com.shelflife.feature.user.routing.dto.response.MessageResponseDto
+import com.shelflife.feature.user.routing.dto.response.PasswordResetValidateResponseDto
 import com.shelflife.feature.user.routing.dto.response.SignInResponseDto
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.auth.jwt.JWTPrincipal
@@ -161,7 +163,7 @@ private fun Route.authPublicRoutes(
                     onSuccess = {
                         call.respond(
                             HttpStatusCode.OK,
-                            mapOf("message" to "If an account exists, a password reset link has been sent."),
+                            MessageResponseDto("If an account exists, a password reset link has been sent."),
                         )
                     },
                     onError = { error ->
@@ -184,7 +186,7 @@ private fun Route.authPublicRoutes(
                     onSuccess = { email ->
                         call.respond(
                             HttpStatusCode.OK,
-                            mapOf("valid" to true, "email" to email),
+                            PasswordResetValidateResponseDto(valid = true, email = email),
                         )
                     },
                     onError = { error ->
@@ -207,7 +209,7 @@ private fun Route.authPublicRoutes(
                     onSuccess = {
                         call.respond(
                             HttpStatusCode.OK,
-                            mapOf("message" to "Password reset successfully. You can now log in."),
+                            MessageResponseDto("Password reset successfully. You can now log in."),
                         )
                     },
                     onError = { error ->
