@@ -27,6 +27,16 @@ class ProductServiceI(
         }
     }
 
+    override suspend fun listOwnedBy(userId: Int): List<Product> =
+        tx.transactional {
+            productRepository.findAllOwnedBy(userId)
+        }
+
+    override suspend fun findVisibleById(
+        userId: Int,
+        productId: Int,
+    ): Product? = tx.transactional { productRepository.findVisibleById(userId, productId) }
+
     override suspend fun createPrivateProduct(
         userId: Int,
         name: String,

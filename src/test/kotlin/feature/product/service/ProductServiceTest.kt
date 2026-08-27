@@ -235,4 +235,29 @@ class ProductServiceTest {
             result.fold(onSuccess = {}, onError = { fail("expected success but got $it") })
         }
     }
+
+    @Test
+    fun `listing owned products returns only the caller's own, not global or another user's`() {
+        runBlocking {
+            val harness = newHarness()
+            harness.repository.seed(name = "Sajt", ownerId = null)
+            harness.repository.seed(name = "Sonka", ownerId = 1)
+            harness.repository.seed(name = "Kolbász", ownerId = 2)
+
+            val results = harness.service.listOwnedBy(userId = 1)
+
+            assertEquals(listOf("Sonka"), results.map { it.name })
+        }
+    }
+
+    @Test
+    fun `listing owned products for a user with none returns an empty list`() {
+        runBlocking {
+            val harness = newHarness()
+
+            val results = harness.service.listOwnedBy(userId = 1)
+
+            assertEquals(emptyList(), results)
+        }
+    }
 }

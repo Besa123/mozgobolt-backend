@@ -62,6 +62,43 @@ class ProductRoutesTest {
         }
 
     @Test
+    fun `listing my products requires authentication`() =
+        testApplication {
+            configureTestEnvironment()
+            application { installProductRoutesTestApp() }
+
+            val response = client.get(ProductPaths.MINE)
+
+            assertEquals(HttpStatusCode.Unauthorized, response.status)
+        }
+
+    @Test
+    fun `listing my products returns the service's owned products as json`() =
+        testApplication {
+            configureTestEnvironment()
+            val productService =
+                FakeProductService().apply {
+                    listOwnedByResult =
+                        listOf(
+                            Product(
+                                id = 1,
+                                name = "Sonka",
+                                ownerId = 1,
+                                defaultLifespanDays = null,
+                                defaultUnitCategory = null,
+                            ),
+                        )
+                }
+            application { installProductRoutesTestApp(productService) }
+
+            val response = client.get(ProductPaths.MINE) { bearerAuth(testAccessTokenFor(userId = 1)) }
+
+            assertEquals(HttpStatusCode.OK, response.status)
+            val results = Json.decodeFromString<List<ProductResponseDto>>(response.bodyAsText())
+            assertEquals("Sonka", results.single().name)
+        }
+
+    @Test
     fun `creating a product returns 201 with the created product`() =
         testApplication {
             configureTestEnvironment()

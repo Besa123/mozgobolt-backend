@@ -18,6 +18,10 @@ class FakeProductService : ProductService {
     var lastSearchQuery: String? = null
         private set
 
+    var listOwnedByResult: List<Product> = emptyList()
+
+    var findVisibleByIdResult: Product? = null
+
     var createResult: AppResult<Product, ProductError> =
         AppResult.Success(
             Product(id = 1, name = "Sonka", ownerId = 1, defaultLifespanDays = null, defaultUnitCategory = null),
@@ -49,6 +53,13 @@ class FakeProductService : ProductService {
         lastSearchQuery = query
         return searchResult
     }
+
+    override suspend fun listOwnedBy(userId: Int): List<Product> = listOwnedByResult
+
+    override suspend fun findVisibleById(
+        userId: Int,
+        productId: Int,
+    ): Product? = findVisibleByIdResult
 
     override suspend fun createPrivateProduct(
         userId: Int,

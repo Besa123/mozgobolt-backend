@@ -56,6 +56,14 @@ class FakeProductRepository : ProductRepository {
     override suspend fun findGlobalByName(name: String): Product? =
         productsById.values.firstOrNull { it.ownerId == null && it.name.equals(name, ignoreCase = true) }
 
+    override suspend fun findAllOwnedBy(userId: Int): List<Product> =
+        productsById.values.filter { it.ownerId == userId }.sortedBy { it.name.lowercase() }
+
+    override suspend fun findVisibleById(
+        userId: Int,
+        productId: Int,
+    ): Product? = productsById[productId]?.takeIf { it.ownerId == null || it.ownerId == userId }
+
     override suspend fun existsOwnedBy(
         userId: Int,
         productId: Int,

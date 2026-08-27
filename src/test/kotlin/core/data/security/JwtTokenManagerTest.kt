@@ -53,8 +53,10 @@ class JwtTokenManagerTest {
     @Test
     fun `a malformed or tampered token is rejected`() {
         val token = manager.generateRefreshToken(userId = 1)
+        val index = token.length - 2
+        val tampered = token.take(index) + (if (token[index] == 'A') 'B' else 'A') + token.substring(index + 1)
 
-        assertNull(manager.verifyAndGetUserIdFromRefreshToken(token.dropLast(1) + "x"))
+        assertNull(manager.verifyAndGetUserIdFromRefreshToken(tampered))
     }
 
     @Test

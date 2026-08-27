@@ -25,10 +25,6 @@ class StorageLocationServiceI(
 
         val created =
             tx.transactional {
-                if (storageLocationRepository.existsByUserIdAndName(userId, normalizedName)) {
-                    return@transactional null
-                }
-
                 storageLocationRepository.create(userId, normalizedName)
             } ?: return AppResult.Error(StorageLocationError.DUPLICATE_NAME)
 
@@ -48,25 +44,13 @@ class StorageLocationServiceI(
                     return@transactional RenameLocationOutcome.NotFound
                 }
 
-                if (storageLocationRepository.existsByUserIdAndName(userId, normalizedName)) {
-                    return@transactional RenameLocationOutcome.DuplicateName
-                }
-
-                storageLocationRepository
-                    .updateName(locationId, userId, normalizedName)
-                    ?.let { RenameLocationOutcome.Renamed(it) }
-                    ?: RenameLocationOutcome.NotFound
+                storageLocationRepository.updateName(locationId, userId, normalizedName)
             }
 
         return when (outcome) {
-            is RenameLocationOutcome.Renamed ->
-                AppResult.Success(outcome.location)
-
-            is RenameLocationOutcome.NotFound ->
-                AppResult.Error(StorageLocationError.NOT_FOUND)
-
-            is RenameLocationOutcome.DuplicateName ->
-                AppResult.Error(StorageLocationError.DUPLICATE_NAME)
+            is RenameLocationOutcome.Renamed -> AppResult.Success(outcome.location)
+            is RenameLocationOutcome.NotFound -> AppResult.Error(StorageLocationError.NOT_FOUND)
+            is RenameLocationOutcome.DuplicateName -> AppResult.Error(StorageLocationError.DUPLICATE_NAME)
         }
     }
 

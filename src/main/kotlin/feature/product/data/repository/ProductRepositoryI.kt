@@ -42,6 +42,24 @@ class ProductRepositoryI : ProductRepository {
             .firstOrNull()
             ?.toProduct()
 
+    override suspend fun findAllOwnedBy(userId: Int): List<Product> =
+        ProductEntity
+            .find { ProductsTable.userId eq userId }
+            .orderBy(ProductsTable.name to SortOrder.ASC)
+            .map { it.toProduct() }
+
+    override suspend fun findVisibleById(
+        userId: Int,
+        productId: Int,
+    ): Product? =
+        ProductEntity
+            .find {
+                (ProductsTable.id eq productId) and
+                    (ProductsTable.userId.isNull() or (ProductsTable.userId eq userId))
+            }.limit(1)
+            .firstOrNull()
+            ?.toProduct()
+
     override suspend fun existsOwnedBy(
         userId: Int,
         productId: Int,

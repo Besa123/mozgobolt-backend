@@ -19,7 +19,9 @@ import com.shelflife.core.domain.security.TokenManager
 import com.shelflife.core.domain.validation.EmailValidator
 import com.shelflife.core.domain.validation.PasswordValidator
 import com.shelflife.core.modules.AppConfig
+import com.shelflife.feature.pantryEntry.di.configurePantryEntryDependencyInjection
 import com.shelflife.feature.product.di.configureProductDependencyInjection
+import com.shelflife.feature.quantityUnit.di.configureQuantityUnitDependencyInjection
 import com.shelflife.feature.storageLocation.di.configureStorageLocationDependencyInjection
 import com.shelflife.feature.user.di.configureAuthDependencyInjection
 import io.ktor.server.application.Application
@@ -76,4 +78,6 @@ fun Application.configureDependencyInjection() {
     configureAuthDependencyInjection()
     configureProductDependencyInjection()
     configureStorageLocationDependencyInjection()
+    configureQuantityUnitDependencyInjection()
+    configurePantryEntryDependencyInjection()
 }

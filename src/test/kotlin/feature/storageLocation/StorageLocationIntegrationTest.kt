@@ -1,7 +1,12 @@
 package com.shelflife.feature.storageLocation
 
 import com.shelflife.core.domain.AppResult
+import com.shelflife.core.skipIfNoDocker
 import com.shelflife.feature.storageLocation.domain.model.StorageLocationError
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -351,18 +356,75 @@ class StorageLocationIntegrationTest {
     }
 
     @Test
-    fun `renaming to same name returns duplicate error`() {
+    fun `renaming a location to its own current name is a no-op success`() {
         skipIfNoDocker()
 
         withRealStorageLocationDatabase { harness ->
             val created = harness.service.createForUser(userId = 1, name = "SameName")
             val locationId = (created as AppResult.Success).data.id
 
-            // Rename to the same name - this should fail because we check for duplicates
+            // A row never conflicts with itself — this must succeed, not DUPLICATE_NAME, the
+            // same way ProductServiceI treats a rename-to-current-name (see pantry.md). PATCH is
+            // documented as naturally idempotent; if this returned an error, retrying the exact
+            // same request would flip between 200 and 409 depending on timing, which isn't it.
             val result = harness.service.renameLocation(userId = 1, locationId = locationId, newName = "SameName")
 
-            // Should return DUPLICATE_NAME because it's already taken
-            assertEquals(AppResult.Error(StorageLocationError.DUPLICATE_NAME), result)
+            assertEquals("SameName", (result as AppResult.Success).data.name)
+        }
+    }
+
+    @Test
+    fun `two concurrent creates with the same name for the same user only let one succeed`() {
+        skipIfNoDocker()
+
+        withRealStorageLocationDatabase { harness ->
+            runBlocking {
+                coroutineScope {
+                    val results =
+                        listOf(
+                            async { harness.service.createForUser(userId = 1, name = "Racer") },
+                            async { harness.service.createForUser(userId = 1, name = "Racer") },
+                        ).awaitAll()
+
+                    val successes = results.count { it is AppResult.Success }
+                    val duplicates =
+                        results.count {
+                            it is AppResult.Error && it.errorType == StorageLocationError.DUPLICATE_NAME
+                        }
+
+                    assertEquals(1, successes, "exactly one concurrent create should win: $results")
+                    assertEquals(1, duplicates, "the loser should see a clean DUPLICATE_NAME, not crash: $results")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `two concurrent renames to the same target name only let one succeed`() {
+        skipIfNoDocker()
+
+        withRealStorageLocationDatabase { harness ->
+            val locationA = (harness.service.createForUser(userId = 1, name = "A") as AppResult.Success).data
+            val locationB = (harness.service.createForUser(userId = 1, name = "B") as AppResult.Success).data
+
+            runBlocking {
+                coroutineScope {
+                    val results =
+                        listOf(
+                            async { harness.service.renameLocation(1, locationA.id, "Same") },
+                            async { harness.service.renameLocation(1, locationB.id, "Same") },
+                        ).awaitAll()
+
+                    val successes = results.count { it is AppResult.Success }
+                    val duplicates =
+                        results.count {
+                            it is AppResult.Error && it.errorType == StorageLocationError.DUPLICATE_NAME
+                        }
+
+                    assertEquals(1, successes, "exactly one concurrent rename should win: $results")
+                    assertEquals(1, duplicates, "the loser should see a clean DUPLICATE_NAME, not crash: $results")
+                }
+            }
         }
     }
 }

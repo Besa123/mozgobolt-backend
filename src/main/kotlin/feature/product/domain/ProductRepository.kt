@@ -13,6 +13,15 @@ interface ProductRepository {
 
     suspend fun findGlobalByName(name: String): Product?
 
+    /** All of [userId]'s own private products, alphabetical — not global ones, not a search. */
+    suspend fun findAllOwnedBy(userId: Int): List<Product>
+
+    /** A product [userId] is allowed to reference: global (owner-less) or their own private one. */
+    suspend fun findVisibleById(
+        userId: Int,
+        productId: Int,
+    ): Product?
+
     suspend fun existsOwnedBy(
         userId: Int,
         productId: Int,

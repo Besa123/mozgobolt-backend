@@ -1,6 +1,7 @@
 package com.shelflife.feature.product
 
 import com.shelflife.core.domain.AppResult
+import com.shelflife.core.skipIfNoDocker
 import com.shelflife.feature.product.domain.model.ProductError
 import kotlin.test.Test
 import kotlin.test.assertEquals

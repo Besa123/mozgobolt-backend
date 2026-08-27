@@ -10,8 +10,9 @@ place. Idiomatic modern Kotlin — not Java-style Kotlin.
 ## Architecture
 
 Feature-based layout: `feature/<name>/domain/`, `data/`, `service/`, `routing/`, `di/`. Shared infrastructure in
-`core/`. New features follow the same structure. `feature/product/` has non-obvious domain decisions — read
-[docs/domain/pantry.md](docs/domain/pantry.md) before changing anything under it.
+`core/`. New features follow the same structure. The pantry feature (`feature/product/`, `feature/storageLocation/`,
+`feature/quantityUnit/`, `feature/pantryEntry/`) has non-obvious domain decisions — read
+[docs/domain/pantry.md](docs/domain/pantry.md) before changing anything under any of them.
 
 ## Project Patterns
 

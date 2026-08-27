@@ -1,5 +1,6 @@
 package com.shelflife.feature.product
 
+import com.shelflife.core.skipIfNoDocker
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse

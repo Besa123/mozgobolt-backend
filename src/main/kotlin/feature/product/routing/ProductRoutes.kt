@@ -33,6 +33,13 @@ fun Route.productRoutes(
             call.respond(HttpStatusCode.OK, results.map { it.toResponseDto() })
         }
 
+        get("/products/mine") {
+            val userId = call.currentUserIdOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
+
+            val results = productService.listOwnedBy(userId)
+            call.respond(HttpStatusCode.OK, results.map { it.toResponseDto() })
+        }
+
         validatedPost<CreateProductRequestDto>("/products", BodyLimit.SMALL, RequestTimeout.FAST) { request ->
             val userId =
                 call.currentUserIdOrNull()

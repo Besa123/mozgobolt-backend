@@ -1,5 +1,6 @@
 package com.shelflife.feature.storageLocation.domain
 
+import com.shelflife.feature.storageLocation.domain.model.RenameLocationOutcome
 import com.shelflife.feature.storageLocation.domain.model.StorageLocation
 
 interface StorageLocationRepository {
@@ -10,21 +11,16 @@ interface StorageLocationRepository {
 
     suspend fun findAllByUserId(userId: Int): List<StorageLocation>
 
-    suspend fun existsByUserIdAndName(
-        userId: Int,
-        name: String,
-    ): Boolean
-
     suspend fun create(
         userId: Int,
         name: String,
-    ): StorageLocation
+    ): StorageLocation?
 
     suspend fun updateName(
         id: Int,
         userId: Int,
         name: String,
-    ): StorageLocation?
+    ): RenameLocationOutcome
 
     suspend fun deleteByIdAndUserId(
         id: Int,

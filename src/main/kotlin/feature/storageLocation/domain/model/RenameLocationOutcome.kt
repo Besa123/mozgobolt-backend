@@ -1,11 +1,11 @@
 package com.shelflife.feature.storageLocation.domain.model
 
-sealed class RenameLocationOutcome {
+sealed interface RenameLocationOutcome {
     data class Renamed(
         val location: StorageLocation,
-    ) : RenameLocationOutcome()
+    ) : RenameLocationOutcome
 
-    object NotFound : RenameLocationOutcome()
+    data object NotFound : RenameLocationOutcome
 
-    object DuplicateName : RenameLocationOutcome()
+    data object DuplicateName : RenameLocationOutcome
 }
