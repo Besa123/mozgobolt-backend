@@ -1,0 +1,26 @@
+package com.shelflife.feature.product.domain
+
+import com.shelflife.feature.product.domain.model.Product
+import com.shelflife.feature.product.domain.model.RenameOutcome
+import com.shelflife.feature.product.domain.model.UnitCategory
+
+interface ProductRepository {
+    suspend fun search(
+        userId: Int,
+        query: String,
+        limit: Int,
+    ): List<Product>
+
+    suspend fun createPrivate(
+        userId: Int,
+        name: String,
+        defaultLifespanDays: Int?,
+        defaultUnitCategory: UnitCategory?,
+    ): Product?
+
+    suspend fun renamePrivate(
+        userId: Int,
+        productId: Int,
+        newName: String,
+    ): RenameOutcome
+}

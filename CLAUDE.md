@@ -33,6 +33,11 @@ Feature-based layout: `feature/<name>/domain/`, `data/`, `service/`, `routing/`,
   naturally idempotent operations.
 - **`runSuspendCatching` over `runCatching`:** `runCatching` swallows `CancellationException` and breaks coroutine
   cancellation; use `runSuspendCatching` (`core/utility/functions/`).
+- **Reuse before you reinvent:** for a mechanical task (escaping, parsing, retrying, formatting, diffing, and the like),
+  check whether it's already solved — Kotlin's stdlib, coroutines, Ktor, Exposed, or any other dependency already in the
+  project — before writing a bespoke helper. A hand-rolled version re-derives something already tested and can silently
+  miss an edge case the library already handles. (One instance of this: Exposed's
+  `LikePattern.ofLiteral()` for LIKE-pattern escaping, instead of a hand-rolled `.replace()` chain.)
 - **External API calls use Resilience4j:** wrap with a `withXResilience { }` helper backed by a `Retry`/
   `CircuitBreaker` pair per dependency (`core/modules/plugin/ResilienceConfig.kt`), never a hand-rolled retry loop —
   see [ADR 0005](docs/adr/0005-resilience4j-for-external-calls.md).

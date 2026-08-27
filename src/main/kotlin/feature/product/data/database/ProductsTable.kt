@@ -1,5 +1,6 @@
 package com.shelflife.feature.product.data.database
 
+import com.shelflife.feature.product.domain.model.UnitCategory
 import com.shelflife.feature.user.data.database.UserEntity
 import com.shelflife.feature.user.data.database.UsersTable
 import org.jetbrains.exposed.v1.core.ReferenceOption

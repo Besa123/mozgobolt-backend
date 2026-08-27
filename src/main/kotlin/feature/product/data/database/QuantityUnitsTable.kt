@@ -1,15 +1,10 @@
 package com.shelflife.feature.product.data.database
 
+import com.shelflife.feature.product.domain.model.UnitCategory
 import org.jetbrains.exposed.v1.core.dao.id.EntityID
 import org.jetbrains.exposed.v1.core.dao.id.IntIdTable
 import org.jetbrains.exposed.v1.dao.IntEntity
 import org.jetbrains.exposed.v1.dao.IntEntityClass
-
-enum class UnitCategory {
-    MASS,
-    VOLUME,
-    PIECE,
-}
 
 /**
  * Pre-seeded (V3 migration) Hungarian units. [multiplier] converts to the category's base unit

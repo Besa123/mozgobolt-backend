@@ -4,13 +4,13 @@ import com.shelflife.core.data.idempotency.IdempotencyStore
 import com.shelflife.core.data.idempotency.IdempotentResult
 import com.shelflife.core.data.idempotency.idempotent
 import com.shelflife.core.data.idempotency.idempotentResult
-import com.shelflife.core.domain.security.AuthConstants
 import com.shelflife.core.modules.plugin.AUTH_LIMIT
 import com.shelflife.core.modules.plugin.BodyLimit
 import com.shelflife.core.modules.plugin.RequestTimeout
 import com.shelflife.core.modules.plugin.limitedPost
 import com.shelflife.core.modules.plugin.validatedPost
 import com.shelflife.core.routing.dto.response.ErrorResponse
+import com.shelflife.core.utility.functions.currentUserIdOrNull
 import com.shelflife.core.utility.functions.protectedApi
 import com.shelflife.core.utility.functions.publicRateLimitedApi
 import com.shelflife.feature.user.domain.UserService
@@ -30,8 +30,6 @@ import com.shelflife.feature.user.routing.dto.response.MessageResponseDto
 import com.shelflife.feature.user.routing.dto.response.PasswordResetValidateResponseDto
 import com.shelflife.feature.user.routing.dto.response.SignInResponseDto
 import io.ktor.http.HttpStatusCode
-import io.ktor.server.auth.jwt.JWTPrincipal
-import io.ktor.server.auth.principal
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
@@ -236,21 +234,18 @@ private fun Route.authProtectedRoutes(userService: UserService) {
             }
 
             limitedPost("/logout-all", timeout = RequestTimeout.FAST) {
-                val principal =
-                    call.principal<JWTPrincipal>()
+                val userId =
+                    call.currentUserIdOrNull()
                         ?: return@limitedPost call.respond(HttpStatusCode.Unauthorized)
 
-                val userId = principal.payload.getClaim(AuthConstants.CLAIM_USER_ID).asInt()
                 userService.logoutAllSessions(userId)
                 call.respond(HttpStatusCode.OK)
             }
 
             limitedPost("/resend-verification", timeout = RequestTimeout.FAST) {
-                val principal =
-                    call.principal<JWTPrincipal>()
+                val userId =
+                    call.currentUserIdOrNull()
                         ?: return@limitedPost call.respond(HttpStatusCode.Unauthorized)
-
-                val userId = principal.payload.getClaim(AuthConstants.CLAIM_USER_ID).asInt()
 
                 userService.resendVerificationEmail(userId).fold(
                     onSuccess = { call.respond(HttpStatusCode.OK) },
