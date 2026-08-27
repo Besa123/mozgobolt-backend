@@ -4,6 +4,7 @@ import com.shelflife.core.configureTestEnvironment
 import com.shelflife.core.domain.AppResult
 import com.shelflife.feature.storageLocation.domain.model.StorageLocation
 import com.shelflife.feature.storageLocation.domain.model.StorageLocationError
+import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication
@@ -55,7 +56,7 @@ class StorageLocationRoutesTest {
             val service = FakeStorageLocationService()
             application { installStorageLocationRoutesTestApp(service) }
 
-            val response = getJson(StorageLocationPaths.LIST)
+            val response = getJson(StorageLocationPaths.LIST, userId = null)
 
             assertEquals(HttpStatusCode.Unauthorized, response.status)
         }
@@ -69,7 +70,9 @@ class StorageLocationRoutesTest {
 
             val response = getJson(StorageLocationPaths.LIST)
 
-            assertEquals(HttpStatusCode.Unauthorized, response.status) // No auth token provided
+            assertEquals(HttpStatusCode.OK, response.status)
+            val body = Json.parseToJsonElement(response.bodyAsText()).jsonArray
+            assertEquals(0, body.size)
         }
 
     // ===== POST /storage-locations =====
@@ -95,7 +98,7 @@ class StorageLocationRoutesTest {
             val service = FakeStorageLocationService()
             application { installStorageLocationRoutesTestApp(service) }
 
-            val response = postJson(StorageLocationPaths.CREATE, """{"name":"Pantry"}""")
+            val response = postJson(StorageLocationPaths.CREATE, """{"name":"Pantry"}""", userId = null)
 
             assertEquals(HttpStatusCode.Unauthorized, response.status)
         }
@@ -147,7 +150,8 @@ class StorageLocationRoutesTest {
             configureTestEnvironment()
             val service = FakeStorageLocationService()
             application { installStorageLocationRoutesTestApp(service) }
-            val oversizedName = "a".repeat(2 * 1024)
+            // POST /storage-locations is registered with BodyLimit.SMALL (16 KB) — must clear that.
+            val oversizedName = "a".repeat(20 * 1024)
 
             val response = postJson(StorageLocationPaths.CREATE, """{"name":"$oversizedName"}""")
 
@@ -192,7 +196,7 @@ class StorageLocationRoutesTest {
             val service = FakeStorageLocationService()
             application { installStorageLocationRoutesTestApp(service) }
 
-            val response = patchJson(StorageLocationPaths.byId(1), """{"name":"NewName"}""")
+            val response = patchJson(StorageLocationPaths.byId(1), """{"name":"NewName"}""", userId = null)
 
             assertEquals(HttpStatusCode.Unauthorized, response.status)
         }
@@ -280,7 +284,7 @@ class StorageLocationRoutesTest {
             val service = FakeStorageLocationService()
             application { installStorageLocationRoutesTestApp(service) }
 
-            val response = deleteJson(StorageLocationPaths.byId(1))
+            val response = deleteJson(StorageLocationPaths.byId(1), userId = null)
 
             assertEquals(HttpStatusCode.Unauthorized, response.status)
         }
@@ -317,16 +321,40 @@ class StorageLocationRoutesTest {
     // ===== EDGE CASES =====
 
     @Test
-    fun `POST to same endpoint twice with same body is idempotent and returns Created both times`() =
+    fun `repeating a POST with the same Idempotency-Key replays the first response instead of creating twice`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeStorageLocationService()
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response1 =
+                postJson(StorageLocationPaths.CREATE, """{"name":"Unique"}""") {
+                    header("Idempotency-Key", "retry-key-1")
+                }
+            val response2 =
+                postJson(StorageLocationPaths.CREATE, """{"name":"Unique"}""") {
+                    header("Idempotency-Key", "retry-key-1")
+                }
+
+            assertEquals(HttpStatusCode.Created, response1.status)
+            assertEquals(HttpStatusCode.Created, response2.status)
+            assertEquals(response1.bodyAsText(), response2.bodyAsText())
+            assertEquals("true", response2.headers["X-Idempotency-Replayed"])
+            // Only one row was actually created — the second call never reached the service.
+            assertEquals(1, service.locations[1]?.size)
+        }
+
+    @Test
+    fun `POSTing twice without an Idempotency-Key with a duplicate name returns 409 on the second call`() =
         testApplication {
             configureTestEnvironment()
             val service = FakeStorageLocationService()
             application { installStorageLocationRoutesTestApp(service) }
 
             val response1 = postJson(StorageLocationPaths.CREATE, """{"name":"Unique"}""")
+            service.createResult = AppResult.Error(StorageLocationError.DUPLICATE_NAME)
             val response2 = postJson(StorageLocationPaths.CREATE, """{"name":"Unique"}""")
 
-            // Second call should fail with DUPLICATE_NAME
             assertEquals(HttpStatusCode.Created, response1.status)
             assertEquals(HttpStatusCode.Conflict, response2.status)
         }

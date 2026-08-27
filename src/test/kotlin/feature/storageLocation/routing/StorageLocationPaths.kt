@@ -5,8 +5,10 @@ import com.shelflife.core.data.idempotency.IdempotencyStore
 import com.shelflife.core.installTestModules
 import com.shelflife.core.routing.apiV1
 import com.shelflife.core.routing.dto.response.ErrorResponse
+import com.shelflife.core.testAccessTokenFor
 import com.shelflife.feature.storageLocation.domain.StorageLocationService
 import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.patch
@@ -41,22 +43,31 @@ fun Application.installStorageLocationRoutesTestApp(
     }
 }
 
+/**
+ * All storage-location routes sit behind `protectedApi { }`, so every call needs a bearer
+ * token. Pass `userId = null` only when the test is specifically exercising the unauthenticated
+ * (401) path — every other test should authenticate as a real user id.
+ */
 suspend fun ApplicationTestBuilder.getJson(
     path: String,
+    userId: Int? = 1,
     block: HttpRequestBuilder.() -> Unit = {},
 ): HttpResponse =
     client.get(path) {
         contentType(ContentType.Application.Json)
+        userId?.let { bearerAuth(testAccessTokenFor(it)) }
         block()
     }
 
 suspend fun ApplicationTestBuilder.postJson(
     path: String,
     body: String,
+    userId: Int? = 1,
     block: HttpRequestBuilder.() -> Unit = {},
 ): HttpResponse =
     client.post(path) {
         contentType(ContentType.Application.Json)
+        userId?.let { bearerAuth(testAccessTokenFor(it)) }
         setBody(body)
         block()
     }
@@ -64,20 +75,24 @@ suspend fun ApplicationTestBuilder.postJson(
 suspend fun ApplicationTestBuilder.patchJson(
     path: String,
     body: String,
+    userId: Int? = 1,
     block: HttpRequestBuilder.() -> Unit = {},
 ): HttpResponse =
     client.patch(path) {
         contentType(ContentType.Application.Json)
+        userId?.let { bearerAuth(testAccessTokenFor(it)) }
         setBody(body)
         block()
     }
 
 suspend fun ApplicationTestBuilder.deleteJson(
     path: String,
+    userId: Int? = 1,
     block: HttpRequestBuilder.() -> Unit = {},
 ): HttpResponse =
     client.delete(path) {
         contentType(ContentType.Application.Json)
+        userId?.let { bearerAuth(testAccessTokenFor(it)) }
         block()
     }
 
