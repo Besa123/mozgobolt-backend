@@ -35,6 +35,13 @@ class ProductRepositoryI : ProductRepository {
             .limit(limit)
             .map { it.toProduct() }
 
+    override suspend fun findGlobalByName(name: String): Product? =
+        ProductEntity
+            .find { ProductsTable.userId.isNull() and (ProductsTable.name.lowerCase() eq name.lowercase()) }
+            .limit(1)
+            .firstOrNull()
+            ?.toProduct()
+
     override suspend fun createPrivate(
         userId: Int,
         name: String,

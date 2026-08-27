@@ -11,6 +11,8 @@ interface ProductRepository {
         limit: Int,
     ): List<Product>
 
+    suspend fun findGlobalByName(name: String): Product?
+
     suspend fun createPrivate(
         userId: Int,
         name: String,

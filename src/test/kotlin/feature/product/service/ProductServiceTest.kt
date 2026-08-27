@@ -197,6 +197,19 @@ class ProductServiceTest {
     }
 
     @Test
+    fun `renaming to a name that shadows an existing global product is rejected`() {
+        runBlocking {
+            val harness = newHarness()
+            harness.repository.seed(name = "Sajt", ownerId = null)
+            val toRename = harness.repository.seed(name = "Snoka", ownerId = 1)
+
+            val result = harness.service.renameProduct(userId = 1, productId = toRename.id, newName = "sajt")
+
+            assertEquals(AppResult.Error(ProductError.DUPLICATE_NAME), result)
+        }
+    }
+
+    @Test
     fun `renaming a product to its own current name is a no-op success`() {
         runBlocking {
             val harness = newHarness()

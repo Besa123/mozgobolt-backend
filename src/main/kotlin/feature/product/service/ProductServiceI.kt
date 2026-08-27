@@ -37,6 +37,8 @@ class ProductServiceI(
 
         val created =
             tx.transactional {
+                if (productRepository.findGlobalByName(normalizedName) != null) return@transactional null
+
                 productRepository.createPrivate(
                     userId = userId,
                     name = normalizedName,
@@ -55,16 +57,16 @@ class ProductServiceI(
     ): AppResult<Product, ProductError> {
         val normalizedName = newName.trim()
 
-        return when (
-            val outcome =
-                tx.transactional {
-                    productRepository.renamePrivate(
-                        userId,
-                        productId,
-                        normalizedName,
-                    )
+        val outcome =
+            tx.transactional {
+                if (productRepository.findGlobalByName(normalizedName) != null) {
+                    return@transactional RenameOutcome.DuplicateName
                 }
-        ) {
+
+                productRepository.renamePrivate(userId, productId, normalizedName)
+            }
+
+        return when (outcome) {
             is RenameOutcome.Renamed -> AppResult.Success(outcome.product)
             is RenameOutcome.NotFound -> AppResult.Error(ProductError.NOT_FOUND)
             is RenameOutcome.DuplicateName -> AppResult.Error(ProductError.DUPLICATE_NAME)

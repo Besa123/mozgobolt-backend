@@ -53,16 +53,16 @@ class FakeProductRepository : ProductRepository {
             .sortedBy { it.name.lowercase() }
             .take(limit)
 
+    override suspend fun findGlobalByName(name: String): Product? =
+        productsById.values.firstOrNull { it.ownerId == null && it.name.equals(name, ignoreCase = true) }
+
     override suspend fun createPrivate(
         userId: Int,
         name: String,
         defaultLifespanDays: Int?,
         defaultUnitCategory: UnitCategory?,
     ): Product? {
-        val collides =
-            productsById.values.any {
-                (it.ownerId == null || it.ownerId == userId) && it.name.equals(name, ignoreCase = true)
-            }
+        val collides = productsById.values.any { it.ownerId == userId && it.name.equals(name, ignoreCase = true) }
         if (collides) return null
 
         return seed(
@@ -83,9 +83,7 @@ class FakeProductRepository : ProductRepository {
 
         val collides =
             productsById.values.any {
-                it.id != productId &&
-                    (it.ownerId == null || it.ownerId == userId) &&
-                    it.name.equals(newName, ignoreCase = true)
+                it.id != productId && it.ownerId == userId && it.name.equals(newName, ignoreCase = true)
             }
         if (collides) return RenameOutcome.DuplicateName
 

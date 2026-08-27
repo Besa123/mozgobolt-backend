@@ -20,8 +20,13 @@ soonest-expiring batch first — the two-week-old milk surfaces before anyone fo
 2. Buying something always creates a new `pantry_entries` row, even if one already matches exactly. Quantity only
    changes via the user explicitly editing that row (using some up, topping up the same batch).
 3. No consumed-history / soft delete — a row is deleted once its quantity hits 0. Not solving waste-analytics yet.
-4. Product-name dedup (case-insensitive) is enforced only in the V3 migration (partial unique index) — not in
-   `ProductsTable.kt`, since Exposed can't express it.
+4. Product-name dedup (case-insensitive) is two-layered, deliberately, because a single DB constraint can't express the
+   full rule: the V3 migration's partial unique indexes stop global-vs-global and same-user-vs-same-user collisions (not
+   in `ProductsTable.kt` — Exposed can't express a partial index), but they're scoped disjointly and never check against
+   each other. A private name shadowing an *existing global* product (e.g. a user creating their own "Sonka" when the
+   app already ships one) is caught only in `ProductServiceI` via `findGlobalByName`, ahead of the DB call — this is a
+   service-level check with a real (if practically tiny) race window, not a hard DB guarantee, because Postgres can't
+   index "unique across the union of two disjoint partitions."
 5. `expiration_date` is `DATE`, not `timestamp` — it has no time-of-day component.
 6. `quantity_units` is fully seeded (closed set). `products` only ships a few examples — most products are expected to
    come from users, not an app-curated catalog.
