@@ -56,6 +56,11 @@ class FakeProductRepository : ProductRepository {
     override suspend fun findGlobalByName(name: String): Product? =
         productsById.values.firstOrNull { it.ownerId == null && it.name.equals(name, ignoreCase = true) }
 
+    override suspend fun existsOwnedBy(
+        userId: Int,
+        productId: Int,
+    ): Boolean = productsById[productId]?.ownerId == userId
+
     override suspend fun createPrivate(
         userId: Int,
         name: String,

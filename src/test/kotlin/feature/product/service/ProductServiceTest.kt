@@ -161,6 +161,21 @@ class ProductServiceTest {
     }
 
     @Test
+    fun `renaming another user's product to a name that collides globally still returns not-found, not duplicate`() {
+        runBlocking {
+            val harness = newHarness()
+            harness.repository.seed(name = "Sajt", ownerId = null)
+            val product = harness.repository.seed(name = "Snoka", ownerId = 2)
+
+            // Ownership must be checked before the new name is validated against anything —
+            // an unauthorized caller should never learn a name they can't use is taken globally.
+            val result = harness.service.renameProduct(userId = 1, productId = product.id, newName = "Sajt")
+
+            assertEquals(AppResult.Error(ProductError.NOT_FOUND), result)
+        }
+    }
+
+    @Test
     fun `renaming a global product is not found, not a permission error`() {
         runBlocking {
             val harness = newHarness()

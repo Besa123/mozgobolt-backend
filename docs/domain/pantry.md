@@ -26,7 +26,10 @@ soonest-expiring batch first — the two-week-old milk surfaces before anyone fo
    each other. A private name shadowing an *existing global* product (e.g. a user creating their own "Sonka" when the
    app already ships one) is caught only in `ProductServiceI` via `findGlobalByName`, ahead of the DB call — this is a
    service-level check with a real (if practically tiny) race window, not a hard DB guarantee, because Postgres can't
-   index "unique across the union of two disjoint partitions."
+   index "unique across the union of two disjoint partitions." Relatedly: `ProductServiceI.renameProduct` checks
+   ownership (`existsOwnedBy`) *before* running this global-name check — an unauthorized caller must get `NOT_FOUND`
+   regardless of whether their attempted name happens to collide globally, not learn something about the dictionary for
+   a resource they don't own.
 5. `expiration_date` is `DATE`, not `timestamp` — it has no time-of-day component.
 6. `quantity_units` is fully seeded (closed set). `products` only ships a few examples — most products are expected to
    come from users, not an app-curated catalog.

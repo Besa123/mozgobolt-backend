@@ -10,6 +10,10 @@ import kotlin.test.assertEquals
  * insertIgnore), so it catches the real unique-violation SQLState from Postgres directly. That's
  * invisible to the FakeProductRepository-backed unit tests — only a real DB proves it works
  * instead of surfacing as a 500.
+ *
+ * None of these tests rename *to* "Sonka" unless the test is specifically about the global-name
+ * collision — "Sonka" ships as a seeded global product (V3 migration), so using it as an
+ * incidental target name elsewhere would silently change what the test actually exercises.
  */
 class ProductRenameIntegrationTest {
     @Test
@@ -32,11 +36,11 @@ class ProductRenameIntegrationTest {
         skipIfNoDocker()
 
         withRealProductDatabase { harness ->
-            harness.service.createPrivateProduct(1, "Sonka", null, null)
-            val toRename = harness.service.createPrivateProduct(1, "Snoka", null, null)
+            harness.service.createPrivateProduct(1, "Kolbász", null, null)
+            val toRename = harness.service.createPrivateProduct(1, "Szalonna", null, null)
             val productId = (toRename as AppResult.Success).data.id
 
-            val result = harness.service.renameProduct(userId = 1, productId = productId, newName = "Sonka")
+            val result = harness.service.renameProduct(userId = 1, productId = productId, newName = "Kolbász")
 
             assertEquals(AppResult.Error(ProductError.DUPLICATE_NAME), result)
         }
@@ -50,10 +54,10 @@ class ProductRenameIntegrationTest {
             val created = harness.service.createPrivateProduct(1, "Snoka", null, null)
             val productId = (created as AppResult.Success).data.id
 
-            harness.service.renameProduct(userId = 1, productId = productId, newName = "Sonka")
-            val results = harness.service.search(userId = 1, query = "Sonka")
+            harness.service.renameProduct(userId = 1, productId = productId, newName = "Kolbász")
+            val results = harness.service.search(userId = 1, query = "Kolbász")
 
-            assertEquals(listOf("Sonka"), results.map { it.name })
+            assertEquals(listOf("Kolbász"), results.map { it.name })
         }
     }
 
@@ -65,7 +69,7 @@ class ProductRenameIntegrationTest {
             val created = harness.service.createPrivateProduct(2, "Snoka", null, null)
             val productId = (created as AppResult.Success).data.id
 
-            val result = harness.service.renameProduct(userId = 1, productId = productId, newName = "Sonka")
+            val result = harness.service.renameProduct(userId = 1, productId = productId, newName = "Kolbász")
             val stillThere = harness.service.search(userId = 2, query = "Snoka")
 
             assertEquals(AppResult.Error(ProductError.NOT_FOUND), result)

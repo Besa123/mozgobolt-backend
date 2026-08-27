@@ -13,6 +13,11 @@ interface ProductRepository {
 
     suspend fun findGlobalByName(name: String): Product?
 
+    suspend fun existsOwnedBy(
+        userId: Int,
+        productId: Int,
+    ): Boolean
+
     suspend fun createPrivate(
         userId: Int,
         name: String,

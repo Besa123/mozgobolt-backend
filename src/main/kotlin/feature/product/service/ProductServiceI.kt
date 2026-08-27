@@ -59,6 +59,8 @@ class ProductServiceI(
 
         val outcome =
             tx.transactional {
+                if (!productRepository.existsOwnedBy(userId, productId)) return@transactional RenameOutcome.NotFound
+
                 if (productRepository.findGlobalByName(normalizedName) != null) {
                     return@transactional RenameOutcome.DuplicateName
                 }

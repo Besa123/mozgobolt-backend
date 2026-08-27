@@ -42,6 +42,15 @@ class ProductRepositoryI : ProductRepository {
             .firstOrNull()
             ?.toProduct()
 
+    override suspend fun existsOwnedBy(
+        userId: Int,
+        productId: Int,
+    ): Boolean =
+        ProductEntity
+            .find { (ProductsTable.id eq productId) and (ProductsTable.userId eq userId) }
+            .limit(1)
+            .firstOrNull() != null
+
     override suspend fun createPrivate(
         userId: Int,
         name: String,
