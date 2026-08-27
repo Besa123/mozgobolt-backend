@@ -19,6 +19,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
+import kotlinx.serialization.json.Json
 
 fun Route.productRoutes(
     productService: ProductService,
@@ -40,12 +41,12 @@ fun Route.productRoutes(
             call.respond(HttpStatusCode.OK, results.map { it.toResponseDto() })
         }
 
-        validatedPost<CreateProductRequestDto>("/products", BodyLimit.SMALL, RequestTimeout.FAST) { request ->
+        validatedPost<CreateProductRequestDto>("/products", BodyLimit.SMALL, RequestTimeout.STANDARD) { request ->
             val userId =
                 call.currentUserIdOrNull()
                     ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
 
-            idempotent(idempotencyStore, requestFingerprint = "$userId:${request.name}") {
+            idempotent(idempotencyStore, requestFingerprint = "$userId:${Json.encodeToString(request)}") {
                 productService
                     .createPrivateProduct(
                         userId = userId,
@@ -63,7 +64,7 @@ fun Route.productRoutes(
             }
         }
 
-        validatedPatch<RenameProductRequestDto>("/products/{id}", BodyLimit.SMALL, RequestTimeout.FAST) { request ->
+        validatedPatch<RenameProductRequestDto>("/products/{id}", BodyLimit.SMALL, RequestTimeout.STANDARD) { request ->
             val userId =
                 call.currentUserIdOrNull()
                     ?: return@validatedPatch call.respond(HttpStatusCode.Unauthorized)

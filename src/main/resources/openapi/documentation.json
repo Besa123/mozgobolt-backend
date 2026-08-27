@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "ShelfLife API",
-    "description": "Backend API for ShelfLife.\n\nAll endpoints share a global rate limit of 150 requests/minute per client; every `/api/v1/auth/*` endpoint additionally enforces a 5 requests/minute limit (429). POST bodies are size-limited (413 when exceeded) and requests time out server-side (504). Error bodies, where present, use the `ErrorResponse` shape; `error` is a machine-readable code.",
+    "description": "Backend API for ShelfLife.\n\nAll endpoints share a global rate limit of 150 requests/minute per client; every `/api/v1/auth/*` endpoint additionally enforces a 5 requests/minute limit (429), and every authenticated endpoint enforces a 60 requests/minute limit keyed by user id (429). POST bodies are size-limited (413 when exceeded) and requests time out server-side (504). Error bodies, where present, use the `ErrorResponse` shape; `error` is a machine-readable code.\n\nSorting, grouping, and aggregation of pantry data are frontend concerns, not this API's — endpoints return raw data (in insertion order for lists) and let the client format it.",
     "version": "1.0.0"
   },
   "servers": [
@@ -127,6 +127,7 @@
                     "format": "password",
                     "minLength": 8,
                     "maxLength": 128,
+                    "description": "Must contain at least one uppercase letter, one lowercase letter, and one digit.",
                     "example": "SecurePassword123"
                   },
                   "name": {
@@ -360,6 +361,209 @@
         }
       }
     },
+    "/api/v1/auth/password-reset/request": {
+      "post": {
+        "summary": "Request a password reset",
+        "description": "Always responds 200 regardless of whether the email is registered, to avoid leaking account existence. Emits a reset email only if the account exists.",
+        "tags": [
+          "Authentication"
+        ],
+        "operationId": "requestPasswordReset",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "example": "user@example.com"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Request accepted (whether or not the account exists)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Any `PasswordResetError` other than `ACCOUNT_LOCKED` (e.g. `INVALID_TOKEN`, `WEAK_PASSWORD`, `SAME_AS_OLD`, `USER_NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded, or account temporarily locked (`ACCOUNT_LOCKED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/password-reset/validate": {
+      "post": {
+        "summary": "Validate a password reset token",
+        "description": "Checks whether a reset token is still usable, without consuming it.",
+        "tags": [
+          "Authentication"
+        ],
+        "operationId": "validatePasswordResetToken",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "token"
+                ],
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Token is valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordResetValidateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Any `PasswordResetError` other than `EXPIRED_TOKEN` (e.g. `INVALID_TOKEN`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Reset token expired (`EXPIRED_TOKEN`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/password-reset/confirm": {
+      "post": {
+        "summary": "Confirm a password reset",
+        "description": "Consumes the reset token and sets a new password.",
+        "tags": [
+          "Authentication"
+        ],
+        "operationId": "confirmPasswordReset",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "token",
+                  "newPassword"
+                ],
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  },
+                  "newPassword": {
+                    "type": "string",
+                    "format": "password",
+                    "minLength": 8,
+                    "maxLength": 128,
+                    "description": "Must contain at least one uppercase letter, one lowercase letter, and one digit; must differ from the current password (`SAME_AS_OLD` otherwise)."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password reset",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Any `PasswordResetError` other than `EXPIRED_TOKEN`/`ACCOUNT_LOCKED` (e.g. `INVALID_TOKEN`, `WEAK_PASSWORD`, `SAME_AS_OLD`, `USER_NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Reset token expired (`EXPIRED_TOKEN`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded, or account temporarily locked (`ACCOUNT_LOCKED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/logout": {
       "post": {
         "summary": "Logout user",
@@ -479,6 +683,796 @@
           }
         }
       }
+    },
+    "/api/v1/products/search": {
+      "get": {
+        "summary": "Search products (autocomplete)",
+        "description": "Returns global products together with the caller's own private products, matching `q` case-insensitively. An empty/missing `q` returns an empty list — this is autocomplete, not a listing endpoint (use `GET /products/mine` for that).",
+        "tags": [
+          "Products"
+        ],
+        "operationId": "searchProducts",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Search text; defaults to empty (which returns an empty list)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching products, global and the caller's own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Product"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/v1/products/mine": {
+      "get": {
+        "summary": "List the caller's own private products",
+        "description": "All of the caller's own private products, no query needed — for a \"manage my products, rename them\" screen. Never includes global products.",
+        "tags": [
+          "Products"
+        ],
+        "operationId": "listMyProducts",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's private products",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Product"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/v1/products": {
+      "post": {
+        "summary": "Create a private product",
+        "description": "Creates a product owned by the caller. Rejected if the (trimmed, case-insensitive) name collides with a global product or one of the caller's own. Supports idempotent retries the same way as `/auth/register` (see that endpoint's description).",
+        "tags": [
+          "Products"
+        ],
+        "operationId": "createProduct",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProductRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Product created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "description": "Name collides with a global product or one of the caller's own (`DUPLICATE_NAME`), or an identical idempotent request is in flight (`REQUEST_IN_PROGRESS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Idempotency key reused with a different payload (`IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/v1/products/{id}": {
+      "patch": {
+        "summary": "Rename a private product",
+        "description": "Only the owner of a private product may rename it; global products can never be renamed via this endpoint (`NOT_FOUND` either way — a caller never learns whether `id` is someone else's product or a global one).",
+        "tags": [
+          "Products"
+        ],
+        "operationId": "renameProduct",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameProductRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Product renamed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed (`VALIDATION_FAILED`), or `id` is not a valid integer (`INVALID_PRODUCT_ID`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Not the caller's private product, or doesn't exist (`NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "New name collides with a global product or one of the caller's own (`DUPLICATE_NAME`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/v1/storage-locations": {
+      "get": {
+        "summary": "List the caller's storage locations",
+        "tags": [
+          "Storage Locations"
+        ],
+        "operationId": "listStorageLocations",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's storage locations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StorageLocation"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a storage location",
+        "description": "Names are unique per caller (case-sensitive). Supports idempotent retries the same way as `/auth/register`.",
+        "tags": [
+          "Storage Locations"
+        ],
+        "operationId": "createStorageLocation",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStorageLocationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Storage location created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageLocation"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "description": "Name already used by the caller (`DUPLICATE_NAME`), or an identical idempotent request is in flight (`REQUEST_IN_PROGRESS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Idempotency key reused with a different payload (`IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/v1/storage-locations/{id}": {
+      "patch": {
+        "summary": "Rename a storage location",
+        "description": "Only the owner may rename it — a caller never learns whether `id` belongs to another user or doesn't exist (`NOT_FOUND` either way).",
+        "tags": [
+          "Storage Locations"
+        ],
+        "operationId": "renameStorageLocation",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameStorageLocationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Storage location renamed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageLocation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed (`VALIDATION_FAILED`), or `id` is not a valid integer (`INVALID_LOCATION_ID`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Not the caller's storage location, or doesn't exist (`NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "New name already used by the caller (`DUPLICATE_NAME`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a storage location",
+        "description": "Pantry entries referencing this location are unaffected — `storageLocationId` on a `pantry_entries` row simply becomes invalid to re-set, it is not cascaded.",
+        "tags": [
+          "Storage Locations"
+        ],
+        "operationId": "deleteStorageLocation",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "400": {
+            "description": "`id` is not a valid integer (`INVALID_LOCATION_ID`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Not the caller's storage location, or doesn't exist (`NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/v1/quantity-units": {
+      "get": {
+        "summary": "List all quantity units",
+        "description": "A small, fully-seeded closed set (grams, kilograms, millilitres, litres, pieces, ...). Never created or edited via the API.",
+        "tags": [
+          "Quantity Units"
+        ],
+        "operationId": "listQuantityUnits",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "All quantity units",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/QuantityUnit"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/v1/pantry-entries": {
+      "get": {
+        "summary": "List the caller's pantry entries",
+        "description": "Cursor-paginated, in insertion order (`id` ascending) — sorting, grouping, and aggregation for display are entirely a frontend concern. Pass `afterId` (the previous page's `nextCursor`) to fetch the next page; `nextCursor` is `null` on the last page. A non-numeric `afterId` is treated as absent (start from the beginning), not an error.",
+        "tags": [
+          "Pantry Entries"
+        ],
+        "operationId": "listPantryEntries",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "afterId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Resume after this entry id; omit to start from the beginning"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "minimum": 1,
+              "maximum": 200
+            },
+            "description": "Page size; clamped to [1, 200], defaults to 50"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of pantry entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PantryEntryPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      },
+      "post": {
+        "summary": "Log a purchase (create a pantry entry)",
+        "description": "Exactly one of `productId` (an existing product the caller can see) or `newProductName` (create a private product inline, in the same transaction — the \"typed a name, autocomplete found nothing, add it anyway\" flow) must be provided. Always inserts a new row, even if one already matches exactly (buying more of something already in stock is not a merge). Supports idempotent retries the same way as `/auth/register`.",
+        "tags": [
+          "Pantry Entries"
+        ],
+        "operationId": "createPantryEntry",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePantryEntryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Pantry entry created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PantryEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed (`VALIDATION_FAILED`), `productId` isn't visible to the caller (`PRODUCT_NOT_VISIBLE`), `storageLocationId` isn't the caller's (`STORAGE_LOCATION_NOT_FOUND`), or `unitId` doesn't exist (`UNIT_NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "description": "`newProductName` collides with a global product or one of the caller's own (`PRODUCT_NAME_ALREADY_EXISTS`), or an identical idempotent request is in flight (`REQUEST_IN_PROGRESS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Idempotency key reused with a different payload (`IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/v1/pantry-entries/{id}": {
+      "patch": {
+        "summary": "Update a pantry entry",
+        "description": "Full-state replace, not a sparse delta — resend every editable field, including ones you aren't changing. `quantityAmount <= 0` deletes the row instead of updating it (200 with the updated entry, or 204 if deleted).",
+        "tags": [
+          "Pantry Entries"
+        ],
+        "operationId": "updatePantryEntry",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePantryEntryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Entry updated (quantity remained positive)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PantryEntry"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Entry deleted (quantity was zero or negative)"
+          },
+          "400": {
+            "description": "Validation failed (`VALIDATION_FAILED`), `id` is not a valid integer (`INVALID_ENTRY_ID`), `storageLocationId` isn't the caller's (`STORAGE_LOCATION_NOT_FOUND`), or `unitId` doesn't exist (`UNIT_NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Not the caller's pantry entry, or doesn't exist (`NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a pantry entry",
+        "tags": [
+          "Pantry Entries"
+        ],
+        "operationId": "deletePantryEntry",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "400": {
+            "description": "`id` is not a valid integer (`INVALID_ENTRY_ID`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Not the caller's pantry entry, or doesn't exist (`NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -528,6 +1522,352 @@
             "example": "eyJ..."
           }
         }
+      },
+      "MessageResponse": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "Password reset successfully. You can now log in."
+          }
+        }
+      },
+      "PasswordResetValidateResponse": {
+        "type": "object",
+        "required": [
+          "valid",
+          "email"
+        ],
+        "properties": {
+          "valid": {
+            "type": "boolean"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          }
+        }
+      },
+      "UnitCategory": {
+        "type": "string",
+        "enum": [
+          "MASS",
+          "VOLUME",
+          "PIECE"
+        ],
+        "description": "PIECE has no multiplier and is only ever the seeded `db` unit — a box/jar/pack isn't a fixed piece count."
+      },
+      "Product": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "isGlobal"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "isGlobal": {
+            "type": "boolean",
+            "description": "true if this product ships with the app and is visible to every user; false if it's private to its owner"
+          },
+          "defaultLifespanDays": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Pre-fill hint for a new pantry entry's expiration date; not enforced server-side"
+          },
+          "defaultUnitCategory": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UnitCategory"
+              }
+            ],
+            "nullable": true,
+            "description": "Pre-fill hint for a new pantry entry's unit; not enforced server-side"
+          }
+        }
+      },
+      "CreateProductRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "No leading/trailing spaces; must not contain < > \" ' & ;",
+            "example": "Sertéshús"
+          },
+          "defaultLifespanDays": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3650,
+            "nullable": true
+          },
+          "defaultUnitCategory": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UnitCategory"
+              }
+            ],
+            "nullable": true
+          }
+        }
+      },
+      "RenameProductRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "No leading/trailing spaces; must not contain < > \" ' & ;"
+          }
+        }
+      },
+      "StorageLocation": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateStorageLocationRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "No leading/trailing spaces; must not contain < > \" ' & ;",
+            "example": "Fridge"
+          }
+        }
+      },
+      "RenameStorageLocationRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "No leading/trailing spaces; must not contain < > \" ' & ;"
+          }
+        }
+      },
+      "QuantityUnit": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "category",
+          "multiplier"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string",
+            "example": "kg"
+          },
+          "category": {
+            "$ref": "#/components/schemas/UnitCategory"
+          },
+          "multiplier": {
+            "type": "number",
+            "format": "double",
+            "description": "Multiplier to this category's base unit (g/ml/db) — lets the frontend sum same-category quantities across entries"
+          }
+        }
+      },
+      "PantryEntry": {
+        "type": "object",
+        "required": [
+          "id",
+          "productId",
+          "productName",
+          "unitId",
+          "unitName",
+          "unitCategory",
+          "unitMultiplier",
+          "quantityAmount",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "productId": {
+            "type": "integer"
+          },
+          "productName": {
+            "type": "string",
+            "description": "Denormalized at read time via a join — always current, never cached on the row"
+          },
+          "storageLocationId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "storageLocationName": {
+            "type": "string",
+            "nullable": true
+          },
+          "unitId": {
+            "type": "integer"
+          },
+          "unitName": {
+            "type": "string",
+            "example": "kg"
+          },
+          "unitCategory": {
+            "$ref": "#/components/schemas/UnitCategory"
+          },
+          "unitMultiplier": {
+            "type": "number",
+            "format": "double"
+          },
+          "quantityAmount": {
+            "type": "number",
+            "format": "double"
+          },
+          "expirationDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "ISO-8601 YYYY-MM-DD; no time-of-day component"
+          },
+          "brandOrNote": {
+            "type": "string",
+            "maxLength": 255,
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PantryEntryPage": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PantryEntry"
+            },
+            "description": "In insertion order (id ascending) — sorting/grouping for display is a frontend concern"
+          },
+          "nextCursor": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Pass as `afterId` to fetch the next page; null when this is the last page"
+          }
+        }
+      },
+      "CreatePantryEntryRequest": {
+        "type": "object",
+        "required": [
+          "unitId",
+          "quantityAmount"
+        ],
+        "properties": {
+          "productId": {
+            "type": "integer",
+            "nullable": true,
+            "description": "An existing product visible to the caller — exactly one of productId/newProductName is required"
+          },
+          "newProductName": {
+            "type": "string",
+            "maxLength": 100,
+            "nullable": true,
+            "description": "Creates a private product inline, in the same transaction — exactly one of productId/newProductName is required"
+          },
+          "storageLocationId": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Must be one of the caller's own storage locations"
+          },
+          "unitId": {
+            "type": "integer"
+          },
+          "quantityAmount": {
+            "type": "number",
+            "format": "double",
+            "exclusiveMinimum": 0,
+            "description": "Must be strictly greater than zero on create"
+          },
+          "expirationDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "ISO-8601 YYYY-MM-DD"
+          },
+          "brandOrNote": {
+            "type": "string",
+            "maxLength": 255,
+            "nullable": true
+          }
+        }
+      },
+      "UpdatePantryEntryRequest": {
+        "type": "object",
+        "required": [
+          "unitId",
+          "quantityAmount"
+        ],
+        "properties": {
+          "storageLocationId": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Must be one of the caller's own storage locations; null unambiguously means \"no location\""
+          },
+          "unitId": {
+            "type": "integer"
+          },
+          "quantityAmount": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "description": "Zero (or negative) deletes the entry instead of updating it"
+          },
+          "expirationDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "ISO-8601 YYYY-MM-DD"
+          },
+          "brandOrNote": {
+            "type": "string",
+            "maxLength": 255,
+            "nullable": true
+          }
+        }
       }
     },
     "responses": {
@@ -545,7 +1885,7 @@
         "description": "Missing or invalid JWT access token; response body is empty"
       },
       "TooManyRequests": {
-        "description": "Rate limit exceeded (auth endpoints: 5 requests/minute); response body is empty"
+        "description": "Rate limit exceeded (auth endpoints: 5 requests/minute; authenticated endpoints: 60 requests/minute per user); response body is empty"
       }
     },
     "securitySchemes": {
@@ -564,7 +1904,23 @@
     },
     {
       "name": "Authentication",
-      "description": "User registration, login, token refresh, logout"
+      "description": "User registration, login, token refresh, logout, password reset"
+    },
+    {
+      "name": "Products",
+      "description": "The product dictionary — global (app-shipped) and private (per-user) products"
+    },
+    {
+      "name": "Storage Locations",
+      "description": "Per-user labels for where a pantry entry is stored (Fridge, Freezer, Pantry, ...)"
+    },
+    {
+      "name": "Quantity Units",
+      "description": "The fully-seeded, read-only set of units a pantry entry's quantity can be expressed in"
+    },
+    {
+      "name": "Pantry Entries",
+      "description": "The core feature — batches of a product currently in storage"
     }
   ]
 }

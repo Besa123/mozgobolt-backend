@@ -20,6 +20,8 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 fun Route.storageLocationRoutes(
     storageLocationService: StorageLocationService,
@@ -36,13 +38,13 @@ fun Route.storageLocationRoutes(
         validatedPost<CreateStorageLocationRequestDto>(
             "/storage-locations",
             BodyLimit.SMALL,
-            RequestTimeout.FAST,
+            RequestTimeout.STANDARD,
         ) { request ->
             val userId =
                 call.currentUserIdOrNull()
                     ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
 
-            idempotent(idempotencyStore, requestFingerprint = "$userId:${request.name}") {
+            idempotent(idempotencyStore, requestFingerprint = "$userId:${Json.encodeToString(request)}") {
                 storageLocationService
                     .createForUser(userId = userId, name = request.name)
                     .fold(
@@ -65,7 +67,7 @@ fun Route.storageLocationRoutes(
         validatedPatch<RenameStorageLocationRequestDto>(
             "/storage-locations/{id}",
             BodyLimit.SMALL,
-            RequestTimeout.FAST,
+            RequestTimeout.STANDARD,
         ) { request ->
             val userId =
                 call.currentUserIdOrNull()
@@ -89,7 +91,7 @@ fun Route.storageLocationRoutes(
                 )
         }
 
-        limitedDelete("/storage-locations/{id}", BodyLimit.TINY, RequestTimeout.FAST) {
+        limitedDelete("/storage-locations/{id}", BodyLimit.TINY, RequestTimeout.STANDARD) {
             val userId =
                 call.currentUserIdOrNull()
                     ?: return@limitedDelete call.respond(HttpStatusCode.Unauthorized)

@@ -71,6 +71,14 @@ changing anything in any of them.
     over-built this as a 3-column keyset (product name, expiration date, id) with hand-rolled `NULLS LAST`-safe boolean
     logic and a base64'd opaque cursor; that was the wrong shape for what this endpoint needs (see the next section) and
     was torn back out. If a future requirement needs a different resume order, revisit then — don't pre-build it now.
+12. All four pantry-feature Exposed tables (`ProductsTable`, `StorageLocationsTable`, `QuantityUnitsTable`,
+    `PantryEntriesTable`) live in `feature/product/data/database/`, not split one-per-feature the way `domain/`,
+    `service/`, and `routing/` are. `storageLocation`, `quantityUnit`, and `pantryEntry` reach across into
+    `com.shelflife.feature.product.data.database` for their own table/entity definitions. This is a deliberate exception
+    to the feature-based layout (see ARCHITECTURE.md), not an oversight: `PantryEntriesTable` has FK relations into all
+    three of the others, and Exposed's `IntEntity`/`referencedOn` DAO relations are simplest to define when the related
+    tables live in one file/package. Nothing prevents splitting them later (single Gradle module, no circular-dependency
+    constraint) — it just hasn't been worth the churn yet.
 
 ## What the backend must get right
 

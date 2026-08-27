@@ -23,6 +23,8 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.math.BigDecimal
 import java.time.LocalDate
 
@@ -54,7 +56,7 @@ private fun Route.registerCreateRoute(
     pantryEntryService: PantryEntryService,
     idempotencyStore: IdempotencyStore,
 ) {
-    validatedPost<CreatePantryEntryRequestDto>("/pantry-entries", BodyLimit.SMALL, RequestTimeout.FAST) { request ->
+    validatedPost<CreatePantryEntryRequestDto>("/pantry-entries", BodyLimit.SMALL, RequestTimeout.STANDARD) { request ->
         val userId =
             call.currentUserIdOrNull()
                 ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
@@ -63,9 +65,7 @@ private fun Route.registerCreateRoute(
             request.productId?.let { ProductReference.Existing(it) }
                 ?: ProductReference.New(requireNotNull(request.newProductName))
 
-        val fingerprint =
-            "$userId:${request.productId}:${request.newProductName}:" +
-                "${request.quantityAmount}:${request.unitId}:${request.expirationDate}"
+        val fingerprint = "$userId:${Json.encodeToString(request)}"
 
         idempotent(idempotencyStore, requestFingerprint = fingerprint) {
             pantryEntryService
@@ -94,7 +94,7 @@ private fun Route.registerUpdateRoute(pantryEntryService: PantryEntryService) {
     validatedPatch<UpdatePantryEntryRequestDto>(
         "/pantry-entries/{id}",
         BodyLimit.SMALL,
-        RequestTimeout.FAST,
+        RequestTimeout.STANDARD,
     ) { request ->
         val userId =
             call.currentUserIdOrNull()
@@ -134,7 +134,7 @@ private fun Route.registerUpdateRoute(pantryEntryService: PantryEntryService) {
 }
 
 private fun Route.registerDeleteRoute(pantryEntryService: PantryEntryService) {
-    limitedDelete("/pantry-entries/{id}", BodyLimit.TINY, RequestTimeout.FAST) {
+    limitedDelete("/pantry-entries/{id}", BodyLimit.TINY, RequestTimeout.STANDARD) {
         val userId =
             call.currentUserIdOrNull()
                 ?: return@limitedDelete call.respond(HttpStatusCode.Unauthorized)

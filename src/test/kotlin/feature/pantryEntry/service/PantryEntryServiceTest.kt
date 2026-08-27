@@ -255,6 +255,20 @@ class PantryEntryServiceTest {
     }
 
     @Test
+    fun `updating another user's entry with an invalid unit is still not-found, not unit-not-found`() {
+        runBlocking {
+            val harness = newHarness()
+            val entry = harness.pantryEntryRepository.seed(userId = 2)
+
+            // Ownership must be checked before storageLocationId/unitId are validated — an
+            // unauthorized caller must never learn anything about a resource they don't own.
+            val result = harness.service.updateEntry(userId = 1, entryId = entry.id, fields = fields(unitId = 999))
+
+            assertEquals(AppResult.Error(PantryEntryError.NOT_FOUND), result)
+        }
+    }
+
+    @Test
     fun `updating a nonexistent entry is not found`() {
         runBlocking {
             val harness = newHarness()

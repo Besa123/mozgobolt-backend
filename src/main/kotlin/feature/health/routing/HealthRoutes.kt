@@ -1,5 +1,6 @@
 package com.shelflife.feature.health.routing
 
+import com.shelflife.core.utility.functions.runSuspendCatching
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -10,7 +11,7 @@ private const val STATUS_KEY = "status"
 
 fun Route.infrastructureRoutes(dataSource: DataSource) {
     get("/health") {
-        val dbHealthy = runCatching { dataSource.connection.use { it.isValid(2) } }.getOrDefault(false)
+        val dbHealthy = runSuspendCatching { dataSource.connection.use { it.isValid(2) } }.getOrDefault(false)
 
         if (dbHealthy) {
             call.respond(HttpStatusCode.OK, mapOf(STATUS_KEY to "healthy"))

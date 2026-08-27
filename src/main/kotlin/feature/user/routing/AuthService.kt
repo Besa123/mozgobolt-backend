@@ -34,6 +34,8 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.route
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 fun Route.authRoutes(
     userService: UserService,
@@ -51,7 +53,7 @@ private fun Route.authPublicRoutes(
     publicRateLimitedApi(limitName = AUTH_LIMIT) {
         route("/auth") {
             validatedPost<UserCreationRequestDto>("/register", BodyLimit.TINY, RequestTimeout.FAST) { request ->
-                idempotent(idempotencyStore, requestFingerprint = request.email) {
+                idempotent(idempotencyStore, requestFingerprint = Json.encodeToString(request)) {
                     userService
                         .createUser(
                             password = request.password,

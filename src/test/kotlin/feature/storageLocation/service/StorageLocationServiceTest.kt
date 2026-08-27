@@ -88,6 +88,21 @@ class StorageLocationServiceTest {
     }
 
     @Test
+    fun `renaming another user's location to a name colliding with the caller's own is not-found, not duplicate`() {
+        runBlocking {
+            val harness = newHarness()
+            harness.repository.seed(userId = 1, name = "Fridge")
+            val othersLocation = harness.repository.seed(userId = 2, name = "OldName")
+
+            // Ownership must be checked before any duplicate-name check — an unauthorized caller
+            // should never learn whether their target name collides, even with their own set.
+            val result = harness.service.renameLocation(userId = 1, locationId = othersLocation.id, newName = "Fridge")
+
+            assertEquals(AppResult.Error(StorageLocationError.NOT_FOUND), result)
+        }
+    }
+
+    @Test
     fun `renaming a nonexistent location is not found`() {
         runBlocking {
             val harness = newHarness()

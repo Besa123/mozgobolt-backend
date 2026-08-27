@@ -10,7 +10,7 @@ must follow, see [CLAUDE.md](CLAUDE.md). For the reasoning behind individual dec
 ```
 src/main/kotlin/
 ├── core/                     # shared infrastructure — no business logic
-│   ├── data/                 # email, idempotency, security (JWT, password) implementations
+│   ├── data/                 # email, idempotency, security (JWT, password), validator implementations
 │   ├── database/             # DataSource/HikariCP factory, transaction runner
 │   ├── di/                   # Ktor DI wiring
 │   ├── domain/               # AppResult, TokenManager/PasswordService interfaces, ValidatedRequest
@@ -30,15 +30,17 @@ src/main/kotlin/
 `feature/health/` is intentionally minimal — it has no domain logic, so it only needs `routing/`.
 `feature/product/`, `feature/storageLocation/`, `feature/quantityUnit/`, and `feature/pantryEntry/` together are the
 pantry-tracking core of the app — see [docs/domain/pantry.md](docs/domain/pantry.md) for the domain model and the
-reasoning behind its schema.
+reasoning behind its schema. **One deliberate exception to the diagram above:** all four features' Exposed tables live
+in `feature/product/data/database/`, not split one-per-feature — see pantry.md for why.
 
 ## Why feature-based, not layer-based
 
 A layer-based split (`controllers/`, `services/`, `repositories/` at the top level) scales badly once you have more than
 a handful of endpoints: touching one feature means touching four unrelated top-level directories, and unrelated features
 end up coupled through shared "services" packages. Feature-based layout keeps each capability cohesive and independently
-deletable — removing a feature is (ideally)
-deleting one directory, not hunting through the whole tree.
+deletable — removing a feature is (ideally) deleting one directory, not hunting through the whole tree. The pantry
+cluster (`product`/`storageLocation`/`quantityUnit`/`pantryEntry`) is the one place that ideal doesn't fully hold, for
+the reason noted above — their tables' FK/entity relations made a shared `data/database/` package the pragmatic choice.
 
 `core/` exists only for things that are genuinely cross-cutting (auth plumbing, DB access, config, Ktor plugin setup) —
 it should never accumulate business logic. If something in `core/` starts making domain decisions, that's a sign it
