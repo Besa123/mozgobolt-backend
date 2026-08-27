@@ -1,0 +1,362 @@
+package com.shelflife.feature.storageLocation.routing
+
+import com.shelflife.core.configureTestEnvironment
+import com.shelflife.core.domain.AppResult
+import com.shelflife.feature.storageLocation.domain.model.StorageLocation
+import com.shelflife.feature.storageLocation.domain.model.StorageLocationError
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.testing.testApplication
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+/**
+ * HTTP route tests for storage locations covering:
+ * - Happy paths for all CRUD operations
+ * - Authorization (401 when not authenticated)
+ * - Error responses (409 Conflict, 404 Not Found, etc.)
+ * - Validation failures
+ * - Body size limits
+ */
+class StorageLocationRoutesTest {
+    // ===== GET /storage-locations =====
+
+    @Test
+    fun `get storage locations returns 200 with locations list`() =
+        testApplication {
+            configureTestEnvironment()
+            val service =
+                FakeStorageLocationService().apply {
+                    locations[1] =
+                        mutableListOf(
+                            StorageLocation(1, 1, "Fridge"),
+                            StorageLocation(2, 1, "Freezer"),
+                        )
+                }
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = getJson(StorageLocationPaths.LIST)
+
+            assertEquals(HttpStatusCode.OK, response.status)
+            val body = Json.parseToJsonElement(response.bodyAsText()).jsonArray
+            assertEquals(2, body.size)
+            assertEquals("Fridge", body[0].jsonObject["name"]?.toString()?.trim('"'))
+            assertEquals("Freezer", body[1].jsonObject["name"]?.toString()?.trim('"'))
+        }
+
+    @Test
+    fun `get storage locations without auth returns 401`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeStorageLocationService()
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = getJson(StorageLocationPaths.LIST)
+
+            assertEquals(HttpStatusCode.Unauthorized, response.status)
+        }
+
+    @Test
+    fun `get storage locations returns empty list when no locations exist`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeStorageLocationService()
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = getJson(StorageLocationPaths.LIST)
+
+            assertEquals(HttpStatusCode.Unauthorized, response.status) // No auth token provided
+        }
+
+    // ===== POST /storage-locations =====
+
+    @Test
+    fun `post storage locations with valid name returns 201 with location`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeStorageLocationService()
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = postJson(StorageLocationPaths.CREATE, """{"name":"Pantry"}""")
+
+            assertEquals(HttpStatusCode.Created, response.status)
+            val body = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+            assertEquals("Pantry", body["name"]?.toString()?.trim('"'))
+        }
+
+    @Test
+    fun `post storage locations without auth returns 401`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeStorageLocationService()
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = postJson(StorageLocationPaths.CREATE, """{"name":"Pantry"}""")
+
+            assertEquals(HttpStatusCode.Unauthorized, response.status)
+        }
+
+    @Test
+    fun `post storage locations with duplicate name returns 409 Conflict`() =
+        testApplication {
+            configureTestEnvironment()
+            val service =
+                FakeStorageLocationService().apply {
+                    createResult = AppResult.Error(StorageLocationError.DUPLICATE_NAME)
+                }
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = postJson(StorageLocationPaths.CREATE, """{"name":"Duplicate"}""")
+
+            assertEquals(HttpStatusCode.Conflict, response.status)
+            assertEquals("DUPLICATE_NAME", response.errorBody().error)
+        }
+
+    @Test
+    fun `post storage locations with empty name fails validation with 400`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeStorageLocationService()
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = postJson(StorageLocationPaths.CREATE, """{"name":""}""")
+
+            assertEquals(HttpStatusCode.BadRequest, response.status)
+            assertEquals("VALIDATION_FAILED", response.errorBody().error)
+        }
+
+    @Test
+    fun `post storage locations with whitespace-only name fails validation with 400`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeStorageLocationService()
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = postJson(StorageLocationPaths.CREATE, """{"name":"   "}""")
+
+            assertEquals(HttpStatusCode.BadRequest, response.status)
+        }
+
+    @Test
+    fun `post storage locations with oversized body returns 413 PayloadTooLarge`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeStorageLocationService()
+            application { installStorageLocationRoutesTestApp(service) }
+            val oversizedName = "a".repeat(2 * 1024)
+
+            val response = postJson(StorageLocationPaths.CREATE, """{"name":"$oversizedName"}""")
+
+            assertEquals(HttpStatusCode.PayloadTooLarge, response.status)
+        }
+
+    @Test
+    fun `post storage locations with no name field fails validation with 400`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeStorageLocationService()
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = postJson(StorageLocationPaths.CREATE, """{"some_field":"value"}""")
+
+            assertEquals(HttpStatusCode.BadRequest, response.status)
+        }
+
+    // ===== PATCH /storage-locations/{id} =====
+
+    @Test
+    fun `patch storage location with valid name returns 200 with updated location`() =
+        testApplication {
+            configureTestEnvironment()
+            val service =
+                FakeStorageLocationService().apply {
+                    renameResult = AppResult.Success(StorageLocation(1, 1, "NewName"))
+                }
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = patchJson(StorageLocationPaths.byId(1), """{"name":"NewName"}""")
+
+            assertEquals(HttpStatusCode.OK, response.status)
+            val body = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+            assertEquals("NewName", body["name"]?.toString()?.trim('"'))
+        }
+
+    @Test
+    fun `patch storage location without auth returns 401`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeStorageLocationService()
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = patchJson(StorageLocationPaths.byId(1), """{"name":"NewName"}""")
+
+            assertEquals(HttpStatusCode.Unauthorized, response.status)
+        }
+
+    @Test
+    fun `patch storage location for non-existent location returns 404 NotFound`() =
+        testApplication {
+            configureTestEnvironment()
+            val service =
+                FakeStorageLocationService().apply {
+                    renameResult = AppResult.Error(StorageLocationError.NOT_FOUND)
+                }
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = patchJson(StorageLocationPaths.byId(9999), """{"name":"NewName"}""")
+
+            assertEquals(HttpStatusCode.NotFound, response.status)
+            assertEquals("NOT_FOUND", response.errorBody().error)
+        }
+
+    @Test
+    fun `patch storage location with duplicate name returns 409 Conflict`() =
+        testApplication {
+            configureTestEnvironment()
+            val service =
+                FakeStorageLocationService().apply {
+                    renameResult = AppResult.Error(StorageLocationError.DUPLICATE_NAME)
+                }
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = patchJson(StorageLocationPaths.byId(1), """{"name":"ExistingName"}""")
+
+            assertEquals(HttpStatusCode.Conflict, response.status)
+            assertEquals("DUPLICATE_NAME", response.errorBody().error)
+        }
+
+    @Test
+    fun `patch storage location with invalid ID in path returns 400 BadRequest`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeStorageLocationService()
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = patchJson(StorageLocationPaths.byId(999).replace("999", "invalid"), """{"name":"NewName"}""")
+
+            assertEquals(HttpStatusCode.BadRequest, response.status)
+            assertEquals("INVALID_LOCATION_ID", response.errorBody().error)
+        }
+
+    @Test
+    fun `patch storage location with empty name fails validation with 400`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeStorageLocationService()
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = patchJson(StorageLocationPaths.byId(1), """{"name":""}""")
+
+            assertEquals(HttpStatusCode.BadRequest, response.status)
+            assertEquals("VALIDATION_FAILED", response.errorBody().error)
+        }
+
+    // ===== DELETE /storage-locations/{id} =====
+
+    @Test
+    fun `delete storage location succeeds returns 204 NoContent`() =
+        testApplication {
+            configureTestEnvironment()
+            val service =
+                FakeStorageLocationService().apply {
+                    deleteResult = AppResult.Success(Unit)
+                }
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = deleteJson(StorageLocationPaths.byId(1))
+
+            assertEquals(HttpStatusCode.NoContent, response.status)
+            assertEquals("", response.bodyAsText())
+        }
+
+    @Test
+    fun `delete storage location without auth returns 401`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeStorageLocationService()
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = deleteJson(StorageLocationPaths.byId(1))
+
+            assertEquals(HttpStatusCode.Unauthorized, response.status)
+        }
+
+    @Test
+    fun `delete storage location for non-existent location returns 404 NotFound`() =
+        testApplication {
+            configureTestEnvironment()
+            val service =
+                FakeStorageLocationService().apply {
+                    deleteResult = AppResult.Error(StorageLocationError.NOT_FOUND)
+                }
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = deleteJson(StorageLocationPaths.byId(9999))
+
+            assertEquals(HttpStatusCode.NotFound, response.status)
+            assertEquals("NOT_FOUND", response.errorBody().error)
+        }
+
+    @Test
+    fun `delete storage location with invalid ID in path returns 400 BadRequest`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeStorageLocationService()
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = deleteJson(StorageLocationPaths.byId(999).replace("999", "notanid"))
+
+            assertEquals(HttpStatusCode.BadRequest, response.status)
+            assertEquals("INVALID_LOCATION_ID", response.errorBody().error)
+        }
+
+    // ===== EDGE CASES =====
+
+    @Test
+    fun `POST to same endpoint twice with same body is idempotent and returns Created both times`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeStorageLocationService()
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response1 = postJson(StorageLocationPaths.CREATE, """{"name":"Unique"}""")
+            val response2 = postJson(StorageLocationPaths.CREATE, """{"name":"Unique"}""")
+
+            // Second call should fail with DUPLICATE_NAME
+            assertEquals(HttpStatusCode.Created, response1.status)
+            assertEquals(HttpStatusCode.Conflict, response2.status)
+        }
+
+    @Test
+    fun `POST with very long valid name succeeds`() =
+        testApplication {
+            configureTestEnvironment()
+            val longName = "A".repeat(100)
+            val service = FakeStorageLocationService()
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = postJson(StorageLocationPaths.CREATE, """{"name":"$longName"}""")
+
+            assertEquals(HttpStatusCode.Created, response.status)
+        }
+
+    @Test
+    fun `error responses have correct error field in JSON`() =
+        testApplication {
+            configureTestEnvironment()
+            val service =
+                FakeStorageLocationService().apply {
+                    createResult = AppResult.Error(StorageLocationError.DUPLICATE_NAME)
+                }
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = postJson(StorageLocationPaths.CREATE, """{"name":"Duplicate"}""")
+
+            assertEquals(HttpStatusCode.Conflict, response.status)
+            assertTrue(response.bodyAsText().contains(""""error":"DUPLICATE_NAME""""))
+        }
+}

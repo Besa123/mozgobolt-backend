@@ -20,6 +20,7 @@ import com.shelflife.core.domain.validation.EmailValidator
 import com.shelflife.core.domain.validation.PasswordValidator
 import com.shelflife.core.modules.AppConfig
 import com.shelflife.feature.product.di.configureProductDependencyInjection
+import com.shelflife.feature.storageLocation.di.configureStorageLocationDependencyInjection
 import com.shelflife.feature.user.di.configureAuthDependencyInjection
 import io.ktor.server.application.Application
 import io.ktor.server.config.property
@@ -74,4 +75,5 @@ fun Application.configureDependencyInjection() {
 
     configureAuthDependencyInjection()
     configureProductDependencyInjection()
+    configureStorageLocationDependencyInjection()
 }

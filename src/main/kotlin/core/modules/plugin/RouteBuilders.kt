@@ -7,6 +7,7 @@ import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.RoutingContext
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
@@ -65,6 +66,18 @@ fun Route.limitedPost(
 ) {
     post(path) {
         if (exceedsLimit(limit)) return@post
+        withTimeout(timeout.duration) { body() }
+    }
+}
+
+fun Route.limitedDelete(
+    path: String,
+    limit: BodyLimit = BodyLimit.TINY,
+    timeout: RequestTimeout = RequestTimeout.FAST,
+    body: suspend RoutingContext.() -> Unit,
+) {
+    delete(path) {
+        if (exceedsLimit(limit)) return@delete
         withTimeout(timeout.duration) { body() }
     }
 }
