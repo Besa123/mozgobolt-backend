@@ -11,10 +11,8 @@ interface ProductService {
         query: String,
     ): List<Product>
 
-    /** All of [userId]'s own private products — for a "manage my products" screen, not autocomplete. */
     suspend fun listOwnedBy(userId: Int): List<Product>
 
-    /** A product [userId] is allowed to reference: global (owner-less) or their own private one. */
     suspend fun findVisibleById(
         userId: Int,
         productId: Int,
@@ -25,11 +23,13 @@ interface ProductService {
         name: String,
         defaultLifespanDays: Int?,
         defaultUnitCategory: UnitCategory?,
+        originDeviceId: String? = null,
     ): AppResult<Product, ProductError>
 
     suspend fun renameProduct(
         userId: Int,
         productId: Int,
         newName: String,
+        originDeviceId: String? = null,
     ): AppResult<Product, ProductError>
 }

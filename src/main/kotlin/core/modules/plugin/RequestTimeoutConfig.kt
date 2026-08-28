@@ -6,6 +6,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.call
+import io.ktor.server.request.path
 import io.ktor.server.response.respond
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
@@ -25,8 +26,19 @@ enum class RequestTimeout(
 
 private val GLOBAL_SAFETY_NET = 180.seconds
 
+private val longLivedConnectionPaths = mutableSetOf<String>()
+
+fun exemptFromRequestTimeout(path: String) {
+    longLivedConnectionPaths += path
+}
+
 fun Application.configureRequestTimeout() {
     intercept(ApplicationCallPipeline.Plugins) {
+        if (call.request.path() in longLivedConnectionPaths) {
+            proceed()
+            return@intercept
+        }
+
         try {
             withTimeout(GLOBAL_SAFETY_NET) {
                 proceed()

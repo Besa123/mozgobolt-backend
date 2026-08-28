@@ -9,6 +9,7 @@ import com.shelflife.core.modules.plugin.limitedDelete
 import com.shelflife.core.modules.plugin.validatedPatch
 import com.shelflife.core.modules.plugin.validatedPost
 import com.shelflife.core.routing.dto.response.ErrorResponse
+import com.shelflife.core.utility.functions.currentDeviceIdOrNull
 import com.shelflife.core.utility.functions.currentUserIdOrNull
 import com.shelflife.core.utility.functions.protectedApi
 import com.shelflife.feature.storageLocation.domain.StorageLocationService
@@ -46,7 +47,7 @@ fun Route.storageLocationRoutes(
 
             idempotent(idempotencyStore, requestFingerprint = "$userId:${Json.encodeToString(request)}") {
                 storageLocationService
-                    .createForUser(userId = userId, name = request.name)
+                    .createForUser(userId = userId, name = request.name, originDeviceId = call.currentDeviceIdOrNull())
                     .fold(
                         onSuccess = { location ->
                             idempotentResult(
@@ -80,8 +81,12 @@ fun Route.storageLocationRoutes(
                     )
 
             storageLocationService
-                .renameLocation(userId = userId, locationId = locationId, newName = request.name)
-                .fold(
+                .renameLocation(
+                    userId = userId,
+                    locationId = locationId,
+                    newName = request.name,
+                    originDeviceId = call.currentDeviceIdOrNull(),
+                ).fold(
                     onSuccess = { location ->
                         call.respond(HttpStatusCode.OK, location.toResponseDto())
                     },
@@ -103,7 +108,7 @@ fun Route.storageLocationRoutes(
                     )
 
             storageLocationService
-                .deleteLocation(userId = userId, locationId = locationId)
+                .deleteLocation(userId = userId, locationId = locationId, originDeviceId = call.currentDeviceIdOrNull())
                 .fold(
                     onSuccess = { call.respond(HttpStatusCode.NoContent) },
                     onError = { error ->

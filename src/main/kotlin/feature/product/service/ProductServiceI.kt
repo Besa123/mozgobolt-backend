@@ -8,11 +8,15 @@ import com.shelflife.feature.product.domain.model.Product
 import com.shelflife.feature.product.domain.model.ProductError
 import com.shelflife.feature.product.domain.model.RenameOutcome
 import com.shelflife.feature.product.domain.model.UnitCategory
+import com.shelflife.feature.sync.domain.SyncService
+import com.shelflife.feature.sync.domain.model.SyncEntityType
+import com.shelflife.feature.sync.domain.model.SyncOperation
 
 private const val SEARCH_RESULT_LIMIT = 20
 
 class ProductServiceI(
     private val productRepository: ProductRepository,
+    private val syncService: SyncService,
     private val tx: TransactionalRunner,
 ) : ProductService {
     override suspend fun search(
@@ -42,6 +46,7 @@ class ProductServiceI(
         name: String,
         defaultLifespanDays: Int?,
         defaultUnitCategory: UnitCategory?,
+        originDeviceId: String?,
     ): AppResult<Product, ProductError> {
         val normalizedName = name.trim()
 
@@ -49,12 +54,21 @@ class ProductServiceI(
             tx.transactional {
                 if (productRepository.findGlobalByName(normalizedName) != null) return@transactional null
 
-                productRepository.createPrivate(
-                    userId = userId,
-                    name = normalizedName,
-                    defaultLifespanDays = defaultLifespanDays,
-                    defaultUnitCategory = defaultUnitCategory,
-                )
+                productRepository
+                    .createPrivate(
+                        userId = userId,
+                        name = normalizedName,
+                        defaultLifespanDays = defaultLifespanDays,
+                        defaultUnitCategory = defaultUnitCategory,
+                    )?.also {
+                        syncService.recordChange(
+                            userId,
+                            SyncEntityType.PRODUCT,
+                            it.id,
+                            SyncOperation.UPSERT,
+                            originDeviceId,
+                        )
+                    }
             } ?: return AppResult.Error(ProductError.DUPLICATE_NAME)
 
         return AppResult.Success(created)
@@ -64,6 +78,7 @@ class ProductServiceI(
         userId: Int,
         productId: Int,
         newName: String,
+        originDeviceId: String?,
     ): AppResult<Product, ProductError> {
         val normalizedName = newName.trim()
 
@@ -75,7 +90,17 @@ class ProductServiceI(
                     return@transactional RenameOutcome.DuplicateName
                 }
 
-                productRepository.renamePrivate(userId, productId, normalizedName)
+                productRepository.renamePrivate(userId, productId, normalizedName).also { renamed ->
+                    if (renamed is RenameOutcome.Renamed) {
+                        syncService.recordChange(
+                            userId,
+                            SyncEntityType.PRODUCT,
+                            productId,
+                            SyncOperation.UPSERT,
+                            originDeviceId,
+                        )
+                    }
+                }
             }
 
         return when (outcome) {

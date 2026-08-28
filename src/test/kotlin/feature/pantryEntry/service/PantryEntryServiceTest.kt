@@ -35,6 +35,41 @@ class PantryEntryServiceTest {
     }
 
     @Test
+    fun `finding an entry the caller owns by id returns it`() {
+        runBlocking {
+            val harness = newHarness()
+            val entry = harness.pantryEntryRepository.seed(userId = 1)
+
+            val result = harness.service.findByIdForUser(userId = 1, entryId = entry.id)
+
+            assertEquals(entry.id, result?.id)
+        }
+    }
+
+    @Test
+    fun `finding an entry owned by another user returns null, never someone else's data`() {
+        runBlocking {
+            val harness = newHarness()
+            val othersEntry = harness.pantryEntryRepository.seed(userId = 2)
+
+            val result = harness.service.findByIdForUser(userId = 1, entryId = othersEntry.id)
+
+            assertEquals(null, result)
+        }
+    }
+
+    @Test
+    fun `finding a nonexistent entry returns null`() {
+        runBlocking {
+            val harness = newHarness()
+
+            val result = harness.service.findByIdForUser(userId = 1, entryId = 999)
+
+            assertEquals(null, result)
+        }
+    }
+
+    @Test
     fun `creating an entry for a product not visible to the caller is rejected`() {
         runBlocking {
             val harness = newHarness()

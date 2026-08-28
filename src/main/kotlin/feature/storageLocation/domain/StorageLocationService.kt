@@ -10,16 +10,19 @@ interface StorageLocationService {
     suspend fun createForUser(
         userId: Int,
         name: String,
+        originDeviceId: String? = null,
     ): AppResult<StorageLocation, StorageLocationError>
 
     suspend fun renameLocation(
         userId: Int,
         locationId: Int,
         newName: String,
+        originDeviceId: String? = null,
     ): AppResult<StorageLocation, StorageLocationError>
 
     suspend fun deleteLocation(
         userId: Int,
         locationId: Int,
+        originDeviceId: String? = null,
     ): AppResult<Unit, StorageLocationError>
 }

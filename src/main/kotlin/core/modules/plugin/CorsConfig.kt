@@ -1,6 +1,7 @@
 package com.shelflife.core.modules.plugin
 
 import com.shelflife.core.modules.AppConfig
+import com.shelflife.core.utility.functions.DEVICE_ID_HEADER
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.server.application.Application
@@ -31,6 +32,7 @@ fun Application.configureCors() {
         allowHeader(HttpHeaders.Authorization)
         allowHeader(HttpHeaders.ContentType)
         allowHeader(HttpHeaders.Accept)
+        allowHeader(DEVICE_ID_HEADER)
 
         exposeHeader(HttpHeaders.XRequestId)
 

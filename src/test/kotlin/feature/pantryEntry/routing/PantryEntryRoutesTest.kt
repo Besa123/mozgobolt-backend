@@ -94,6 +94,57 @@ class PantryEntryRoutesTest {
         }
 
     @Test
+    fun `getting a single entry by id requires authentication`() =
+        testApplication {
+            configureTestEnvironment()
+            application { installPantryEntryRoutesTestApp() }
+
+            val response = client.get(PantryEntryPaths.byId(1))
+
+            assertEquals(HttpStatusCode.Unauthorized, response.status)
+        }
+
+    @Test
+    fun `getting a single entry by id returns it as json`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakePantryEntryService().apply { findByIdResult = FakePantryEntryService.sampleEntry() }
+            application { installPantryEntryRoutesTestApp(service) }
+
+            val response = client.get(PantryEntryPaths.byId(1)) { bearerAuth(testAccessTokenFor(userId = 1)) }
+
+            assertEquals(HttpStatusCode.OK, response.status)
+        }
+
+    @Test
+    fun `getting a single entry that doesn't exist or isn't visible returns 404`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakePantryEntryService().apply { findByIdResult = null }
+            application { installPantryEntryRoutesTestApp(service) }
+
+            val response = client.get(PantryEntryPaths.byId(999)) { bearerAuth(testAccessTokenFor(userId = 1)) }
+
+            assertEquals(HttpStatusCode.NotFound, response.status)
+            assertEquals("NOT_FOUND", response.errorBody().error)
+        }
+
+    @Test
+    fun `getting a single entry with a non-numeric id returns 400`() =
+        testApplication {
+            configureTestEnvironment()
+            application { installPantryEntryRoutesTestApp() }
+
+            val response =
+                client.get(PantryEntryPaths.byId(999).replace("999", "not-a-number")) {
+                    bearerAuth(testAccessTokenFor(userId = 1))
+                }
+
+            assertEquals(HttpStatusCode.BadRequest, response.status)
+            assertEquals("INVALID_ENTRY_ID", response.errorBody().error)
+        }
+
+    @Test
     fun `creating an entry returns 201 with the created entry`() =
         testApplication {
             configureTestEnvironment()

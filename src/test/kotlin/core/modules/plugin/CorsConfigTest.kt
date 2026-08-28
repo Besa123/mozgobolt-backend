@@ -1,5 +1,6 @@
 package com.shelflife.core.modules.plugin
 
+import com.shelflife.core.utility.functions.DEVICE_ID_HEADER
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.options
@@ -105,6 +106,29 @@ class CorsConfigTest {
             val response = client.get("/cors-test") { header(HttpHeaders.Origin, "http://localhost:3000") }
 
             assertNull(response.headers[HttpHeaders.AccessControlAllowOrigin])
+        }
+
+    @Test
+    fun `a preflight requesting the device-id header from an allowed origin is not rejected`() =
+        testApplication {
+            environment {
+                config =
+                    MapApplicationConfig(
+                        "app.cors.allowedHosts" to "allowed.example.com",
+                        "ktor.environment" to "production",
+                    )
+            }
+            application { installCorsTestRoute() }
+
+            val response =
+                client.options("/cors-test") {
+                    header(HttpHeaders.Origin, "https://allowed.example.com")
+                    header(HttpHeaders.AccessControlRequestMethod, HttpMethod.Get.value)
+                    header(HttpHeaders.AccessControlRequestHeaders, DEVICE_ID_HEADER)
+                }
+
+            assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals("https://allowed.example.com", response.headers[HttpHeaders.AccessControlAllowOrigin])
         }
 
     private fun Application.installCorsTestRoute() {

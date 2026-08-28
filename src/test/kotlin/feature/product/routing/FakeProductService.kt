@@ -12,6 +12,7 @@ class FakeProductService : ProductService {
         val name: String,
         val defaultLifespanDays: Int?,
         val defaultUnitCategory: UnitCategory?,
+        val originDeviceId: String?,
     )
 
     var searchResult: List<Product> = emptyList()
@@ -35,6 +36,7 @@ class FakeProductService : ProductService {
         val userId: Int,
         val productId: Int,
         val newName: String,
+        val originDeviceId: String?,
     )
 
     var renameResult: AppResult<Product, ProductError> =
@@ -66,9 +68,10 @@ class FakeProductService : ProductService {
         name: String,
         defaultLifespanDays: Int?,
         defaultUnitCategory: UnitCategory?,
+        originDeviceId: String?,
     ): AppResult<Product, ProductError> {
         createCallCount++
-        lastCreateCall = CreateCall(userId, name, defaultLifespanDays, defaultUnitCategory)
+        lastCreateCall = CreateCall(userId, name, defaultLifespanDays, defaultUnitCategory, originDeviceId)
         return createResult
     }
 
@@ -76,9 +79,10 @@ class FakeProductService : ProductService {
         userId: Int,
         productId: Int,
         newName: String,
+        originDeviceId: String?,
     ): AppResult<Product, ProductError> {
         renameCallCount++
-        lastRenameCall = RenameCall(userId, productId, newName)
+        lastRenameCall = RenameCall(userId, productId, newName, originDeviceId)
         return renameResult
     }
 }

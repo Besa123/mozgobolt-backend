@@ -11,6 +11,9 @@ import com.shelflife.feature.quantityUnit.domain.QuantityUnitService
 import com.shelflife.feature.quantityUnit.routing.quantityUnitRoutes
 import com.shelflife.feature.storageLocation.domain.StorageLocationService
 import com.shelflife.feature.storageLocation.routing.storageLocationRoutes
+import com.shelflife.feature.sync.domain.SyncEventHub
+import com.shelflife.feature.sync.domain.SyncService
+import com.shelflife.feature.sync.routing.syncRoutes
 import com.shelflife.feature.user.domain.UserService
 import com.shelflife.feature.user.routing.authRoutes
 import io.ktor.server.application.Application
@@ -24,6 +27,8 @@ fun Application.configureRouting() {
     val storageLocationService: StorageLocationService by dependencies
     val quantityUnitService: QuantityUnitService by dependencies
     val pantryEntryService: PantryEntryService by dependencies
+    val syncService: SyncService by dependencies
+    val syncEventHub: SyncEventHub by dependencies
     val idempotencyStore: IdempotencyStore by dependencies
     val dataSource: DataSource by dependencies
 
@@ -36,6 +41,7 @@ fun Application.configureRouting() {
             storageLocationRoutes(storageLocationService, idempotencyStore)
             quantityUnitRoutes(quantityUnitService)
             pantryEntryRoutes(pantryEntryService, idempotencyStore)
+            syncRoutes(syncService, syncEventHub)
         }
     }
 }

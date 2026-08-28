@@ -10,6 +10,8 @@ import com.shelflife.feature.quantityUnit.data.repository.QuantityUnitRepository
 import com.shelflife.feature.quantityUnit.service.QuantityUnitServiceI
 import com.shelflife.feature.storageLocation.data.repository.StorageLocationRepositoryI
 import com.shelflife.feature.storageLocation.service.StorageLocationServiceI
+import com.shelflife.feature.sync.data.repository.SyncRepositoryI
+import com.shelflife.feature.sync.service.SyncServiceI
 
 data class PantryEntryTestHarness(
     val service: PantryEntryServiceI,
@@ -25,12 +27,17 @@ data class PantryEntryTestHarness(
 
 fun withRealPantryEntryDatabase(block: suspend (PantryEntryTestHarness) -> Unit) {
     withRealDatabase { _, tx ->
+        val syncService = SyncServiceI(SyncRepositoryI(), tx)
         val pantryEntryRepository = PantryEntryRepositoryI()
         val productRepository = ProductRepositoryI()
-        val productService = ProductServiceI(productRepository = productRepository, tx = tx)
+        val productService = ProductServiceI(productRepository = productRepository, syncService = syncService, tx = tx)
         val storageLocationRepository = StorageLocationRepositoryI()
         val storageLocationService =
-            StorageLocationServiceI(storageLocationRepository = storageLocationRepository, tx = tx)
+            StorageLocationServiceI(
+                storageLocationRepository = storageLocationRepository,
+                syncService = syncService,
+                tx = tx,
+            )
         val quantityUnitRepository = QuantityUnitRepositoryI()
         val quantityUnitService = QuantityUnitServiceI(quantityUnitRepository = quantityUnitRepository, tx = tx)
         val service =
@@ -39,6 +46,7 @@ fun withRealPantryEntryDatabase(block: suspend (PantryEntryTestHarness) -> Unit)
                 productService = productService,
                 storageLocationRepository = storageLocationRepository,
                 quantityUnitRepository = quantityUnitRepository,
+                syncService = syncService,
                 tx = tx,
             )
 

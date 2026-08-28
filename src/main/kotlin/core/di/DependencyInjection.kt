@@ -23,6 +23,7 @@ import com.shelflife.feature.pantryEntry.di.configurePantryEntryDependencyInject
 import com.shelflife.feature.product.di.configureProductDependencyInjection
 import com.shelflife.feature.quantityUnit.di.configureQuantityUnitDependencyInjection
 import com.shelflife.feature.storageLocation.di.configureStorageLocationDependencyInjection
+import com.shelflife.feature.sync.di.configureSyncDependencyInjection
 import com.shelflife.feature.user.di.configureAuthDependencyInjection
 import io.ktor.server.application.Application
 import io.ktor.server.config.property
@@ -76,6 +77,7 @@ fun Application.configureDependencyInjection() {
     }
 
     configureAuthDependencyInjection()
+    configureSyncDependencyInjection()
     configureProductDependencyInjection()
     configureStorageLocationDependencyInjection()
     configureQuantityUnitDependencyInjection()

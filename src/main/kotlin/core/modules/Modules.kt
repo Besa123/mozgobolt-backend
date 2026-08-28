@@ -12,6 +12,7 @@ import com.shelflife.core.modules.plugin.configureRateLimit
 import com.shelflife.core.modules.plugin.configureRequestTimeout
 import com.shelflife.core.modules.plugin.configureRequestValidation
 import com.shelflife.core.modules.plugin.configureSecurity
+import com.shelflife.core.modules.plugin.configureSse
 import com.shelflife.core.modules.plugin.configureStatusPages
 import com.shelflife.core.modules.plugin.configureSwagger
 import io.ktor.server.application.Application
@@ -26,6 +27,7 @@ fun Application.configureModules() {
     configureForwardedHeaders()
     configureSwagger()
     configureGlobalBodyLimit()
+    configureSse()
     configureRequestTimeout()
     configureSecurity()
     configureCors()

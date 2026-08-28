@@ -97,6 +97,7 @@ dependencies {
     implementation(ktorLibs.server.cors)
     implementation(ktorLibs.server.defaultHeaders)
     implementation(ktorLibs.server.forwardedHeader)
+    implementation(ktorLibs.server.sse)
 
     implementation(libs.logback.classic)
     implementation(libs.kotlin.logging)

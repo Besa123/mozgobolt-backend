@@ -11,6 +11,7 @@ import com.shelflife.feature.product.service.ProductServiceI
 import com.shelflife.feature.quantityUnit.domain.QuantityUnitRepository
 import com.shelflife.feature.quantityUnit.domain.model.QuantityUnit
 import com.shelflife.feature.storageLocation.service.FakeStorageLocationRepository
+import com.shelflife.feature.sync.service.NoOpSyncService
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
@@ -28,7 +29,12 @@ fun newHarness(): Harness {
     val productRepository = FakeProductRepository()
     // Real ProductServiceI, not a hand-stubbed fake — createEntry's "new product" path calls into
     // its actual dedup/trim logic, and that's exactly what's worth exercising here.
-    val productService = ProductServiceI(productRepository = productRepository, tx = NoopTransactionalRunner())
+    val productService =
+        ProductServiceI(
+            productRepository = productRepository,
+            syncService = NoOpSyncService(),
+            tx = NoopTransactionalRunner(),
+        )
     val storageLocationRepository = FakeStorageLocationRepository()
     val quantityUnitRepository = FakeQuantityUnitRepository()
     val service =
@@ -37,6 +43,7 @@ fun newHarness(): Harness {
             productService = productService,
             storageLocationRepository = storageLocationRepository,
             quantityUnitRepository = quantityUnitRepository,
+            syncService = NoOpSyncService(),
             tx = NoopTransactionalRunner(),
         )
     return Harness(service, pantryEntryRepository, productRepository, storageLocationRepository, quantityUnitRepository)

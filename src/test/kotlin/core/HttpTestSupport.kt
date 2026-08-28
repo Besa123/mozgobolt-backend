@@ -14,6 +14,7 @@ import com.shelflife.core.modules.plugin.configureRateLimit
 import com.shelflife.core.modules.plugin.configureRequestTimeout
 import com.shelflife.core.modules.plugin.configureRequestValidation
 import com.shelflife.core.modules.plugin.configureSecurity
+import com.shelflife.core.modules.plugin.configureSse
 import com.shelflife.core.modules.plugin.configureStatusPages
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
@@ -51,6 +52,7 @@ fun Application.installTestModules() {
     configureDefaultHeaders()
     configureForwardedHeaders()
     configureGlobalBodyLimit()
+    configureSse()
     configureRequestTimeout()
     dependencies {
         provide<TokenManager> { testTokenManager() }

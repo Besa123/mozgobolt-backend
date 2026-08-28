@@ -13,6 +13,9 @@ import com.shelflife.feature.pantryEntry.domain.model.UpdateEntryOutcome
 import com.shelflife.feature.product.domain.ProductService
 import com.shelflife.feature.quantityUnit.domain.QuantityUnitRepository
 import com.shelflife.feature.storageLocation.domain.StorageLocationRepository
+import com.shelflife.feature.sync.domain.SyncService
+import com.shelflife.feature.sync.domain.model.SyncEntityType
+import com.shelflife.feature.sync.domain.model.SyncOperation
 import java.math.BigDecimal
 
 private const val DEFAULT_PAGE_SIZE = 50
@@ -23,12 +26,14 @@ class PantryEntryServiceI(
     private val productService: ProductService,
     private val storageLocationRepository: StorageLocationRepository,
     private val quantityUnitRepository: QuantityUnitRepository,
+    private val syncService: SyncService,
     private val tx: TransactionalRunner,
 ) : PantryEntryService {
     override suspend fun createEntry(
         userId: Int,
         product: ProductReference,
         fields: PantryEntryFields,
+        originDeviceId: String?,
     ): AppResult<PantryEntry, PantryEntryError> =
         tx.transactional {
             val productId =
@@ -48,6 +53,7 @@ class PantryEntryServiceI(
                                     name = product.name,
                                     defaultLifespanDays = null,
                                     defaultUnitCategory = null,
+                                    originDeviceId = originDeviceId,
                                 )
                         ) {
                             is AppResult.Error ->
@@ -68,7 +74,18 @@ class PantryEntryServiceI(
                 return@transactional AppResult.Error(PantryEntryError.UNIT_NOT_FOUND)
             }
 
-            val entry = pantryEntryRepository.create(userId = userId, productId = productId, fields = fields)
+            val entry =
+                pantryEntryRepository
+                    .create(userId = userId, productId = productId, fields = fields)
+                    .also {
+                        syncService.recordChange(
+                            userId,
+                            SyncEntityType.PANTRY_ENTRY,
+                            it.id,
+                            SyncOperation.UPSERT,
+                            originDeviceId,
+                        )
+                    }
 
             AppResult.Success(entry)
         }
@@ -83,10 +100,16 @@ class PantryEntryServiceI(
         return tx.transactional { pantryEntryRepository.findPageByUserId(userId, afterId, clampedLimit) }
     }
 
+    override suspend fun findByIdForUser(
+        userId: Int,
+        entryId: Int,
+    ): PantryEntry? = tx.transactional { pantryEntryRepository.findByIdAndUserId(entryId, userId) }
+
     override suspend fun updateEntry(
         userId: Int,
         entryId: Int,
         fields: PantryEntryFields,
+        originDeviceId: String?,
     ): AppResult<UpdateEntryOutcome, PantryEntryError> =
         tx.transactional {
             if (pantryEntryRepository.findByIdAndUserId(entryId, userId) == null) {
@@ -95,6 +118,13 @@ class PantryEntryServiceI(
 
             if (fields.quantityAmount <= BigDecimal.ZERO) {
                 pantryEntryRepository.deleteByIdAndUserId(entryId, userId)
+                syncService.recordChange(
+                    userId,
+                    SyncEntityType.PANTRY_ENTRY,
+                    entryId,
+                    SyncOperation.DELETE,
+                    originDeviceId,
+                )
                 return@transactional AppResult.Success(UpdateEntryOutcome.Deleted)
             }
 
@@ -109,7 +139,17 @@ class PantryEntryServiceI(
             }
 
             val updated =
-                pantryEntryRepository.update(id = entryId, userId = userId, fields = fields)
+                pantryEntryRepository
+                    .update(id = entryId, userId = userId, fields = fields)
+                    ?.also {
+                        syncService.recordChange(
+                            userId,
+                            SyncEntityType.PANTRY_ENTRY,
+                            entryId,
+                            SyncOperation.UPSERT,
+                            originDeviceId,
+                        )
+                    }
                     ?: return@transactional AppResult.Error(PantryEntryError.NOT_FOUND)
 
             AppResult.Success(UpdateEntryOutcome.Updated(updated))
@@ -118,9 +158,17 @@ class PantryEntryServiceI(
     override suspend fun deleteEntry(
         userId: Int,
         entryId: Int,
+        originDeviceId: String?,
     ): AppResult<Unit, PantryEntryError> =
         tx.transactional {
             if (pantryEntryRepository.deleteByIdAndUserId(entryId, userId)) {
+                syncService.recordChange(
+                    userId,
+                    SyncEntityType.PANTRY_ENTRY,
+                    entryId,
+                    SyncOperation.DELETE,
+                    originDeviceId,
+                )
                 AppResult.Success(Unit)
             } else {
                 AppResult.Error(PantryEntryError.NOT_FOUND)

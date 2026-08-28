@@ -13,6 +13,7 @@ interface PantryEntryService {
         userId: Int,
         product: ProductReference,
         fields: PantryEntryFields,
+        originDeviceId: String? = null,
     ): AppResult<PantryEntry, PantryEntryError>
 
     suspend fun listForUser(
@@ -21,14 +22,21 @@ interface PantryEntryService {
         limit: Int?,
     ): PantryEntryPage
 
+    suspend fun findByIdForUser(
+        userId: Int,
+        entryId: Int,
+    ): PantryEntry?
+
     suspend fun updateEntry(
         userId: Int,
         entryId: Int,
         fields: PantryEntryFields,
+        originDeviceId: String? = null,
     ): AppResult<UpdateEntryOutcome, PantryEntryError>
 
     suspend fun deleteEntry(
         userId: Int,
         entryId: Int,
+        originDeviceId: String? = null,
     ): AppResult<Unit, PantryEntryError>
 }

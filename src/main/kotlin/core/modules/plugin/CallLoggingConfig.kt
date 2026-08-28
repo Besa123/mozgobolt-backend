@@ -1,6 +1,7 @@
 package com.shelflife.core.modules.plugin
 
 import com.shelflife.core.domain.security.AuthConstants.CLAIM_USER_ID
+import com.shelflife.core.utility.functions.currentDeviceIdOrNull
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
@@ -51,6 +52,8 @@ fun Application.configureCallLogging() {
         mdc("userAgent") { call ->
             call.request.headers[HttpHeaders.UserAgent]?.take(MAX_USER_AGENT_LENGTH)
         }
+
+        mdc("deviceId") { call -> call.currentDeviceIdOrNull() }
 
         mdc("method") { call ->
             call.request.httpMethod.value

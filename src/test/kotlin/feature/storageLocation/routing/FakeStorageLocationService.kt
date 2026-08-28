@@ -19,6 +19,7 @@ class FakeStorageLocationService : StorageLocationService {
     override suspend fun createForUser(
         userId: Int,
         name: String,
+        originDeviceId: String?,
     ): AppResult<StorageLocation, StorageLocationError> =
         createResult ?: run {
             val location = StorageLocation(id = nextId++, userId = userId, name = name)
@@ -30,6 +31,7 @@ class FakeStorageLocationService : StorageLocationService {
         userId: Int,
         locationId: Int,
         newName: String,
+        originDeviceId: String?,
     ): AppResult<StorageLocation, StorageLocationError> =
         renameResult ?: run {
             val location = locations[userId]?.find { it.id == locationId }
@@ -45,6 +47,7 @@ class FakeStorageLocationService : StorageLocationService {
     override suspend fun deleteLocation(
         userId: Int,
         locationId: Int,
+        originDeviceId: String?,
     ): AppResult<Unit, StorageLocationError> =
         deleteResult ?: run {
             val removed = locations[userId]?.removeIf { it.id == locationId } ?: false

@@ -27,7 +27,7 @@ changing anything in any of them.
    changes via the user explicitly editing that row (using some up, topping up the same batch).
 3. No consumed-history / soft delete — a row is deleted once its quantity hits 0. Not solving waste-analytics yet.
 4. Product-name dedup (case-insensitive) is two-layered, deliberately, because a single DB constraint can't express the
-   full rule: the V3 migration's partial unique indexes stop global-vs-global and same-user-vs-same-user collisions (not
+   full rule: the migration's partial unique indexes stop global-vs-global and same-user-vs-same-user collisions (not
    in `ProductsTable.kt` — Exposed can't express a partial index), but they're scoped disjointly and never check against
    each other. A private name shadowing an *existing global* product (e.g. a user creating their own "Sonka" when the
    app already ships one) is caught only in `ProductServiceI` via `findGlobalByName`, ahead of the DB call — this is a
@@ -79,6 +79,20 @@ changing anything in any of them.
     three of the others, and Exposed's `IntEntity`/`referencedOn` DAO relations are simplest to define when the related
     tables live in one file/package. Nothing prevents splitting them later (single Gradle module, no circular-dependency
     constraint) — it just hasn't been worth the churn yet.
+13. `ProductServiceI`, `StorageLocationServiceI`, and `PantryEntryServiceI` each call `SyncService.recordChange(...)`
+    immediately after a create/rename/delete succeeds, inside that same write transaction — multi-device sync (ADR 0006)
+    needs an outbox row for every mutation to a synced entity, or a device that's caught up misses the change entirely.
+    `quantityUnit` has no such call: it's a fully-seeded closed set (decision 6), nothing ever mutates it, so there's
+    nothing to record. Adding a new mutation to any of these three features means adding the matching `recordChange`
+    call too — this is easy to forget and won't fail any test that doesn't specifically check for it, so treat it as
+    part of "the mutation," not an optional extra.
+14. `GET /pantry-entries/{id}` exists purely to resolve a single sync pointer (ADR 0006). `products` and
+    `storage_locations` don't need an equivalent — their list endpoints (`GET /products/mine`, `GET /storage-locations`)
+    already return everything unpaginated, so a sync pointer for either just means "call that list again." Only
+    `pantry_entries` is paginated (decision 11), so it's the only one of the three where "a pointer arrived for an id my
+    local cache doesn't have yet" can't be answered by "call the list again" without re-walking every page. This route
+    is that answer, and the reason it exists at all is specifically the pagination/sync interaction — don't remove it if
+    `pantry_entries` ever stops being paginated without checking whether it's still needed.
 
 ## What the backend must get right
 

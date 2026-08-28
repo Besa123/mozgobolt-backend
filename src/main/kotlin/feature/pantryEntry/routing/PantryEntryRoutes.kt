@@ -9,6 +9,7 @@ import com.shelflife.core.modules.plugin.limitedDelete
 import com.shelflife.core.modules.plugin.validatedPatch
 import com.shelflife.core.modules.plugin.validatedPost
 import com.shelflife.core.routing.dto.response.ErrorResponse
+import com.shelflife.core.utility.functions.currentDeviceIdOrNull
 import com.shelflife.core.utility.functions.currentUserIdOrNull
 import com.shelflife.core.utility.functions.protectedApi
 import com.shelflife.feature.pantryEntry.domain.PantryEntryService
@@ -28,12 +29,16 @@ import kotlinx.serialization.json.Json
 import java.math.BigDecimal
 import java.time.LocalDate
 
+private const val PANTRY_ENTRY_BY_ID_PATH = "/pantry-entries/{id}"
+private const val INVALID_ENTRY_ID = "INVALID_ENTRY_ID"
+
 fun Route.pantryEntryRoutes(
     pantryEntryService: PantryEntryService,
     idempotencyStore: IdempotencyStore,
 ) {
     protectedApi {
         registerListRoute(pantryEntryService)
+        registerGetByIdRoute(pantryEntryService)
         registerCreateRoute(pantryEntryService, idempotencyStore)
         registerUpdateRoute(pantryEntryService)
         registerDeleteRoute(pantryEntryService)
@@ -49,6 +54,21 @@ private fun Route.registerListRoute(pantryEntryService: PantryEntryService) {
 
         val page = pantryEntryService.listForUser(userId = userId, afterId = afterId, limit = limit)
         call.respond(HttpStatusCode.OK, page.toResponseDto())
+    }
+}
+
+private fun Route.registerGetByIdRoute(pantryEntryService: PantryEntryService) {
+    get(PANTRY_ENTRY_BY_ID_PATH) {
+        val userId = call.currentUserIdOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
+        val entryId =
+            call.parameters["id"]?.toIntOrNull()
+                ?: return@get call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = INVALID_ENTRY_ID))
+
+        val entry =
+            pantryEntryService.findByIdForUser(userId = userId, entryId = entryId)
+                ?: return@get call.respond(HttpStatusCode.NotFound, ErrorResponse(error = "NOT_FOUND"))
+
+        call.respond(HttpStatusCode.OK, entry.toResponseDto())
     }
 }
 
@@ -80,6 +100,7 @@ private fun Route.registerCreateRoute(
                             expirationDate = request.expirationDate?.let { LocalDate.parse(it) },
                             brandOrNote = request.brandOrNote,
                         ),
+                    originDeviceId = call.currentDeviceIdOrNull(),
                 ).fold(
                     onSuccess = { entry -> idempotentResult(HttpStatusCode.Created, entry.toResponseDto()) },
                     onError = { error ->
@@ -92,7 +113,7 @@ private fun Route.registerCreateRoute(
 
 private fun Route.registerUpdateRoute(pantryEntryService: PantryEntryService) {
     validatedPatch<UpdatePantryEntryRequestDto>(
-        "/pantry-entries/{id}",
+        PANTRY_ENTRY_BY_ID_PATH,
         BodyLimit.SMALL,
         RequestTimeout.STANDARD,
     ) { request ->
@@ -103,7 +124,7 @@ private fun Route.registerUpdateRoute(pantryEntryService: PantryEntryService) {
             call.parameters["id"]?.toIntOrNull()
                 ?: return@validatedPatch call.respond(
                     HttpStatusCode.BadRequest,
-                    ErrorResponse(error = "INVALID_ENTRY_ID"),
+                    ErrorResponse(error = INVALID_ENTRY_ID),
                 )
 
         pantryEntryService
@@ -118,6 +139,7 @@ private fun Route.registerUpdateRoute(pantryEntryService: PantryEntryService) {
                         expirationDate = request.expirationDate?.let { LocalDate.parse(it) },
                         brandOrNote = request.brandOrNote,
                     ),
+                originDeviceId = call.currentDeviceIdOrNull(),
             ).fold(
                 onSuccess = { outcome ->
                     when (outcome) {
@@ -134,7 +156,7 @@ private fun Route.registerUpdateRoute(pantryEntryService: PantryEntryService) {
 }
 
 private fun Route.registerDeleteRoute(pantryEntryService: PantryEntryService) {
-    limitedDelete("/pantry-entries/{id}", BodyLimit.TINY, RequestTimeout.STANDARD) {
+    limitedDelete(PANTRY_ENTRY_BY_ID_PATH, BodyLimit.TINY, RequestTimeout.STANDARD) {
         val userId =
             call.currentUserIdOrNull()
                 ?: return@limitedDelete call.respond(HttpStatusCode.Unauthorized)
@@ -142,11 +164,11 @@ private fun Route.registerDeleteRoute(pantryEntryService: PantryEntryService) {
             call.parameters["id"]?.toIntOrNull()
                 ?: return@limitedDelete call.respond(
                     HttpStatusCode.BadRequest,
-                    ErrorResponse(error = "INVALID_ENTRY_ID"),
+                    ErrorResponse(error = INVALID_ENTRY_ID),
                 )
 
         pantryEntryService
-            .deleteEntry(userId = userId, entryId = entryId)
+            .deleteEntry(userId = userId, entryId = entryId, originDeviceId = call.currentDeviceIdOrNull())
             .fold(
                 onSuccess = { call.respond(HttpStatusCode.NoContent) },
                 onError = { error -> call.respond(error.toHttpStatusCode(), ErrorResponse(error = error.name)) },

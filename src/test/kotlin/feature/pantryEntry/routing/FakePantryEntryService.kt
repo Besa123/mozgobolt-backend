@@ -17,11 +17,14 @@ class FakePantryEntryService : PantryEntryService {
         val userId: Int,
         val product: ProductReference,
         val fields: PantryEntryFields,
+        val originDeviceId: String?,
     )
 
     var pageResult: PantryEntryPage = PantryEntryPage(items = emptyList(), nextCursor = null)
     var lastListCall: Pair<Int?, Int?>? = null
         private set
+
+    var findByIdResult: PantryEntry? = sampleEntry()
 
     var createResult: AppResult<PantryEntry, PantryEntryError> = AppResult.Success(sampleEntry())
     var lastCreateCall: CreateCall? = null
@@ -40,9 +43,10 @@ class FakePantryEntryService : PantryEntryService {
         userId: Int,
         product: ProductReference,
         fields: PantryEntryFields,
+        originDeviceId: String?,
     ): AppResult<PantryEntry, PantryEntryError> {
         createCallCount++
-        lastCreateCall = CreateCall(userId, product, fields)
+        lastCreateCall = CreateCall(userId, product, fields, originDeviceId)
         return createResult
     }
 
@@ -55,10 +59,16 @@ class FakePantryEntryService : PantryEntryService {
         return pageResult
     }
 
+    override suspend fun findByIdForUser(
+        userId: Int,
+        entryId: Int,
+    ): PantryEntry? = findByIdResult
+
     override suspend fun updateEntry(
         userId: Int,
         entryId: Int,
         fields: PantryEntryFields,
+        originDeviceId: String?,
     ): AppResult<UpdateEntryOutcome, PantryEntryError> {
         updateCallCount++
         return updateResult
@@ -67,6 +77,7 @@ class FakePantryEntryService : PantryEntryService {
     override suspend fun deleteEntry(
         userId: Int,
         entryId: Int,
+        originDeviceId: String?,
     ): AppResult<Unit, PantryEntryError> = deleteResult
 
     companion object {

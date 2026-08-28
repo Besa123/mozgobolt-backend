@@ -1,3 +1,153 @@
+-- Consolidated initial schema. This app has never been deployed, so there is no live database
+-- with migration history to preserve — squashing what were previously V1-V4 into one file avoids
+-- a growing trail of pre-release migrations for no benefit. The next real migration is V2.
+
+CREATE TABLE IF NOT EXISTS users
+(
+    id
+    SERIAL
+    PRIMARY
+    KEY,
+    email
+    VARCHAR
+(
+    255
+) NOT NULL,
+    name VARCHAR
+(
+    100
+) NOT NULL,
+    password_hash VARCHAR
+(
+    255
+) NOT NULL,
+    failed_login_attempts INT NOT NULL DEFAULT 0,
+    locked_until TIMESTAMP,
+    is_email_verified BOOLEAN NOT NULL DEFAULT FALSE
+    );
+
+ALTER TABLE users
+    ADD CONSTRAINT users_email_unique UNIQUE (email);
+
+CREATE TABLE IF NOT EXISTS refresh_tokens
+(
+    id
+    SERIAL
+    PRIMARY
+    KEY,
+    user_id
+    INT
+    NOT
+    NULL,
+    token
+    VARCHAR
+(
+    64
+) NOT NULL,
+    family_id VARCHAR
+(
+    36
+) NOT NULL,
+    is_revoked BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    CONSTRAINT fk_refresh_tokens_user_id__id FOREIGN KEY
+(
+    user_id
+)
+    REFERENCES users
+(
+    id
+) ON DELETE CASCADE
+  ON UPDATE RESTRICT
+    );
+
+CREATE INDEX refresh_tokens_user_id ON refresh_tokens (user_id);
+CREATE INDEX refresh_tokens_family_id ON refresh_tokens (family_id);
+
+CREATE TABLE IF NOT EXISTS email_verification_tokens
+(
+    id
+    SERIAL
+    PRIMARY
+    KEY,
+    user_id
+    INT
+    NOT
+    NULL,
+    token
+    VARCHAR
+(
+    64
+) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    used BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL,
+    CONSTRAINT fk_email_verification_tokens_user_id__id FOREIGN KEY
+(
+    user_id
+)
+    REFERENCES users
+(
+    id
+) ON DELETE CASCADE
+  ON UPDATE RESTRICT
+    );
+
+CREATE INDEX email_verification_tokens_user_id ON email_verification_tokens (user_id);
+ALTER TABLE email_verification_tokens
+    ADD CONSTRAINT email_verification_tokens_token_unique UNIQUE (token);
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens
+(
+    id
+    SERIAL
+    PRIMARY
+    KEY,
+    user_id
+    INT
+    NOT
+    NULL,
+    token
+    VARCHAR
+(
+    64
+) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    used BOOLEAN NOT NULL DEFAULT FALSE,
+    used_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL,
+    CONSTRAINT fk_password_reset_tokens_user_id__id FOREIGN KEY
+(
+    user_id
+)
+    REFERENCES users
+(
+    id
+) ON DELETE CASCADE
+  ON UPDATE RESTRICT
+    );
+
+CREATE INDEX password_reset_tokens_user_id ON password_reset_tokens (user_id);
+ALTER TABLE password_reset_tokens
+    ADD CONSTRAINT password_reset_tokens_token_unique UNIQUE (token);
+
+CREATE TABLE IF NOT EXISTS idempotency_keys
+(
+    key
+    VARCHAR
+(
+    64
+) PRIMARY KEY,
+    request_fingerprint VARCHAR
+(
+    64
+) NOT NULL DEFAULT '',
+    status_code INT,
+    response_body TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMP NOT NULL
+    );
+
 CREATE TABLE IF NOT EXISTS storage_locations
 (
     id
@@ -166,6 +316,50 @@ CREATE TABLE IF NOT EXISTS pantry_entries
 CREATE INDEX pantry_entries_user_id ON pantry_entries (user_id);
 CREATE INDEX pantry_entries_product_id ON pantry_entries (product_id);
 CREATE INDEX pantry_entries_storage_location_id ON pantry_entries (storage_location_id);
+
+-- sync_events is the durable outbox for multi-device sync (ADR 0006): every mutation to a synced
+-- entity (products, storage_locations, pantry_entries) inserts one row here in the same
+-- transaction as the write itself. Clients pull `WHERE user_id = ? AND id > ?` to catch up
+-- cheaply after being offline; a live push channel (Postgres NOTIFY) is a hint to re-pull, never
+-- the data path.
+--
+-- BIGSERIAL (not the SERIAL used elsewhere in this schema): every other table's id space is
+-- bounded by how many rows a user actually keeps, but this one is append-only and never pruned
+-- in v1 — it should never realistically wrap.
+CREATE TABLE IF NOT EXISTS sync_events
+(
+    id
+    BIGSERIAL
+    PRIMARY
+    KEY,
+    user_id
+    INT
+    NOT
+    NULL,
+    entity_type
+    VARCHAR
+(
+    30
+) NOT NULL,
+    entity_id INT NOT NULL,
+    operation VARCHAR
+(
+    10
+) NOT NULL,
+    occurred_at TIMESTAMP NOT NULL,
+    CONSTRAINT fk_sync_events_user_id__id FOREIGN KEY
+(
+    user_id
+)
+    REFERENCES users
+(
+    id
+) ON DELETE CASCADE
+  ON UPDATE RESTRICT
+    );
+
+-- Supports the exact catch-up query: all of one user's events past a cursor, in order.
+CREATE INDEX sync_events_user_id_id ON sync_events (user_id, id);
 
 -- Seed: Hungarian units. PIECE deliberately has only "db" — see QuantityUnitsTable.kt for why
 -- container units (doboz/üveg/csomag) are intentionally not modeled as convertible units.

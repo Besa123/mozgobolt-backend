@@ -4,6 +4,7 @@ import com.shelflife.core.database.TransactionalRunner
 import com.shelflife.feature.storageLocation.domain.StorageLocationRepository
 import com.shelflife.feature.storageLocation.domain.model.RenameLocationOutcome
 import com.shelflife.feature.storageLocation.domain.model.StorageLocation
+import com.shelflife.feature.sync.service.NoOpSyncService
 
 data class Harness(
     val service: StorageLocationServiceI,
@@ -12,7 +13,12 @@ data class Harness(
 
 fun newHarness(): Harness {
     val repository = FakeStorageLocationRepository()
-    val service = StorageLocationServiceI(storageLocationRepository = repository, tx = NoopTransactionalRunner())
+    val service =
+        StorageLocationServiceI(
+            storageLocationRepository = repository,
+            syncService = NoOpSyncService(),
+            tx = NoopTransactionalRunner(),
+        )
     return Harness(service, repository)
 }
 

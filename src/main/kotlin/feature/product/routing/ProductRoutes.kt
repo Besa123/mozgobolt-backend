@@ -8,6 +8,7 @@ import com.shelflife.core.modules.plugin.RequestTimeout
 import com.shelflife.core.modules.plugin.validatedPatch
 import com.shelflife.core.modules.plugin.validatedPost
 import com.shelflife.core.routing.dto.response.ErrorResponse
+import com.shelflife.core.utility.functions.currentDeviceIdOrNull
 import com.shelflife.core.utility.functions.currentUserIdOrNull
 import com.shelflife.core.utility.functions.protectedApi
 import com.shelflife.feature.product.domain.ProductService
@@ -53,6 +54,7 @@ fun Route.productRoutes(
                         name = request.name,
                         defaultLifespanDays = request.defaultLifespanDays,
                         defaultUnitCategory = request.defaultUnitCategory,
+                        originDeviceId = call.currentDeviceIdOrNull(),
                     ).fold(
                         onSuccess = { product ->
                             idempotentResult(HttpStatusCode.Created, product.toResponseDto())
@@ -76,8 +78,12 @@ fun Route.productRoutes(
                     )
 
             productService
-                .renameProduct(userId = userId, productId = productId, newName = request.name)
-                .fold(
+                .renameProduct(
+                    userId = userId,
+                    productId = productId,
+                    newName = request.name,
+                    originDeviceId = call.currentDeviceIdOrNull(),
+                ).fold(
                     onSuccess = { product -> call.respond(HttpStatusCode.OK, product.toResponseDto()) },
                     onError = { error -> call.respond(error.toHttpStatusCode(), ErrorResponse(error = error.name)) },
                 )

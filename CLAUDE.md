@@ -42,6 +42,12 @@ Feature-based layout: `feature/<name>/domain/`, `data/`, `service/`, `routing/`,
 - **External API calls use Resilience4j:** wrap with a `withXResilience { }` helper backed by a `Retry`/
   `CircuitBreaker` pair per dependency (`core/modules/plugin/ResilienceConfig.kt`), never a hand-rolled retry loop —
   see [ADR 0005](docs/adr/0005-resilience4j-for-external-calls.md).
+- **Sync/outbox for multi-device consistency:** a mutation to a synced entity (`product`, `storageLocation`,
+  `pantryEntry`) calls `SyncService.recordChange(...)` inside its own write transaction, immediately after the write —
+  never as a separate step. Catch-up is pull-based (`GET /sync?since=`), the source of truth for every client; push
+  (`GET /sync/live`, SSE) is a liveness hint only, never a data path — a client that never receives one, or receives one
+  after missing it, still catches up correctly on its next pull. See
+  [ADR 0006](docs/adr/0006-multi-device-sync-outbox-and-cursor-pull.md).
 - **No wildcard imports.**
 
 ## Security

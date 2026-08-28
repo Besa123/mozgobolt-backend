@@ -10,10 +10,28 @@ import io.ktor.server.auth.jwt.JWTPrincipal
 import io.ktor.server.auth.principal
 import io.ktor.server.plugins.ratelimit.RateLimitName
 import io.ktor.server.plugins.ratelimit.rateLimit
+import io.ktor.server.request.header
 import io.ktor.server.routing.Route
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
+
+const val DEVICE_ID_HEADER = "X-Device-Id"
+private const val MAX_DEVICE_ID_LENGTH = 300
 
 fun ApplicationCall.currentUserIdOrNull(): Int? =
     principal<JWTPrincipal>()?.payload?.getClaim(AuthConstants.CLAIM_USER_ID)?.asInt()
+
+fun ApplicationCall.remainingJwtValidityOrNull(): Duration? {
+    val expiresAt = principal<JWTPrincipal>()?.expiresAt?.toInstant() ?: return null
+    return (expiresAt.toEpochMilli() - System.currentTimeMillis()).milliseconds
+}
+
+fun ApplicationCall.currentDeviceIdOrNull(): String? =
+    request
+        .header(DEVICE_ID_HEADER)
+        ?.trim()
+        ?.take(MAX_DEVICE_ID_LENGTH)
+        ?.takeIf { it.isNotEmpty() }
 
 fun Route.protectedApi(
     limitName: String = API_LIMIT,

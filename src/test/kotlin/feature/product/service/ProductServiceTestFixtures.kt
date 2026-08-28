@@ -5,6 +5,7 @@ import com.shelflife.feature.product.domain.ProductRepository
 import com.shelflife.feature.product.domain.model.Product
 import com.shelflife.feature.product.domain.model.RenameOutcome
 import com.shelflife.feature.product.domain.model.UnitCategory
+import com.shelflife.feature.sync.service.NoOpSyncService
 
 data class Harness(
     val service: ProductServiceI,
@@ -13,7 +14,8 @@ data class Harness(
 
 fun newHarness(): Harness {
     val repository = FakeProductRepository()
-    val service = ProductServiceI(productRepository = repository, tx = NoopTransactionalRunner())
+    val service =
+        ProductServiceI(productRepository = repository, syncService = NoOpSyncService(), tx = NoopTransactionalRunner())
     return Harness(service, repository)
 }
 
