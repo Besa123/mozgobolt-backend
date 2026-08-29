@@ -38,53 +38,29 @@ class VerifyEmailRouteTest {
         }
 
     @Test
-    fun `an invalid token returns 400`() =
-        testApplication {
-            configureTestEnvironment()
-            val userService =
-                FakeUserService().apply {
-                    verifyEmailResult =
-                        AppResult.Error(VerifyEmailError.INVALID_TOKEN)
-                }
-            application { installAuthRoutesTestApp(userService) }
+    fun `each VerifyEmailError maps to its documented status code`() {
+        val expectedStatusByError =
+            mapOf(
+                VerifyEmailError.INVALID_TOKEN to HttpStatusCode.BadRequest,
+                VerifyEmailError.EXPIRED_TOKEN to HttpStatusCode.Gone,
+                VerifyEmailError.ALREADY_VERIFIED to HttpStatusCode.Conflict,
+            )
+        // A `when` over VerifyEmailError in AuthService is exhaustive at compile time, but this
+        // also guards against a future error variant being added there without a corresponding
+        // case being added *here* too.
+        assertEquals(VerifyEmailError.entries.toSet(), expectedStatusByError.keys)
 
-            val response = client.get("${AuthPaths.VERIFY_EMAIL}?token=bad-token")
+        for ((error, expectedStatus) in expectedStatusByError) {
+            testApplication {
+                configureTestEnvironment()
+                val userService = FakeUserService().apply { verifyEmailResult = AppResult.Error(error) }
+                application { installAuthRoutesTestApp(userService) }
 
-            assertEquals(HttpStatusCode.BadRequest, response.status)
-            assertEquals("INVALID_TOKEN", response.errorBody().error)
+                val response = client.get("${AuthPaths.VERIFY_EMAIL}?token=some-token")
+
+                assertEquals(expectedStatus, response.status, "expected $error to map to $expectedStatus")
+                assertEquals(error.name, response.errorBody().error)
+            }
         }
-
-    @Test
-    fun `an expired token returns 410 Gone`() =
-        testApplication {
-            configureTestEnvironment()
-            val userService =
-                FakeUserService().apply {
-                    verifyEmailResult =
-                        AppResult.Error(VerifyEmailError.EXPIRED_TOKEN)
-                }
-            application { installAuthRoutesTestApp(userService) }
-
-            val response = client.get("${AuthPaths.VERIFY_EMAIL}?token=expired-token")
-
-            assertEquals(HttpStatusCode.Gone, response.status)
-            assertEquals("EXPIRED_TOKEN", response.errorBody().error)
-        }
-
-    @Test
-    fun `an already-verified account returns 409`() =
-        testApplication {
-            configureTestEnvironment()
-            val userService =
-                FakeUserService().apply {
-                    verifyEmailResult =
-                        AppResult.Error(VerifyEmailError.ALREADY_VERIFIED)
-                }
-            application { installAuthRoutesTestApp(userService) }
-
-            val response = client.get("${AuthPaths.VERIFY_EMAIL}?token=already-used-token")
-
-            assertEquals(HttpStatusCode.Conflict, response.status)
-            assertEquals("ALREADY_VERIFIED", response.errorBody().error)
-        }
+    }
 }

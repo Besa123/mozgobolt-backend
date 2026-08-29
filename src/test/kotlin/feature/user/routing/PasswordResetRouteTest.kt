@@ -97,6 +97,22 @@ class PasswordResetRouteTest {
         }
 
     @Test
+    fun `a token whose user no longer exists returns 400`() =
+        testApplication {
+            configureTestEnvironment()
+            val userService =
+                FakeUserService().apply {
+                    validatePasswordResetTokenResult = AppResult.Error(PasswordResetError.USER_NOT_FOUND)
+                }
+            application { installAuthRoutesTestApp(userService) }
+
+            val response = postJson(AuthPaths.PASSWORD_RESET_VALIDATE, """{"token":"orphaned-token"}""")
+
+            assertEquals(HttpStatusCode.BadRequest, response.status)
+            assertEquals("USER_NOT_FOUND", response.errorBody().error)
+        }
+
+    @Test
     fun `a blank token fails DTO validation before the service is called`() =
         testApplication {
             configureTestEnvironment()
@@ -211,6 +227,26 @@ class PasswordResetRouteTest {
 
             assertEquals(HttpStatusCode.BadRequest, response.status)
             assertEquals("SAME_AS_OLD", response.errorBody().error)
+        }
+
+    @Test
+    fun `a token whose user no longer exists returns 400 on confirm`() =
+        testApplication {
+            configureTestEnvironment()
+            val userService =
+                FakeUserService().apply {
+                    confirmPasswordResetResult = AppResult.Error(PasswordResetError.USER_NOT_FOUND)
+                }
+            application { installAuthRoutesTestApp(userService) }
+
+            val response =
+                postJson(
+                    AuthPaths.PASSWORD_RESET_CONFIRM,
+                    """{"token":"orphaned-token","newPassword":"NewPass1x"}""",
+                )
+
+            assertEquals(HttpStatusCode.BadRequest, response.status)
+            assertEquals("USER_NOT_FOUND", response.errorBody().error)
         }
 
     @Test

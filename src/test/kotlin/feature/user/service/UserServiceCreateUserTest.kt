@@ -22,7 +22,7 @@ class UserServiceCreateUserTest {
             val user = assertNotNull(harness.repository.findUser("new.user@example.com"))
             val (recipient, token) = harness.emailService.sentTokens.single()
             assertEquals(user.email, recipient)
-            assertNotNull(harness.repository.findVerificationToken(token))
+            assertNotNull(harness.repository.findVerificationToken(harness.tokenManager.hashTokenForStorage(token)))
         }
     }
 

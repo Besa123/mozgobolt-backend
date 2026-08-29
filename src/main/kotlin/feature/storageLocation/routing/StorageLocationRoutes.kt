@@ -96,7 +96,7 @@ fun Route.storageLocationRoutes(
                 )
         }
 
-        limitedDelete("/storage-locations/{id}", BodyLimit.TINY, RequestTimeout.STANDARD) {
+        limitedDelete("/storage-locations/{id}", BodyLimit.TINY, RequestTimeout.FAST) {
             val userId =
                 call.currentUserIdOrNull()
                     ?: return@limitedDelete call.respond(HttpStatusCode.Unauthorized)

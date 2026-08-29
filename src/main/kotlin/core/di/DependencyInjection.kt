@@ -1,5 +1,6 @@
 package com.shelflife.core.di
 
+import com.auth0.jwt.JWTVerifier
 import com.shelflife.core.data.email.LoggingEmailService
 import com.shelflife.core.data.email.ResendEmailService
 import com.shelflife.core.data.email.ResilientEmailService
@@ -31,8 +32,11 @@ import io.ktor.server.plugins.di.dependencies
 import io.ktor.server.plugins.di.provide
 import javax.sql.DataSource
 
+private const val PRODUCTION_ENVIRONMENT = "production"
+
 fun Application.configureDependencyInjection() {
     val appConfig: AppConfig = property("app")
+    val runtimeEnvironment = environment.config.propertyOrNull("ktor.environment")?.getString() ?: "local"
 
     dependencies {
         provide<AppConfig> { appConfig }
@@ -56,20 +60,29 @@ fun Application.configureDependencyInjection() {
             PasswordServiceImpl(pepper = appConfig.security.passwordPepper)
         }
 
-        provide<TokenManager> {
+        val jwtTokenManager =
             JwtTokenManager(
                 secret = appConfig.jwt.secret,
                 issuer = appConfig.jwt.issuer,
                 audience = appConfig.jwt.audience,
             )
-        }
+        provide<TokenManager> { jwtTokenManager }
+        provide<JWTVerifier> { jwtTokenManager.accessTokenVerifier }
 
         provide<EmailService> {
             val baseService =
-                if (appConfig.email.resendApiKey.isNotBlank()) {
-                    ResendEmailService(appConfig) as EmailService
-                } else {
-                    LoggingEmailService(appConfig) as EmailService
+                when {
+                    appConfig.email.resendApiKey.isNotBlank() -> ResendEmailService(appConfig) as EmailService
+                    runtimeEnvironment == PRODUCTION_ENVIRONMENT ->
+                        // LoggingEmailService logs raw verification/password-reset tokens — acceptable for
+                        // local development only. Never allow it to activate silently in production because
+                        // a deploy forgot to set RESEND_API_KEY: that would leak account-takeover tokens
+                        // straight into production logs.
+                        error(
+                            "RESEND_API_KEY must be set in production — refusing to fall back to " +
+                                "LoggingEmailService, which logs raw tokens.",
+                        )
+                    else -> LoggingEmailService(appConfig) as EmailService
                 }
 
             ResilientEmailService(baseService)

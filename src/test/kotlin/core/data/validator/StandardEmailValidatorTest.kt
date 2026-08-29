@@ -24,27 +24,6 @@ class StandardEmailValidatorTest {
     }
 
     @Test
-    fun `rejects an email without an @`() {
-        assertFalse(validator.isValid("user-example.com"))
-    }
-
-    @Test
-    fun `rejects an email without a domain suffix`() {
-        assertFalse(validator.isValid("user@localhost"))
-    }
-
-    @Test
-    fun `rejects an email on a known disposable domain`() {
-        assertFalse(validator.isValid("someone@0-mail.com"))
-    }
-
-    @Test
-    fun `rejects an email longer than the maximum length`() {
-        val localPart = "a".repeat(250)
-        assertFalse(validator.isValid("$localPart@example.com"))
-    }
-
-    @Test
     fun `rejects a disposable domain regardless of case`() {
         assertFalse(validator.isValid("SOMEONE@0-MAIL.COM"))
     }
@@ -60,48 +39,49 @@ class StandardEmailValidatorTest {
     }
 
     @Test
-    fun `rejects a purely numeric top-level domain`() {
-        assertFalse(validator.isValid("user@example.123"))
+    fun `rejects an email longer than the maximum length`() {
+        val localPart = "a".repeat(250)
+        assertFalse(validator.isValid("$localPart@example.com"))
     }
 
     @Test
-    fun `rejects a single-character top-level domain`() {
-        assertFalse(validator.isValid("user@example.c"))
-    }
+    fun `accepts an email at exactly the maximum length of 254 characters`() {
+        // "@example.com" is 12 chars; 242 + 12 = 254, the documented MAX_EMAIL_LENGTH.
+        val localPart = "a".repeat(242)
+        val email = "$localPart@example.com"
 
-    @Test
-    fun `rejects an email with two at-signs`() {
-        assertFalse(validator.isValid("user@@example.com"))
-        assertFalse(validator.isValid("us@er@example.com"))
-    }
-
-    @Test
-    fun `rejects a local part starting with a dot`() {
-        assertFalse(validator.isValid(".user@example.com"))
-    }
-
-    @Test
-    fun `rejects a local part ending with a dot`() {
-        assertFalse(validator.isValid("user.@example.com"))
-    }
-
-    @Test
-    fun `rejects an empty string`() {
-        assertFalse(validator.isValid(""))
-    }
-
-    @Test
-    fun `rejects an email missing a local part`() {
-        assertFalse(validator.isValid("@example.com"))
-    }
-
-    @Test
-    fun `rejects an email missing a domain`() {
-        assertFalse(validator.isValid("user@"))
+        assertEquals(254, email.length)
+        assertTrue(validator.isValid(email))
     }
 
     @Test
     fun `consecutive dots in the local part are currently accepted`() {
+        // Documents current (intentionally permissive) behavior rather than a hard requirement —
+        // RFC 5321 disallows consecutive dots, but EMAIL_REGEX doesn't enforce that today.
         assertTrue(validator.isValid("us..er@example.com"))
+    }
+
+    @Test
+    fun `rejects malformed email shapes`() {
+        val malformedEmails =
+            listOf(
+                "user-example.com" to "missing @ entirely",
+                "user@localhost" to "no domain suffix",
+                "someone@0-mail.com" to "known disposable domain",
+                "user@example.123" to "purely numeric top-level domain",
+                "user@example.c" to "single-character top-level domain",
+                "user@@example.com" to "two adjacent at-signs",
+                "us@er@example.com" to "two at-signs split by content",
+                ".user@example.com" to "local part starting with a dot",
+                "user.@example.com" to "local part ending with a dot",
+                "" to "empty string",
+                "   " to "whitespace-only string",
+                "@example.com" to "missing local part",
+                "user@" to "missing domain",
+            )
+
+        malformedEmails.forEach { (email, description) ->
+            assertFalse(validator.isValid(email), "expected '$email' ($description) to be rejected")
+        }
     }
 }

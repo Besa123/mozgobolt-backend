@@ -11,6 +11,21 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
+/**
+ * Triggers a reset and returns the token that was actually emailed. `requestPasswordReset` itself
+ * only returns `AppResult<Unit, _>` (the raw token is never handed back through the service's public
+ * API — it would otherwise be a live secret returned to a caller with no legitimate use for it); the
+ * token is observable only via the recording fake's captured outbound email, exactly as a real
+ * caller could only ever observe it by receiving the actual email.
+ */
+private suspend fun Harness.requestPasswordResetToken(email: String): String {
+    service.requestPasswordReset(email).fold(
+        onSuccess = {},
+        onError = { fail("expected success but got $it") },
+    )
+    return emailService.sentPasswordResetTokens.last().second
+}
+
 class UserServicePasswordResetTest {
     // --- requestPasswordReset ---------------------------------------------------------------
 
@@ -46,13 +61,8 @@ class UserServicePasswordResetTest {
             val harness = newHarness()
             harness.repository.seedVerifiedUser(email = "user@example.com", password = "Str0ngPass1")
 
-            val result = harness.service.requestPasswordReset("user@example.com")
+            val token = harness.requestPasswordResetToken("user@example.com")
 
-            val token =
-                result.fold(
-                    onSuccess = { it },
-                    onError = { fail("expected success but got $it") },
-                )
             val (to, sentToken) = harness.emailService.sentPasswordResetTokens.single()
             assertEquals("user@example.com", to)
             assertEquals(token, sentToken)
@@ -68,16 +78,8 @@ class UserServicePasswordResetTest {
             val harness = newHarness()
             harness.repository.seedVerifiedUser(email = "user@example.com", password = "Str0ngPass1")
 
-            val firstToken =
-                harness.service.requestPasswordReset("user@example.com").fold(
-                    onSuccess = { it },
-                    onError = { fail("expected success but got $it") },
-                )
-            val secondToken =
-                harness.service.requestPasswordReset("user@example.com").fold(
-                    onSuccess = { it },
-                    onError = { fail("expected success but got $it") },
-                )
+            val firstToken = harness.requestPasswordResetToken("user@example.com")
+            val secondToken = harness.requestPasswordResetToken("user@example.com")
 
             assertNotEquals(firstToken, secondToken)
             assertError(PasswordResetError.INVALID_TOKEN, harness.service.validatePasswordResetToken(firstToken))
@@ -94,11 +96,7 @@ class UserServicePasswordResetTest {
         runBlocking {
             val harness = newHarness()
             harness.repository.seedVerifiedUser(email = "user@example.com", password = "Str0ngPass1")
-            val token =
-                harness.service.requestPasswordReset("user@example.com").fold(
-                    onSuccess = { it },
-                    onError = { fail("expected success but got $it") },
-                )
+            val token = harness.requestPasswordResetToken("user@example.com")
 
             val result = harness.service.validatePasswordResetToken(token)
 
@@ -125,7 +123,11 @@ class UserServicePasswordResetTest {
         runBlocking {
             val harness = newHarness()
             val user = harness.repository.seedVerifiedUser(email = "user@example.com", password = "Str0ngPass1")
-            harness.repository.createPasswordResetToken(user.id, "expired-token", Instant.now().minusSeconds(60))
+            harness.repository.createPasswordResetToken(
+                user.id,
+                harness.tokenManager.hashTokenForStorage("expired-token"),
+                Instant.now().minusSeconds(60),
+            )
 
             val result = harness.service.validatePasswordResetToken("expired-token")
 
@@ -138,7 +140,11 @@ class UserServicePasswordResetTest {
         runBlocking {
             val harness = newHarness()
             val user = harness.repository.seedVerifiedUser(email = "user@example.com", password = "Str0ngPass1")
-            harness.repository.createPasswordResetToken(user.id, "just-expired", Instant.now().minusSeconds(1))
+            harness.repository.createPasswordResetToken(
+                user.id,
+                harness.tokenManager.hashTokenForStorage("just-expired"),
+                Instant.now().minusSeconds(1),
+            )
 
             val result = harness.service.validatePasswordResetToken("just-expired")
 
@@ -151,9 +157,10 @@ class UserServicePasswordResetTest {
         runBlocking {
             val harness = newHarness()
             val user = harness.repository.seedVerifiedUser(email = "user@example.com", password = "Str0ngPass1")
-            harness.repository.createPasswordResetToken(user.id, "used-token", Instant.now().plusSeconds(3600))
+            val hashedUsedToken = harness.tokenManager.hashTokenForStorage("used-token")
+            harness.repository.createPasswordResetToken(user.id, hashedUsedToken, Instant.now().plusSeconds(3600))
             harness.repository.markPasswordResetTokenUsed(
-                harness.repository.findPasswordResetToken("used-token")!!.id,
+                harness.repository.findPasswordResetToken(hashedUsedToken)!!.id,
                 Instant.now(),
             )
 
@@ -171,11 +178,7 @@ class UserServicePasswordResetTest {
             val harness = newHarness()
             val user = harness.repository.seedVerifiedUser(email = "user@example.com", password = "OldPass1x")
             harness.repository.saveRefreshToken(user.id, "some-refresh-token", familyId = "family-1")
-            val token =
-                harness.service.requestPasswordReset("user@example.com").fold(
-                    onSuccess = { it },
-                    onError = { fail("expected success but got $it") },
-                )
+            val token = harness.requestPasswordResetToken("user@example.com")
 
             val result = harness.service.confirmPasswordReset(token, "NewPass1x")
 
@@ -187,6 +190,24 @@ class UserServicePasswordResetTest {
                 revoked is TokenValidationResult.AlreadyRevoked,
                 "all sessions must be revoked after a password reset, but token state was $revoked",
             )
+        }
+    }
+
+    @Test
+    fun `validating a token whose user no longer exists is rejected as user-not-found`() {
+        runBlocking {
+            val harness = newHarness()
+            // No user is seeded for id 999 — a valid, unexpired, unused token can still exist for
+            // an id that no longer resolves to a user (e.g. deleted between issuance and use).
+            harness.repository.createPasswordResetToken(
+                999,
+                harness.tokenManager.hashTokenForStorage("orphaned-token"),
+                Instant.now().plusSeconds(3600),
+            )
+
+            val result = harness.service.validatePasswordResetToken("orphaned-token")
+
+            assertError(PasswordResetError.USER_NOT_FOUND, result)
         }
     }
 
@@ -206,7 +227,11 @@ class UserServicePasswordResetTest {
         runBlocking {
             val harness = newHarness()
             val user = harness.repository.seedVerifiedUser(email = "user@example.com", password = "OldPass1x")
-            harness.repository.createPasswordResetToken(user.id, "expired-token", Instant.now().minusSeconds(60))
+            harness.repository.createPasswordResetToken(
+                user.id,
+                harness.tokenManager.hashTokenForStorage("expired-token"),
+                Instant.now().minusSeconds(60),
+            )
 
             val result = harness.service.confirmPasswordReset("expired-token", "NewPass1x")
 
@@ -219,7 +244,11 @@ class UserServicePasswordResetTest {
         runBlocking {
             val harness = newHarness()
             val user = harness.repository.seedVerifiedUser(email = "user@example.com", password = "OldPass1x")
-            harness.repository.createPasswordResetToken(user.id, "some-token", Instant.now().plusSeconds(3600))
+            harness.repository.createPasswordResetToken(
+                user.id,
+                harness.tokenManager.hashTokenForStorage("some-token"),
+                Instant.now().plusSeconds(3600),
+            )
 
             val result = harness.service.confirmPasswordReset("some-token", "weak")
 
@@ -232,7 +261,11 @@ class UserServicePasswordResetTest {
         runBlocking {
             val harness = newHarness()
             val user = harness.repository.seedVerifiedUser(email = "user@example.com", password = "SamePass1x")
-            harness.repository.createPasswordResetToken(user.id, "some-token", Instant.now().plusSeconds(3600))
+            harness.repository.createPasswordResetToken(
+                user.id,
+                harness.tokenManager.hashTokenForStorage("some-token"),
+                Instant.now().plusSeconds(3600),
+            )
 
             val result = harness.service.confirmPasswordReset("some-token", "SamePass1x")
 
@@ -245,7 +278,11 @@ class UserServicePasswordResetTest {
         runBlocking {
             val harness = newHarness()
             val user = harness.repository.seedVerifiedUser(email = "user@example.com", password = "OldPass1x")
-            harness.repository.createPasswordResetToken(user.id, "some-token", Instant.now().plusSeconds(3600))
+            harness.repository.createPasswordResetToken(
+                user.id,
+                harness.tokenManager.hashTokenForStorage("some-token"),
+                Instant.now().plusSeconds(3600),
+            )
             harness.repository.recordFailedLogin(user.id, lockUntil = Instant.now().plusSeconds(3600))
 
             val result = harness.service.confirmPasswordReset("some-token", "NewPass1x")
@@ -255,11 +292,31 @@ class UserServicePasswordResetTest {
     }
 
     @Test
+    fun `confirming with a token whose user no longer exists is rejected as user-not-found`() {
+        runBlocking {
+            val harness = newHarness()
+            harness.repository.createPasswordResetToken(
+                999,
+                harness.tokenManager.hashTokenForStorage("orphaned-token"),
+                Instant.now().plusSeconds(3600),
+            )
+
+            val result = harness.service.confirmPasswordReset("orphaned-token", "NewPass1x")
+
+            assertError(PasswordResetError.USER_NOT_FOUND, result)
+        }
+    }
+
+    @Test
     fun `confirming the same token twice fails the second time`() {
         runBlocking {
             val harness = newHarness()
             val user = harness.repository.seedVerifiedUser(email = "user@example.com", password = "OldPass1x")
-            harness.repository.createPasswordResetToken(user.id, "some-token", Instant.now().plusSeconds(3600))
+            harness.repository.createPasswordResetToken(
+                user.id,
+                harness.tokenManager.hashTokenForStorage("some-token"),
+                Instant.now().plusSeconds(3600),
+            )
 
             harness.service
                 .confirmPasswordReset("some-token", "NewPass1x")
@@ -281,8 +338,16 @@ class UserServicePasswordResetTest {
         runBlocking {
             val harness = newHarness()
             val user = harness.repository.seedVerifiedUser(email = "user@example.com", password = "OldPass1x")
-            harness.repository.createPasswordResetToken(user.id, "token-a", Instant.now().plusSeconds(3600))
-            harness.repository.createPasswordResetToken(user.id, "token-b", Instant.now().plusSeconds(3600))
+            harness.repository.createPasswordResetToken(
+                user.id,
+                harness.tokenManager.hashTokenForStorage("token-a"),
+                Instant.now().plusSeconds(3600),
+            )
+            harness.repository.createPasswordResetToken(
+                user.id,
+                harness.tokenManager.hashTokenForStorage("token-b"),
+                Instant.now().plusSeconds(3600),
+            )
 
             harness.service
                 .confirmPasswordReset("token-a", "NewPass1x")

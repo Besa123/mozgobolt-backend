@@ -2,6 +2,7 @@ package com.shelflife.feature.storageLocation
 
 import com.shelflife.core.domain.AppResult
 import com.shelflife.core.skipIfNoDocker
+import com.shelflife.feature.storageLocation.domain.model.StorageLocation
 import com.shelflife.feature.storageLocation.domain.model.StorageLocationError
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -9,6 +10,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -157,8 +159,9 @@ class StorageLocationIntegrationTest {
 
             val result = harness.service.renameLocation(userId = 1, locationId = locationId, newName = "NewName")
 
-            assertEquals(AppResult.Success((result as AppResult.Success).data), result)
+            assertIs<AppResult.Success<StorageLocation>>(result)
             assertEquals("NewName", result.data.name)
+            assertEquals(locationId, result.data.id)
         }
     }
 

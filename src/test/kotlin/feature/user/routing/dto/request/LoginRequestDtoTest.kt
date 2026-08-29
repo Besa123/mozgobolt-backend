@@ -26,6 +26,20 @@ class LoginRequestDtoTest {
     }
 
     @Test
+    fun `a whitespace-only email is rejected`() {
+        val request = LoginRequestDto(email = "   ", password = "whatever-the-user-typed")
+
+        assertTrue(request.validate().isNotEmpty())
+    }
+
+    @Test
+    fun `a whitespace-only password is rejected`() {
+        val request = LoginRequestDto(email = "user@example.com", password = "   ")
+
+        assertTrue(request.validate().isNotEmpty())
+    }
+
+    @Test
     fun `login intentionally does not enforce password strength rules`() {
         val request = LoginRequestDto(email = "user@example.com", password = "weak")
 

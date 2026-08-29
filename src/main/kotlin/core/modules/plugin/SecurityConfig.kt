@@ -1,11 +1,11 @@
 package com.shelflife.core.modules.plugin
 
-import com.shelflife.core.data.security.JwtTokenManager
+import com.auth0.jwt.JWTVerifier
 import com.shelflife.core.domain.security.AuthConstants.CLAIM_TOKEN_TYPE
 import com.shelflife.core.domain.security.AuthConstants.CLAIM_USER_ID
 import com.shelflife.core.domain.security.AuthConstants.PROTECT_ENDPOINT_JWT
 import com.shelflife.core.domain.security.AuthConstants.TOKEN_TYPE_ACCESS
-import com.shelflife.core.domain.security.TokenManager
+import com.shelflife.core.routing.dto.response.ErrorResponse
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
@@ -17,14 +17,13 @@ import io.ktor.server.response.respond
 
 fun Application.configureSecurity() {
     val jwtRealm = "ShelfLife"
-    val tokenManager: TokenManager by dependencies
-    val jwtTokenManager = tokenManager as JwtTokenManager
+    val accessTokenVerifier: JWTVerifier by dependencies
 
     install(Authentication) {
         jwt(PROTECT_ENDPOINT_JWT) {
             realm = jwtRealm
 
-            verifier(jwtTokenManager.accessTokenVerifier)
+            verifier(accessTokenVerifier)
 
             validate { credential ->
                 val userId = credential.payload.getClaim(CLAIM_USER_ID).asInt()
@@ -38,7 +37,10 @@ fun Application.configureSecurity() {
             }
 
             challenge { _, _ ->
-                call.respond(HttpStatusCode.Unauthorized, "Token is not valid or has expired")
+                call.respond(
+                    HttpStatusCode.Unauthorized,
+                    ErrorResponse(error = "UNAUTHORIZED", message = "Token is not valid or has expired"),
+                )
             }
         }
     }

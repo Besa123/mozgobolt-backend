@@ -48,7 +48,11 @@ class UserServiceVerifyEmailTest {
                     password = "Str0ngPass",
                     verified = false,
                 )
-            harness.repository.createVerificationToken(user.id, "expired-token", Instant.now().minusSeconds(60))
+            harness.repository.createVerificationToken(
+                user.id,
+                harness.tokenManager.hashTokenForStorage("expired-token"),
+                Instant.now().minusSeconds(60),
+            )
 
             val result = harness.service.verifyEmail("expired-token")
 
@@ -67,7 +71,11 @@ class UserServiceVerifyEmailTest {
                     password = "Str0ngPass",
                     verified = false,
                 )
-            harness.repository.createVerificationToken(user.id, "just-expired", Instant.now().minusSeconds(1))
+            harness.repository.createVerificationToken(
+                user.id,
+                harness.tokenManager.hashTokenForStorage("just-expired"),
+                Instant.now().minusSeconds(1),
+            )
 
             val result = harness.service.verifyEmail("just-expired")
 
@@ -85,7 +93,11 @@ class UserServiceVerifyEmailTest {
                     password = "Str0ngPass",
                     verified = true,
                 )
-            harness.repository.createVerificationToken(user.id, "some-token", Instant.now().plusSeconds(3600))
+            harness.repository.createVerificationToken(
+                user.id,
+                harness.tokenManager.hashTokenForStorage("some-token"),
+                Instant.now().plusSeconds(3600),
+            )
 
             val result = harness.service.verifyEmail("some-token")
 
@@ -108,12 +120,10 @@ class UserServiceVerifyEmailTest {
 
             val secondAttempt = harness.service.verifyEmail(token)
 
-            // The account is now verified, so the token is both "used" and the account is
-            // already verified; either error would be acceptable here, but it must not succeed.
-            secondAttempt.fold(
-                onSuccess = { fail("a verification token must not be usable twice") },
-                onError = {},
-            )
+            // The record's `used` flag is checked before the already-verified check, so a replay
+            // of an already-consumed token deterministically reports INVALID_TOKEN, never
+            // ALREADY_VERIFIED — see UserServiceI.verifyEmail.
+            assertError(VerifyEmailError.INVALID_TOKEN, secondAttempt)
         }
     }
 }

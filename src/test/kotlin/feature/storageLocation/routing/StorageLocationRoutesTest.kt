@@ -159,6 +159,45 @@ class StorageLocationRoutesTest {
         }
 
     @Test
+    fun `post storage locations with syntactically invalid json returns 400 instead of a 500`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeStorageLocationService()
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = postJson(StorageLocationPaths.CREATE, """{"name": this is not valid json""")
+
+            assertEquals(HttpStatusCode.BadRequest, response.status)
+        }
+
+    @Test
+    fun `post storage locations with a name over one hundred characters fails validation with 400`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeStorageLocationService()
+            application { installStorageLocationRoutesTestApp(service) }
+            val tooLongName = "a".repeat(101)
+
+            val response = postJson(StorageLocationPaths.CREATE, """{"name":"$tooLongName"}""")
+
+            assertEquals(HttpStatusCode.BadRequest, response.status)
+            assertEquals("VALIDATION_FAILED", response.errorBody().error)
+        }
+
+    @Test
+    fun `post storage locations with markup-like characters in the name fails validation with 400`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeStorageLocationService()
+            application { installStorageLocationRoutesTestApp(service) }
+
+            val response = postJson(StorageLocationPaths.CREATE, """{"name":"<script>Fridge</script>"}""")
+
+            assertEquals(HttpStatusCode.BadRequest, response.status)
+            assertEquals("VALIDATION_FAILED", response.errorBody().error)
+        }
+
+    @Test
     fun `post storage locations with no name field fails validation with 400`() =
         testApplication {
             configureTestEnvironment()

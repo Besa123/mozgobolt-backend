@@ -228,7 +228,7 @@ private fun Route.authPublicRoutes(
 }
 
 private fun Route.authProtectedRoutes(userService: UserService) {
-    protectedApi(limitName = AUTH_LIMIT) {
+    protectedApi {
         route("/auth") {
             validatedPost<LogoutRequestDto>("/logout", BodyLimit.SMALL, RequestTimeout.FAST) { request ->
                 userService.logoutUser(refreshToken = request.refreshToken)
@@ -255,8 +255,8 @@ private fun Route.authProtectedRoutes(userService: UserService) {
                         val status =
                             when (error) {
                                 VerifyEmailError.ALREADY_VERIFIED -> HttpStatusCode.Conflict
-                                VerifyEmailError.INVALID_TOKEN -> HttpStatusCode.InternalServerError
-                                VerifyEmailError.EXPIRED_TOKEN -> HttpStatusCode.InternalServerError
+                                VerifyEmailError.INVALID_TOKEN -> HttpStatusCode.Unauthorized
+                                VerifyEmailError.EXPIRED_TOKEN -> HttpStatusCode.Gone
                             }
                         call.respond(status, ErrorResponse(error = error.name))
                     },

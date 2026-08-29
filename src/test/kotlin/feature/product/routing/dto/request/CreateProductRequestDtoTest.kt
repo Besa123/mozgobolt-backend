@@ -75,4 +75,18 @@ class CreateProductRequestDtoTest {
 
         assertTrue(request.validate().isNotEmpty())
     }
+
+    @Test
+    fun `a default lifespan at exactly the documented maximum of 3650 days is accepted`() {
+        val request = CreateProductRequestDto(name = "Sonka", defaultLifespanDays = 3650)
+
+        assertTrue(request.validate().isEmpty())
+    }
+
+    @Test
+    fun `a default lifespan one day past the maximum is rejected`() {
+        val request = CreateProductRequestDto(name = "Sonka", defaultLifespanDays = 3651)
+
+        assertTrue(request.validate().isNotEmpty())
+    }
 }

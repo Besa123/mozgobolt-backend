@@ -4,6 +4,7 @@ import com.shelflife.core.configureTestEnvironment
 import com.shelflife.core.installTestModules
 import com.shelflife.core.testAccessTokenFor
 import com.shelflife.core.utility.functions.protectedApi
+import com.shelflife.core.utility.functions.publicRateLimitedApi
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
 import io.ktor.client.request.post
@@ -79,6 +80,45 @@ class RateLimitConfigTest {
 
             assertEquals(listOf(HttpStatusCode.OK), statuses.take(10).distinct())
             assertEquals(HttpStatusCode.TooManyRequests, statuses.last())
+        }
+
+    @Test
+    fun `AUTH_LIMIT rejects the sixth request within the window`() =
+        testApplication {
+            configureTestEnvironment()
+            application {
+                installTestModules()
+                routing {
+                    publicRateLimitedApi {
+                        routePost("/auth-limit-test") { call.respond(HttpStatusCode.OK) }
+                    }
+                }
+            }
+
+            val statuses = (1..6).map { client.post("/auth-limit-test").status }
+
+            assertEquals(listOf(HttpStatusCode.OK), statuses.take(5).distinct())
+            assertEquals(HttpStatusCode.TooManyRequests, statuses.last())
+        }
+
+    @Test
+    fun `an unauthenticated request to protectedApi is rejected without consuming the rate-limit budget`() =
+        testApplication {
+            configureTestEnvironment()
+            application {
+                installTestModules()
+                routing {
+                    protectedApi {
+                        get("/protected-no-auth-test") { call.respond(HttpStatusCode.OK) }
+                    }
+                }
+            }
+
+            // Well past the API_LIMIT (60/min) budget — if auth ran after/inside the limiter,
+            // some of these would eventually flip from 401 to 429 instead of staying 401 throughout.
+            val statuses = (1..65).map { client.get("/protected-no-auth-test").status }
+
+            assertEquals(listOf(HttpStatusCode.Unauthorized), statuses.distinct())
         }
 
     @Test

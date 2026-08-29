@@ -100,14 +100,9 @@ enforced via the `Content-Length` header, so a chunked request without one bypas
 
 ### Auth & rate limiting
 
-Every endpoint gets a 150 req/min global baseline automatically. Named limits layer tighter control on top and are
-chosen deliberately per endpoint, not defaulted:
-
-| Limit          | Rate                     | Use                                                          |
-|----------------|--------------------------|--------------------------------------------------------------|
-| `AUTH_LIMIT`   | 5/min                    | Unauthenticated, sensitive (login, register, password reset) |
-| `API_LIMIT`    | 60/min, keyed by user ID | Authenticated general API                                    |
-| `UPLOAD_LIMIT` | 10/min                   | File uploads / heavy processing                              |
+Every endpoint gets an automatic global baseline; named limits (`AUTH_LIMIT`, `API_LIMIT`, `UPLOAD_LIMIT` — exact
+rates in [CLAUDE.md](CLAUDE.md#security)) layer tighter, deliberately-chosen control on top per endpoint, never
+defaulted.
 
 ### Refresh-token family rotation
 
@@ -139,7 +134,7 @@ variable already present in the real environment, so CI/production env vars alwa
 - **Health**: `/health` checks DB connectivity; `/ready` reports readiness — see `feature/health/`.
 
 Metrics (Micrometer/Prometheus) and distributed tracing (OpenTelemetry) are not yet in place — logging plus call-ID
-correlation is the current substitute. See the project's known-gaps list before assuming either exists.
+correlation is the current substitute (see known gaps below).
 
 ## Current known gaps
 

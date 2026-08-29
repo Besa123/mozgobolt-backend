@@ -10,14 +10,16 @@ import kotlin.test.fail
 
 class ProductServiceTest {
     @Test
-    fun `creating a private product succeeds and trims the name`() {
+    fun `creating a private product succeeds`() {
+        // `name` arrives here already whitespace-checked by `validateDisplayName` (which rejects,
+        // rather than trims, leading/trailing whitespace) — see CreateProductRequestDtoTest.
         runBlocking {
             val harness = newHarness()
 
             val result =
                 harness.service.createPrivateProduct(
                     userId = 1,
-                    name = "  Sonka  ",
+                    name = "Sonka",
                     defaultLifespanDays = 5,
                     defaultUnitCategory = UnitCategory.MASS,
                 )
@@ -134,12 +136,14 @@ class ProductServiceTest {
     }
 
     @Test
-    fun `renaming a product the caller owns succeeds and trims the name`() {
+    fun `renaming a product the caller owns succeeds`() {
+        // `newName` arrives here already whitespace-checked by `validateDisplayName` (which rejects,
+        // rather than trims, leading/trailing whitespace) — see RenameProductRequestDtoTest.
         runBlocking {
             val harness = newHarness()
             val product = harness.repository.seed(name = "Snoka", ownerId = 1)
 
-            val result = harness.service.renameProduct(userId = 1, productId = product.id, newName = "  Sonka  ")
+            val result = harness.service.renameProduct(userId = 1, productId = product.id, newName = "Sonka")
 
             result.fold(
                 onSuccess = { assertEquals("Sonka", it.name) },

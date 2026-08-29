@@ -24,18 +24,22 @@ class StandardPasswordValidatorTest {
     }
 
     @Test
-    fun `rejects a password missing an uppercase letter`() {
-        assertFalse(validator.isValid("abcdefg1"))
+    fun `rejects passwords missing one required character class`() {
+        val missingOneClass =
+            listOf(
+                "abcdefg1" to "missing an uppercase letter",
+                "ABCDEFG1" to "missing a lowercase letter",
+                "Abcdefgh" to "missing a digit",
+            )
+
+        missingOneClass.forEach { (password, description) ->
+            assertFalse(validator.isValid(password), "expected '$password' ($description) to be rejected")
+        }
     }
 
     @Test
-    fun `rejects a password missing a lowercase letter`() {
-        assertFalse(validator.isValid("ABCDEFG1"))
-    }
-
-    @Test
-    fun `rejects a password missing a digit`() {
-        assertFalse(validator.isValid("Abcdefgh"))
+    fun `rejects a password at exactly the maximum length that is also missing a digit`() {
+        assertFalse(validator.isValid("Ab" + "a".repeat(MAX_PASSWORD_LENGTH - 2)))
     }
 
     @Test

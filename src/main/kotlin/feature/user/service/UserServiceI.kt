@@ -72,7 +72,11 @@ class UserServiceI(
 
                 val verificationToken = SecureTokenGenerator.generate()
                 val expiresAt = Instant.now().plus(appConfig.email.verificationTokenExpirationHours, ChronoUnit.HOURS)
-                userRepository.createVerificationToken(newUser.id, verificationToken, expiresAt)
+                userRepository.createVerificationToken(
+                    newUser.id,
+                    tokenManager.hashTokenForStorage(verificationToken),
+                    expiresAt,
+                )
 
                 newUser to verificationToken
             } ?: return AppResult.Error(RegisterError.ALREADY_EXISTS)
@@ -192,7 +196,7 @@ class UserServiceI(
     override suspend fun verifyEmail(token: String): AppResult<Unit, VerifyEmailError> {
         return tx.transactional {
             val record =
-                userRepository.findVerificationToken(token)
+                userRepository.findVerificationToken(tokenManager.hashTokenForStorage(token))
                     ?: return@transactional AppResult.Error(VerifyEmailError.INVALID_TOKEN)
 
             if (record.used) {
@@ -231,7 +235,11 @@ class UserServiceI(
 
         tx.transactional {
             userRepository.invalidateVerificationTokens(userId)
-            userRepository.createVerificationToken(userId, verificationToken, expiresAt)
+            userRepository.createVerificationToken(
+                userId,
+                tokenManager.hashTokenForStorage(verificationToken),
+                expiresAt,
+            )
         }
 
         runSuspendCatching { emailService.sendVerificationEmail(user.email, verificationToken) }
@@ -240,36 +248,36 @@ class UserServiceI(
         return AppResult.Success(Unit)
     }
 
-    override suspend fun requestPasswordReset(email: String): AppResult<String, PasswordResetError> {
+    override suspend fun requestPasswordReset(email: String): AppResult<Unit, PasswordResetError> {
         val normalizedEmail = emailValidator.normalize(email)
         val user = tx.transactional { userRepository.findUser(normalizedEmail) }
-        val resetToken = SecureTokenGenerator.generate()
 
         if (user == null) {
-            return AppResult.Success(resetToken)
+            return AppResult.Success(Unit)
         }
 
         if (user.isLocked) {
             logger.warn { "Password reset requested for locked account: ${user.id}" }
-            return AppResult.Success(resetToken)
+            return AppResult.Success(Unit)
         }
 
+        val resetToken = SecureTokenGenerator.generate()
         val expiresAt = Instant.now().plus(appConfig.email.resetTokenExpirationMinutes, ChronoUnit.MINUTES)
 
         tx.transactional {
             userRepository.invalidatePasswordResetTokens(user.id)
-            userRepository.createPasswordResetToken(user.id, resetToken, expiresAt)
+            userRepository.createPasswordResetToken(user.id, tokenManager.hashTokenForStorage(resetToken), expiresAt)
         }
 
         runSuspendCatching { emailService.sendPasswordResetEmail(user.email, resetToken) }
             .onFailure { logger.error(it) { "Failed to send password reset email to ${user.email}" } }
 
-        return AppResult.Success(resetToken)
+        return AppResult.Success(Unit)
     }
 
     override suspend fun validatePasswordResetToken(token: String): AppResult<String, PasswordResetError> {
         val record =
-            tx.transactional { userRepository.findPasswordResetToken(token) }
+            tx.transactional { userRepository.findPasswordResetToken(tokenManager.hashTokenForStorage(token)) }
                 ?: return AppResult.Error(PasswordResetError.INVALID_TOKEN)
 
         if (record.used) {
@@ -293,7 +301,7 @@ class UserServiceI(
         newPassword: String,
     ): AppResult<Unit, PasswordResetError> {
         val record =
-            tx.transactional { userRepository.findPasswordResetToken(token) }
+            tx.transactional { userRepository.findPasswordResetToken(tokenManager.hashTokenForStorage(token)) }
                 ?: return AppResult.Error(PasswordResetError.INVALID_TOKEN)
 
         if (record.used) {

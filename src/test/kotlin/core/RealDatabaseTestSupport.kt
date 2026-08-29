@@ -27,7 +27,7 @@ fun skipIfNoDocker() {
  * automatically. Shared by every feature's own `withRealXDatabase` helper — don't re-copy this.
  */
 fun withRealDatabase(block: suspend (Database, TransactionalRunner) -> Unit) {
-    val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:16-alpine"))
+    val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:18-alpine"))
     postgres.start()
 
     try {

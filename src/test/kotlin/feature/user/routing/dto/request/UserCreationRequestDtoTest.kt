@@ -26,6 +26,20 @@ class UserCreationRequestDtoTest {
     }
 
     @Test
+    fun `a whitespace-only email is rejected`() {
+        val request = UserCreationRequestDto(password = "Str0ngPass", email = "   ", name = "Jane Doe")
+
+        assertTrue(request.validate().isNotEmpty())
+    }
+
+    @Test
+    fun `a whitespace-only password is rejected`() {
+        val request = UserCreationRequestDto(password = "   ", email = "user@example.com", name = "Jane Doe")
+
+        assertTrue(request.validate().isNotEmpty())
+    }
+
+    @Test
     fun `a blank name is rejected`() {
         val request = UserCreationRequestDto(password = "Str0ngPass", email = "user@example.com", name = "")
 

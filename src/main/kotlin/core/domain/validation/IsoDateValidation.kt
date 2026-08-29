@@ -4,4 +4,4 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 fun isValidIsoDate(value: String): Boolean =
-    runCatching { LocalDate.parse(value, DateTimeFormatter.ISO_DATE) }.isSuccess
+    runCatching { LocalDate.parse(value, DateTimeFormatter.ISO_LOCAL_DATE) }.isSuccess

@@ -30,7 +30,7 @@ interface UserService {
 
     suspend fun resendVerificationEmail(userId: Int): AppResult<Unit, VerifyEmailError>
 
-    suspend fun requestPasswordReset(email: String): AppResult<String, PasswordResetError>
+    suspend fun requestPasswordReset(email: String): AppResult<Unit, PasswordResetError>
 
     suspend fun validatePasswordResetToken(token: String): AppResult<String, PasswordResetError>
 

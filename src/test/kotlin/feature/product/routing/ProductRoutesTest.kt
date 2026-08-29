@@ -59,6 +59,7 @@ class ProductRoutesTest {
             assertEquals("son", productService.lastSearchQuery)
             val results = Json.decodeFromString<List<ProductResponseDto>>(response.bodyAsText())
             assertEquals("Sonka", results.single().name)
+            assertEquals(true, results.single().isGlobal, "a product with no owner must be reported as global")
         }
 
     @Test
@@ -96,6 +97,7 @@ class ProductRoutesTest {
             assertEquals(HttpStatusCode.OK, response.status)
             val results = Json.decodeFromString<List<ProductResponseDto>>(response.bodyAsText())
             assertEquals("Sonka", results.single().name)
+            assertEquals(false, results.single().isGlobal, "an owned product must not be reported as global")
         }
 
     @Test

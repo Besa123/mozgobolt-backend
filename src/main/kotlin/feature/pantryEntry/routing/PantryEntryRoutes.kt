@@ -156,7 +156,7 @@ private fun Route.registerUpdateRoute(pantryEntryService: PantryEntryService) {
 }
 
 private fun Route.registerDeleteRoute(pantryEntryService: PantryEntryService) {
-    limitedDelete(PANTRY_ENTRY_BY_ID_PATH, BodyLimit.TINY, RequestTimeout.STANDARD) {
+    limitedDelete(PANTRY_ENTRY_BY_ID_PATH, BodyLimit.TINY, RequestTimeout.FAST) {
         val userId =
             call.currentUserIdOrNull()
                 ?: return@limitedDelete call.respond(HttpStatusCode.Unauthorized)

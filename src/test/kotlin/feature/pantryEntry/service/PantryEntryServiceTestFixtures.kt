@@ -16,6 +16,18 @@ import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
 
+fun fields(
+    unitId: Int,
+    storageLocationId: Int? = null,
+    quantityAmount: BigDecimal = BigDecimal.ONE,
+) = PantryEntryFields(
+    storageLocationId = storageLocationId,
+    unitId = unitId,
+    quantityAmount = quantityAmount,
+    expirationDate = null,
+    brandOrNote = null,
+)
+
 data class Harness(
     val service: PantryEntryServiceI,
     val pantryEntryRepository: FakePantryEntryRepository,

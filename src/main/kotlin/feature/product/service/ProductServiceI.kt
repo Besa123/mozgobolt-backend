@@ -48,16 +48,14 @@ class ProductServiceI(
         defaultUnitCategory: UnitCategory?,
         originDeviceId: String?,
     ): AppResult<Product, ProductError> {
-        val normalizedName = name.trim()
-
         val created =
             tx.transactional {
-                if (productRepository.findGlobalByName(normalizedName) != null) return@transactional null
+                if (productRepository.findGlobalByName(name) != null) return@transactional null
 
                 productRepository
                     .createPrivate(
                         userId = userId,
-                        name = normalizedName,
+                        name = name,
                         defaultLifespanDays = defaultLifespanDays,
                         defaultUnitCategory = defaultUnitCategory,
                     )?.also {
@@ -80,17 +78,15 @@ class ProductServiceI(
         newName: String,
         originDeviceId: String?,
     ): AppResult<Product, ProductError> {
-        val normalizedName = newName.trim()
-
         val outcome =
             tx.transactional {
                 if (!productRepository.existsOwnedBy(userId, productId)) return@transactional RenameOutcome.NotFound
 
-                if (productRepository.findGlobalByName(normalizedName) != null) {
+                if (productRepository.findGlobalByName(newName) != null) {
                     return@transactional RenameOutcome.DuplicateName
                 }
 
-                productRepository.renamePrivate(userId, productId, normalizedName).also { renamed ->
+                productRepository.renamePrivate(userId, productId, newName).also { renamed ->
                     if (renamed is RenameOutcome.Renamed) {
                         syncService.recordChange(
                             userId,

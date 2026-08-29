@@ -25,8 +25,10 @@ class ProductRenameIntegrationTest {
             val created = harness.service.createPrivateProduct(1, "Snoka", null, null)
             val productId = (created as AppResult.Success).data.id
 
-            // "Sajt" ships as a seeded global product (V3 migration).
-            val result = harness.service.renameProduct(userId = 1, productId = productId, newName = "  sajt  ")
+            // "Sajt" ships as a seeded global product (V3 migration). `newName` arrives at the
+            // service already whitespace-checked by `validateDisplayName` (which rejects, rather
+            // than trims, leading/trailing whitespace) at the DTO boundary.
+            val result = harness.service.renameProduct(userId = 1, productId = productId, newName = "sajt")
 
             assertEquals(AppResult.Error(ProductError.DUPLICATE_NAME), result)
         }
@@ -42,6 +44,23 @@ class ProductRenameIntegrationTest {
             val productId = (toRename as AppResult.Success).data.id
 
             val result = harness.service.renameProduct(userId = 1, productId = productId, newName = "Kolbász")
+
+            assertEquals(AppResult.Error(ProductError.DUPLICATE_NAME), result)
+        }
+    }
+
+    @Test
+    fun `renaming to a case-different variant of another of the caller's own products returns a clean error`() {
+        skipIfNoDocker()
+
+        withRealProductDatabase { harness ->
+            // Deliberately ASCII — see the equivalent note in ProductDedupIntegrationTest about why
+            // an accented word isn't a reliable choice for asserting a cross-case collision.
+            harness.service.createPrivateProduct(1, "Bacon", null, null)
+            val toRename = harness.service.createPrivateProduct(1, "Szalonna", null, null)
+            val productId = (toRename as AppResult.Success).data.id
+
+            val result = harness.service.renameProduct(userId = 1, productId = productId, newName = "BACON")
 
             assertEquals(AppResult.Error(ProductError.DUPLICATE_NAME), result)
         }

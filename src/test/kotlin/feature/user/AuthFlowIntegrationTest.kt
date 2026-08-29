@@ -88,7 +88,7 @@ class AuthFlowIntegrationTest {
     )
 
     private fun withRealDatabase(block: suspend (Harness, Database) -> Unit) {
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:16-alpine"))
+        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:18-alpine"))
         postgres.start()
 
         try {

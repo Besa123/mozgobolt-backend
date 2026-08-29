@@ -6,12 +6,15 @@ import com.shelflife.core.routing.apiV1
 import com.shelflife.core.testAccessTokenFor
 import com.shelflife.feature.product.domain.model.UnitCategory
 import com.shelflife.feature.quantityUnit.domain.model.QuantityUnit
+import com.shelflife.feature.quantityUnit.routing.dto.response.QuantityUnitResponseDto
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
+import kotlinx.serialization.json.Json
 import java.math.BigDecimal
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -60,5 +63,11 @@ class QuantityUnitRoutesTest {
             val response = client.get(LIST_PATH) { bearerAuth(testAccessTokenFor(userId = 1)) }
 
             assertEquals(HttpStatusCode.OK, response.status)
+            val results = Json.decodeFromString<List<QuantityUnitResponseDto>>(response.bodyAsText())
+            val unit = results.single()
+            assertEquals(1, unit.id)
+            assertEquals("kg", unit.name)
+            assertEquals(UnitCategory.MASS, unit.category)
+            assertEquals(1000.0, unit.multiplier)
         }
 }

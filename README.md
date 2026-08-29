@@ -22,7 +22,8 @@ see [docs/domain/pantry.md](docs/domain/pantry.md).
 
 | Area          | Description                                                                                                        |
 |---------------|--------------------------------------------------------------------------------------------------------------------|
-| Auth          | Register, login, refresh (rotating), logout, logout-all, email verification/resend                                 |
+| Auth          | Register, login, refresh (rotating), logout, logout-all, email verification/resend, password reset                 |
+| Pantry        | Products, storage locations, quantity units, pantry entries — see [docs/domain/pantry.md](docs/domain/pantry.md)   |
 | Rate limiting | Global 150 req/min baseline + tiered named limits (`AUTH_LIMIT`, `API_LIMIT`, `UPLOAD_LIMIT`)                      |
 | Security      | CORS, CSP/HSTS/security headers, password peppering (password4j), account lockout policy                           |
 | Reliability   | Idempotency keys, request timeouts, body-size limits, graceful shutdown, retry + circuit-breaker on external calls |
@@ -62,12 +63,8 @@ All business routes are versioned under `/api/v1`
 alongside rather than replacing v1.
 
 **Interactive documentation:** start the server and visit `http://localhost:8080/swagger-ui` (spec:
-`src/main/resources/openapi/documentation.json`).
-
-Current endpoints:
-
-- Infrastructure: `/health`, `/ready`
-- Authentication: register, login, logout, refresh tokens, email verification, resend verification
+`src/main/resources/openapi/documentation.json`) — the source of truth for exact endpoints and payloads. See
+[Features](#features) above for the areas covered.
 
 ## Contributing
 

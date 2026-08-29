@@ -36,6 +36,8 @@ class PantryEntryServiceI(
         originDeviceId: String?,
     ): AppResult<PantryEntry, PantryEntryError> =
         tx.transactional {
+            fields.validateReferences(userId)?.let { return@transactional AppResult.Error(it) }
+
             val productId =
                 when (product) {
                     is ProductReference.Existing -> {
@@ -63,16 +65,6 @@ class PantryEntryServiceI(
                         }
                     }
                 }
-
-            if (fields.storageLocationId != null &&
-                storageLocationRepository.findByIdAndUserId(fields.storageLocationId, userId) == null
-            ) {
-                return@transactional AppResult.Error(PantryEntryError.STORAGE_LOCATION_NOT_FOUND)
-            }
-
-            if (quantityUnitRepository.findById(fields.unitId) == null) {
-                return@transactional AppResult.Error(PantryEntryError.UNIT_NOT_FOUND)
-            }
 
             val entry =
                 pantryEntryRepository
@@ -128,15 +120,7 @@ class PantryEntryServiceI(
                 return@transactional AppResult.Success(UpdateEntryOutcome.Deleted)
             }
 
-            if (fields.storageLocationId != null &&
-                storageLocationRepository.findByIdAndUserId(fields.storageLocationId, userId) == null
-            ) {
-                return@transactional AppResult.Error(PantryEntryError.STORAGE_LOCATION_NOT_FOUND)
-            }
-
-            if (quantityUnitRepository.findById(fields.unitId) == null) {
-                return@transactional AppResult.Error(PantryEntryError.UNIT_NOT_FOUND)
-            }
+            fields.validateReferences(userId)?.let { return@transactional AppResult.Error(it) }
 
             val updated =
                 pantryEntryRepository
@@ -174,4 +158,18 @@ class PantryEntryServiceI(
                 AppResult.Error(PantryEntryError.NOT_FOUND)
             }
         }
+
+    private suspend fun PantryEntryFields.validateReferences(userId: Int): PantryEntryError? {
+        if (storageLocationId != null &&
+            storageLocationRepository.findByIdAndUserId(storageLocationId, userId) == null
+        ) {
+            return PantryEntryError.STORAGE_LOCATION_NOT_FOUND
+        }
+
+        if (quantityUnitRepository.findById(unitId) == null) {
+            return PantryEntryError.UNIT_NOT_FOUND
+        }
+
+        return null
+    }
 }

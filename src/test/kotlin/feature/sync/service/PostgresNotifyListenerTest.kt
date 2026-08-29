@@ -32,7 +32,7 @@ class PostgresNotifyListenerTest {
     fun `a NOTIFY on the sync channel is forwarded to the hub as userId to eventId`() {
         skipIfNoDocker()
 
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:16-alpine"))
+        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:18-alpine"))
         postgres.start()
         try {
             val hub = InMemorySyncEventHub()
@@ -77,7 +77,7 @@ class PostgresNotifyListenerTest {
     fun `a NOTIFY payload's third field is forwarded as the hint's origin device id`() {
         skipIfNoDocker()
 
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:16-alpine"))
+        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:18-alpine"))
         postgres.start()
         try {
             val hub = InMemorySyncEventHub()
@@ -119,7 +119,7 @@ class PostgresNotifyListenerTest {
     fun `after connection failures, the listener backs off and recovers instead of dying`() {
         skipIfNoDocker()
 
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:16-alpine"))
+        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:18-alpine"))
         postgres.start()
         try {
             val hub = InMemorySyncEventHub()

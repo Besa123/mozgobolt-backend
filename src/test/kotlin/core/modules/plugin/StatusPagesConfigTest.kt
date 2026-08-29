@@ -32,6 +32,13 @@ private data class AlwaysInvalidRequest(
     override fun validate() = listOf("always invalid")
 }
 
+@Serializable
+private data class AlwaysValidRequest(
+    val value: String = "ok",
+) : ValidatedRequest {
+    override fun validate() = emptyList<String>()
+}
+
 class StatusPagesConfigTest {
     @Test
     fun `a request validation failure returns 400 with the validation reasons`() =
@@ -79,6 +86,54 @@ class StatusPagesConfigTest {
 
             assertEquals(HttpStatusCode.GatewayTimeout, response.status)
             assertEquals(true, response.bodyAsText().contains("REQUEST_TIMEOUT"))
+        }
+
+    @Test
+    fun `syntactically invalid json is reported as a malformed request`() =
+        testApplication {
+            application {
+                install(ContentNegotiation) { json() }
+                configureStatusPages()
+                routing {
+                    post("/malformed-body-test") {
+                        call.receive<AlwaysValidRequest>()
+                        call.respond(HttpStatusCode.OK)
+                    }
+                }
+            }
+
+            val response =
+                client.post("/malformed-body-test") {
+                    contentType(ContentType.Application.Json)
+                    setBody("""{"value": this is not valid json""")
+                }
+
+            assertEquals(HttpStatusCode.BadRequest, response.status)
+            assertEquals(true, response.bodyAsText().contains("MALFORMED_REQUEST"))
+        }
+
+    @Test
+    fun `a body sent with a content type nothing can convert is reported as an invalid body`() =
+        testApplication {
+            application {
+                install(ContentNegotiation) { json() }
+                configureStatusPages()
+                routing {
+                    post("/invalid-body-test") {
+                        call.receive<AlwaysValidRequest>()
+                        call.respond(HttpStatusCode.OK)
+                    }
+                }
+            }
+
+            val response =
+                client.post("/invalid-body-test") {
+                    contentType(ContentType.Text.Plain)
+                    setBody("""{"value":"ok"}""")
+                }
+
+            assertEquals(HttpStatusCode.BadRequest, response.status)
+            assertEquals(true, response.bodyAsText().contains("INVALID_BODY"))
         }
 
     @Test

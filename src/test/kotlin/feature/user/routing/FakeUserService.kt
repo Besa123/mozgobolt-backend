@@ -38,7 +38,7 @@ class FakeUserService : UserService {
     var resendVerificationEmailResult: AppResult<Unit, VerifyEmailError> = AppResult.Success(Unit)
     val resendVerificationEmailCalls = mutableListOf<Int>()
 
-    var requestPasswordResetResult: AppResult<String, PasswordResetError> = AppResult.Success("fake-reset-token")
+    var requestPasswordResetResult: AppResult<Unit, PasswordResetError> = AppResult.Success(Unit)
     val requestPasswordResetCalls = mutableListOf<String>()
 
     var validatePasswordResetTokenResult: AppResult<String, PasswordResetError> =
@@ -91,7 +91,7 @@ class FakeUserService : UserService {
         return resendVerificationEmailResult
     }
 
-    override suspend fun requestPasswordReset(email: String): AppResult<String, PasswordResetError> {
+    override suspend fun requestPasswordReset(email: String): AppResult<Unit, PasswordResetError> {
         requestPasswordResetCalls += email
         return requestPasswordResetResult
     }

@@ -250,6 +250,93 @@ class PantryEntryIntegrationTest {
     }
 
     @Test
+    fun `a successful, non-deleting update is persisted and re-joined correctly`() {
+        skipIfNoDocker()
+
+        withRealPantryEntryDatabase { harness ->
+            val product = harness.globalProduct("Sajt")
+            val kg = harness.unit("kg")
+            val dkg = harness.unit("dkg")
+            val location = harness.createStorageLocation(userId = 1, name = "Fridge")
+            val created =
+                harness.service.createEntry(
+                    userId = 1,
+                    product = ProductReference.Existing(product.id),
+                    fields = fields(unitId = kg.id, storageLocationId = location.id, quantityAmount = BigDecimal("1")),
+                )
+            val entry = (created as AppResult.Success).data
+
+            val result =
+                harness.service.updateEntry(
+                    userId = 1,
+                    entryId = entry.id,
+                    fields =
+                        fields(
+                            unitId = dkg.id,
+                            storageLocationId = location.id,
+                            quantityAmount = BigDecimal("2.5"),
+                        ),
+                )
+
+            val updated = (result as AppResult.Success).data as UpdateEntryOutcome.Updated
+            assertEquals(BigDecimal("2.50"), updated.entry.quantityAmount)
+            assertEquals("dkg", updated.entry.unitName)
+            assertEquals("Fridge", updated.entry.storageLocationName)
+        }
+    }
+
+    @Test
+    fun `updating storageLocationId to null clears a previously-set location in the real database`() {
+        skipIfNoDocker()
+
+        withRealPantryEntryDatabase { harness ->
+            val product = harness.globalProduct("Sajt")
+            val unit = harness.unit("kg")
+            val location = harness.createStorageLocation(userId = 1, name = "Fridge")
+            val created =
+                harness.service.createEntry(
+                    userId = 1,
+                    product = ProductReference.Existing(product.id),
+                    fields = fields(unitId = unit.id, storageLocationId = location.id),
+                )
+            val entry = (created as AppResult.Success).data
+
+            val result =
+                harness.service.updateEntry(
+                    userId = 1,
+                    entryId = entry.id,
+                    fields = fields(unitId = unit.id, storageLocationId = null),
+                )
+
+            val updated = (result as AppResult.Success).data as UpdateEntryOutcome.Updated
+            assertEquals(null, updated.entry.storageLocationId)
+            assertEquals(null, updated.entry.storageLocationName)
+        }
+    }
+
+    @Test
+    fun `an afterId past every existing row returns an empty page from the real database`() {
+        skipIfNoDocker()
+
+        withRealPantryEntryDatabase { harness ->
+            val product = harness.globalProduct("Sajt")
+            val unit = harness.unit("kg")
+            val created =
+                harness.service.createEntry(
+                    userId = 1,
+                    product = ProductReference.Existing(product.id),
+                    fields = fields(unit.id),
+                )
+            val entry = (created as AppResult.Success).data
+
+            val page = harness.service.listForUser(userId = 1, afterId = entry.id + 1000, limit = 50)
+
+            assertEquals(emptyList(), page.items)
+            assertEquals(null, page.nextCursor)
+        }
+    }
+
+    @Test
     fun `updating quantity to zero deletes the row from the real database`() {
         skipIfNoDocker()
 

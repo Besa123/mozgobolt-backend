@@ -1,5 +1,6 @@
 package com.shelflife.core
 
+import com.auth0.jwt.JWTVerifier
 import com.shelflife.core.data.security.JwtTokenManager
 import com.shelflife.core.domain.security.TokenManager
 import com.shelflife.core.modules.plugin.configureCallId
@@ -28,10 +29,12 @@ const val TEST_JWT_SECRET = "http-test-secret"
 const val TEST_JWT_ISSUER = "http-test-issuer"
 const val TEST_JWT_AUDIENCE = "http-test-audience"
 
-fun testTokenManager(): TokenManager =
+private fun testJwtTokenManager(): JwtTokenManager =
     JwtTokenManager(secret = TEST_JWT_SECRET, audience = TEST_JWT_AUDIENCE, issuer = TEST_JWT_ISSUER)
 
-fun testAccessTokenFor(userId: Int): String = testTokenManager().generateAccessToken(userId)
+fun testTokenManager(): TokenManager = testJwtTokenManager()
+
+fun testAccessTokenFor(userId: Int): String = testJwtTokenManager().generateAccessToken(userId)
 
 fun ApplicationTestBuilder.configureTestEnvironment(
     corsAllowedHosts: String = "",
@@ -55,7 +58,9 @@ fun Application.installTestModules() {
     configureSse()
     configureRequestTimeout()
     dependencies {
-        provide<TokenManager> { testTokenManager() }
+        val tokenManager = testJwtTokenManager()
+        provide<TokenManager> { tokenManager }
+        provide<JWTVerifier> { tokenManager.accessTokenVerifier }
     }
     configureSecurity()
     configureCors()

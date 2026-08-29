@@ -1,5 +1,6 @@
 package com.shelflife.feature.sync.service
 
+import com.shelflife.core.utility.functions.runSuspendCatching
 import com.shelflife.feature.sync.data.repository.SYNC_NOTIFY_CHANNEL
 import com.shelflife.feature.sync.domain.SyncEventHub
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -86,7 +87,7 @@ class PostgresNotifyListener(
                     notifications?.forEach { emit(it.parameter) }
                 }
             } finally {
-                runCatching { connection.close() }
+                runSuspendCatching { connection.close() }
             }
         }
 
