@@ -1,8 +1,10 @@
 package com.shelflife.feature.pantryEntry
 
+import com.shelflife.core.data.media.FakeImageStorage
 import com.shelflife.core.database.TransactionalRunner
 import com.shelflife.core.withRealDatabase
 import com.shelflife.feature.pantryEntry.data.repository.PantryEntryRepositoryI
+import com.shelflife.feature.pantryEntry.service.FakePantryEntryImageCleanup
 import com.shelflife.feature.pantryEntry.service.PantryEntryServiceI
 import com.shelflife.feature.product.data.repository.ProductRepositoryI
 import com.shelflife.feature.product.service.ProductServiceI
@@ -48,6 +50,8 @@ fun withRealPantryEntryDatabase(block: suspend (PantryEntryTestHarness) -> Unit)
                 quantityUnitRepository = quantityUnitRepository,
                 syncService = syncService,
                 tx = tx,
+                pantryEntryImageCleanup = FakePantryEntryImageCleanup(),
+                imageStorage = FakeImageStorage(),
             )
 
         block(

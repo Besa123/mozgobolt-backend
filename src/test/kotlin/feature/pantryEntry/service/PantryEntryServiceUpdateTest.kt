@@ -123,6 +123,25 @@ class PantryEntryServiceUpdateTest {
     }
 
     @Test
+    fun `updating quantity to zero also purges the entry's images from storage`() {
+        runBlocking {
+            val harness = newHarness()
+            val entry = harness.pantryEntryRepository.seed(userId = 1, quantityAmount = BigDecimal.ONE)
+            harness.pantryEntryImageCleanup.storageKeysToReturn = listOf("key-1")
+            harness.imageStorage.stored["key-1"] = byteArrayOf(1)
+
+            harness.service.updateEntry(
+                userId = 1,
+                entryId = entry.id,
+                fields = fields(unitId = entry.unitId, quantityAmount = BigDecimal.ZERO),
+            )
+
+            assertEquals(listOf(entry.id), harness.pantryEntryImageCleanup.calledForEntryIds)
+            assertEquals(listOf("key-1"), harness.imageStorage.deletedKeys)
+        }
+    }
+
+    @Test
     fun `updating quantity below zero also deletes the entry`() {
         runBlocking {
             val harness = newHarness()

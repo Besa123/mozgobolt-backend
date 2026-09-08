@@ -1,6 +1,8 @@
 package com.shelflife.feature.pantryEntry.service
 
+import com.shelflife.core.data.media.FakeImageStorage
 import com.shelflife.core.database.TransactionalRunner
+import com.shelflife.feature.pantryEntry.domain.PantryEntryImageCleanup
 import com.shelflife.feature.pantryEntry.domain.PantryEntryRepository
 import com.shelflife.feature.pantryEntry.domain.model.PantryEntry
 import com.shelflife.feature.pantryEntry.domain.model.PantryEntryFields
@@ -34,6 +36,8 @@ data class Harness(
     val productRepository: FakeProductRepository,
     val storageLocationRepository: FakeStorageLocationRepository,
     val quantityUnitRepository: FakeQuantityUnitRepository,
+    val pantryEntryImageCleanup: FakePantryEntryImageCleanup,
+    val imageStorage: FakeImageStorage,
 )
 
 fun newHarness(): Harness {
@@ -49,6 +53,8 @@ fun newHarness(): Harness {
         )
     val storageLocationRepository = FakeStorageLocationRepository()
     val quantityUnitRepository = FakeQuantityUnitRepository()
+    val pantryEntryImageCleanup = FakePantryEntryImageCleanup()
+    val imageStorage = FakeImageStorage()
     val service =
         PantryEntryServiceI(
             pantryEntryRepository = pantryEntryRepository,
@@ -57,8 +63,28 @@ fun newHarness(): Harness {
             quantityUnitRepository = quantityUnitRepository,
             syncService = NoOpSyncService(),
             tx = NoopTransactionalRunner(),
+            pantryEntryImageCleanup = pantryEntryImageCleanup,
+            imageStorage = imageStorage,
         )
-    return Harness(service, pantryEntryRepository, productRepository, storageLocationRepository, quantityUnitRepository)
+    return Harness(
+        service,
+        pantryEntryRepository,
+        productRepository,
+        storageLocationRepository,
+        quantityUnitRepository,
+        pantryEntryImageCleanup,
+        imageStorage,
+    )
+}
+
+class FakePantryEntryImageCleanup : PantryEntryImageCleanup {
+    val calledForEntryIds = mutableListOf<Int>()
+    var storageKeysToReturn: List<String> = emptyList()
+
+    override suspend fun deleteAllImagesForEntry(entryId: Int): List<String> {
+        calledForEntryIds += entryId
+        return storageKeysToReturn
+    }
 }
 
 class NoopTransactionalRunner : TransactionalRunner {

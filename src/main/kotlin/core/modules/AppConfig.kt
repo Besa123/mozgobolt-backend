@@ -10,6 +10,9 @@ data class AppConfig(
     val security: Security,
     val cors: Cors,
     val email: Email,
+    val media: Media = Media(),
+    val clamAv: ClamAv = ClamAv(),
+    val objectStorage: ObjectStorage = ObjectStorage(),
 ) {
     @Serializable
     data class Database(
@@ -50,5 +53,34 @@ data class AppConfig(
         val fromAddress: String = "noreply@example.com",
         val verificationTokenExpirationHours: Long = 24,
         val resetTokenExpirationMinutes: Long = 15,
+    )
+
+    @Serializable
+    data class Media(
+        val localStorageDirectory: String = "./data/pantry-entry-images",
+        val maxImagesPerEntry: Int = 3,
+        val maxImageDimensionPixels: Int = 2048,
+        val maxImagePixelCount: Long = 40_000_000,
+        val jpegQuality: Float = 0.85f,
+    )
+
+    @Serializable
+    data class ClamAv(
+        val enabled: Boolean = false,
+        val host: String = "localhost",
+        val port: Int = 3310,
+        val timeoutMs: Long = 5000,
+    )
+
+    @Serializable
+    data class ObjectStorage(
+        val enabled: Boolean = false,
+        val endpoint: String = "",
+        val bucket: String = "",
+        val accessKeyId: String = "",
+        val secretAccessKey: String = "",
+        val region: String = "auto",
+        val apiCallTimeoutMs: Long = 30_000,
+        val apiCallAttemptTimeoutMs: Long = 10_000,
     )
 }

@@ -5,6 +5,8 @@ import com.shelflife.core.routing.apiV1
 import com.shelflife.feature.health.routing.infrastructureRoutes
 import com.shelflife.feature.pantryEntry.domain.PantryEntryService
 import com.shelflife.feature.pantryEntry.routing.pantryEntryRoutes
+import com.shelflife.feature.pantryEntryImage.domain.PantryEntryImageService
+import com.shelflife.feature.pantryEntryImage.routing.pantryEntryImageRoutes
 import com.shelflife.feature.product.domain.ProductService
 import com.shelflife.feature.product.routing.productRoutes
 import com.shelflife.feature.quantityUnit.domain.QuantityUnitService
@@ -27,6 +29,7 @@ fun Application.configureRouting() {
     val storageLocationService: StorageLocationService by dependencies
     val quantityUnitService: QuantityUnitService by dependencies
     val pantryEntryService: PantryEntryService by dependencies
+    val pantryEntryImageService: PantryEntryImageService by dependencies
     val syncService: SyncService by dependencies
     val syncEventHub: SyncEventHub by dependencies
     val idempotencyStore: IdempotencyStore by dependencies
@@ -41,6 +44,7 @@ fun Application.configureRouting() {
             storageLocationRoutes(storageLocationService, idempotencyStore)
             quantityUnitRoutes(quantityUnitService)
             pantryEntryRoutes(pantryEntryService, idempotencyStore)
+            pantryEntryImageRoutes(pantryEntryImageService, idempotencyStore)
             syncRoutes(syncService, syncEventHub)
         }
     }

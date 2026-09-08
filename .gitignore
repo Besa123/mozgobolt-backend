@@ -45,6 +45,13 @@ hs_err_pid*
 logs/
 
 # -----------------------------
+# Runtime data
+# -----------------------------
+# Local-disk fallback for pantry entry images (core/data/media/LocalDiskImageStorage) — user
+# uploads, never source, never meant to be committed.
+/data/
+
+# -----------------------------
 # Mac / Windows OS Files
 # -----------------------------
 .DS_Store

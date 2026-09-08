@@ -4,4 +4,5 @@ enum class SyncEntityType {
     PRODUCT,
     STORAGE_LOCATION,
     PANTRY_ENTRY,
+    PANTRY_ENTRY_IMAGE,
 }

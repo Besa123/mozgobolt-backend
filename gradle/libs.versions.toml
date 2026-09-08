@@ -15,6 +15,10 @@ resilience4j = "2.4.0"
 ktlint-plugin = "14.2.0"
 detekt = "1.23.8"
 testcontainers = "2.0.5"
+thumbnailator = "0.4.20"
+clamav-client = "2.1.2"
+aws-sdk = "2.46.18"
+s3mock-testcontainers = "4.9.1"
 
 [libraries]
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
@@ -39,6 +43,11 @@ resilience4j-retry = { module = "io.github.resilience4j:resilience4j-retry", ver
 resilience4j-circuitbreaker = { module = "io.github.resilience4j:resilience4j-circuitbreaker", version.ref = "resilience4j" }
 testcontainers-core = { module = "org.testcontainers:testcontainers", version.ref = "testcontainers" }
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
+thumbnailator = { module = "net.coobird:thumbnailator", version.ref = "thumbnailator" }
+clamav-client = { module = "xyz.capybara:clamav-client", version.ref = "clamav-client" }
+aws-sdk-s3 = { module = "software.amazon.awssdk:s3", version.ref = "aws-sdk" }
+aws-sdk-url-connection-client = { module = "software.amazon.awssdk:url-connection-client", version.ref = "aws-sdk" }
+s3mock-testcontainers = { module = "com.adobe.testing:s3mock-testcontainers", version.ref = "s3mock-testcontainers" }
 
 [plugins]
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

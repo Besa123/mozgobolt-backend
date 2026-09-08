@@ -2,6 +2,8 @@ package com.shelflife.feature.pantryEntry.service
 
 import com.shelflife.core.database.TransactionalRunner
 import com.shelflife.core.domain.AppResult
+import com.shelflife.core.domain.media.ImageStorage
+import com.shelflife.feature.pantryEntry.domain.PantryEntryImageCleanup
 import com.shelflife.feature.pantryEntry.domain.PantryEntryRepository
 import com.shelflife.feature.pantryEntry.domain.PantryEntryService
 import com.shelflife.feature.pantryEntry.domain.model.PantryEntry
@@ -28,6 +30,8 @@ class PantryEntryServiceI(
     private val quantityUnitRepository: QuantityUnitRepository,
     private val syncService: SyncService,
     private val tx: TransactionalRunner,
+    private val pantryEntryImageCleanup: PantryEntryImageCleanup,
+    private val imageStorage: ImageStorage,
 ) : PantryEntryService {
     override suspend fun createEntry(
         userId: Int,
@@ -102,62 +106,89 @@ class PantryEntryServiceI(
         entryId: Int,
         fields: PantryEntryFields,
         originDeviceId: String?,
-    ): AppResult<UpdateEntryOutcome, PantryEntryError> =
-        tx.transactional {
-            if (pantryEntryRepository.findByIdAndUserId(entryId, userId) == null) {
-                return@transactional AppResult.Error(PantryEntryError.NOT_FOUND)
+    ): AppResult<UpdateEntryOutcome, PantryEntryError> {
+        var orphanedImageKeys: List<String> = emptyList()
+
+        val result =
+            tx.transactional {
+                if (pantryEntryRepository.findByIdAndUserId(entryId, userId) == null) {
+                    return@transactional AppResult.Error(PantryEntryError.NOT_FOUND)
+                }
+
+                if (fields.quantityAmount <= BigDecimal.ZERO) {
+                    orphanedImageKeys = pantryEntryImageCleanup.deleteAllImagesForEntry(entryId)
+                    pantryEntryRepository.deleteByIdAndUserId(entryId, userId)
+                    syncService.recordChange(
+                        userId,
+                        SyncEntityType.PANTRY_ENTRY,
+                        entryId,
+                        SyncOperation.DELETE,
+                        originDeviceId,
+                    )
+                    return@transactional AppResult.Success(UpdateEntryOutcome.Deleted)
+                }
+
+                fields.validateReferences(userId)?.let { return@transactional AppResult.Error(it) }
+
+                val updated =
+                    pantryEntryRepository
+                        .update(id = entryId, userId = userId, fields = fields)
+                        ?.also {
+                            syncService.recordChange(
+                                userId,
+                                SyncEntityType.PANTRY_ENTRY,
+                                entryId,
+                                SyncOperation.UPSERT,
+                                originDeviceId,
+                            )
+                        }
+                        ?: return@transactional AppResult.Error(PantryEntryError.NOT_FOUND)
+
+                AppResult.Success(UpdateEntryOutcome.Updated(updated))
             }
 
-            if (fields.quantityAmount <= BigDecimal.ZERO) {
-                pantryEntryRepository.deleteByIdAndUserId(entryId, userId)
-                syncService.recordChange(
-                    userId,
-                    SyncEntityType.PANTRY_ENTRY,
-                    entryId,
-                    SyncOperation.DELETE,
-                    originDeviceId,
-                )
-                return@transactional AppResult.Success(UpdateEntryOutcome.Deleted)
-            }
-
-            fields.validateReferences(userId)?.let { return@transactional AppResult.Error(it) }
-
-            val updated =
-                pantryEntryRepository
-                    .update(id = entryId, userId = userId, fields = fields)
-                    ?.also {
-                        syncService.recordChange(
-                            userId,
-                            SyncEntityType.PANTRY_ENTRY,
-                            entryId,
-                            SyncOperation.UPSERT,
-                            originDeviceId,
-                        )
-                    }
-                    ?: return@transactional AppResult.Error(PantryEntryError.NOT_FOUND)
-
-            AppResult.Success(UpdateEntryOutcome.Updated(updated))
+        if (orphanedImageKeys.isNotEmpty()) {
+            imageStorage.deleteBestEffort(orphanedImageKeys)
         }
+
+        return result
+    }
 
     override suspend fun deleteEntry(
         userId: Int,
         entryId: Int,
         originDeviceId: String?,
-    ): AppResult<Unit, PantryEntryError> =
-        tx.transactional {
-            if (pantryEntryRepository.deleteByIdAndUserId(entryId, userId)) {
-                syncService.recordChange(
-                    userId,
-                    SyncEntityType.PANTRY_ENTRY,
-                    entryId,
-                    SyncOperation.DELETE,
-                    originDeviceId,
-                )
-                AppResult.Success(Unit)
-            } else {
-                AppResult.Error(PantryEntryError.NOT_FOUND)
+    ): AppResult<Unit, PantryEntryError> {
+        var orphanedImageKeys: List<String> = emptyList()
+
+        val result =
+            tx.transactional {
+                if (pantryEntryRepository.findByIdAndUserId(entryId, userId) == null) {
+                    return@transactional AppResult.Error(PantryEntryError.NOT_FOUND)
+                }
+
+                orphanedImageKeys = pantryEntryImageCleanup.deleteAllImagesForEntry(entryId)
+
+                if (pantryEntryRepository.deleteByIdAndUserId(entryId, userId)) {
+                    syncService.recordChange(
+                        userId,
+                        SyncEntityType.PANTRY_ENTRY,
+                        entryId,
+                        SyncOperation.DELETE,
+                        originDeviceId,
+                    )
+                    AppResult.Success(Unit)
+                } else {
+                    AppResult.Error(PantryEntryError.NOT_FOUND)
+                }
             }
+
+        if (orphanedImageKeys.isNotEmpty()) {
+            imageStorage.deleteBestEffort(orphanedImageKeys)
         }
+
+        return result
+    }
 
     private suspend fun PantryEntryFields.validateReferences(userId: Int): PantryEntryError? {
         if (storageLocationId != null &&

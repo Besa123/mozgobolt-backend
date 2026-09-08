@@ -93,6 +93,27 @@ changing anything in any of them.
     local cache doesn't have yet" can't be answered by "call the list again" without re-walking every page. This route
     is that answer, and the reason it exists at all is specifically the pagination/sync interaction — don't remove it if
     `pantry_entries` ever stops being paginated without checking whether it's still needed.
+15. `pantry_entry_images` (`feature/pantryEntryImage/`) is a companion feature attached to `pantry_entries`, not a fifth
+    member of "the four" — it doesn't need decision 12's table co-location exception (no DAO `referencedOn`
+    relation is required) and lives entirely in its own feature package. Up to 3 pictures per entry, 5MB each; a
+    "modify" is a re-upload that replaces the bytes at the same image id. Every upload is unconditionally re-encoded
+    from decoded pixels before storage (strips metadata/polyglot payloads) — see
+    docs/adr/0007-pantry-entry-image-storage-and-sanitization.md.
+    - Interacts with decisions 2/3/7: a pantry entry has no soft-delete, so both ways an entry row disappears
+      (`DELETE /pantry-entries/{id}`, and the `quantityAmount <= 0` auto-delete inside `PATCH`) must also purge that
+      entry's images — the DB row cascades on its own, but the physical files don't. `PantryEntryServiceI` calls
+      `PantryEntryImageCleanup.deleteAllImagesForEntry(entryId)` inside the same transaction as the entry deletion,
+      *after* confirming ownership but *before* the entry row is gone (once it's gone, cascade has already removed the
+      image rows and their storage keys can no longer be read back) and purges the returned storage keys from disk once
+      the transaction has committed. `PantryEntryImageCleanup` is an interface `pantryEntry` owns
+      (`feature/pantryEntry/domain/PantryEntryImageCleanup.kt`), implemented by `pantryEntryImage` — the dependency only
+      runs one way; `pantryEntryImage` depends on `pantryEntry`'s `PantryEntryRepository` for its own ownership checks
+      (decision 8's pattern), so the reverse direction has to go through a port the consumer owns, not a direct import
+      of `pantryEntryImage`'s repository.
+    - Interacts with decision 13: image add/replace/delete each call `SyncService.recordChange(...)` with
+      `SyncEntityType.PANTRY_ENTRY_IMAGE`, same as the other three. The sync payload carries only the image id, never
+      the bytes — a client that sees a hint re-pulls `GET /pantry-entries/{entryId}/images` (uncapped and tiny, so
+      decision 14's by-id-resolver reasoning doesn't apply here: there's no pagination gap to bridge).
 
 ## What the backend must get right
 

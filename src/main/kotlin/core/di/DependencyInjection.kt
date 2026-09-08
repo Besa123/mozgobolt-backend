@@ -6,7 +6,12 @@ import com.shelflife.core.data.email.ResendEmailService
 import com.shelflife.core.data.email.ResilientEmailService
 import com.shelflife.core.data.idempotency.ExposedIdempotencyStore
 import com.shelflife.core.data.idempotency.IdempotencyStore
+import com.shelflife.core.data.media.JavaImageSanitizer
+import com.shelflife.core.data.media.LocalDiskImageStorage
+import com.shelflife.core.data.media.S3ImageStorage
+import com.shelflife.core.data.security.ClamAvVirusScanner
 import com.shelflife.core.data.security.JwtTokenManager
+import com.shelflife.core.data.security.NoOpVirusScanner
 import com.shelflife.core.data.security.PasswordServiceImpl
 import com.shelflife.core.data.validator.StandardEmailValidator
 import com.shelflife.core.data.validator.StandardPasswordValidator
@@ -15,12 +20,16 @@ import com.shelflife.core.database.DatabaseFactory.createHikariDataSource
 import com.shelflife.core.database.ExposedTransactionalRunner
 import com.shelflife.core.database.TransactionalRunner
 import com.shelflife.core.domain.email.EmailService
+import com.shelflife.core.domain.media.ImageSanitizer
+import com.shelflife.core.domain.media.ImageStorage
 import com.shelflife.core.domain.security.PasswordService
 import com.shelflife.core.domain.security.TokenManager
+import com.shelflife.core.domain.security.VirusScanner
 import com.shelflife.core.domain.validation.EmailValidator
 import com.shelflife.core.domain.validation.PasswordValidator
 import com.shelflife.core.modules.AppConfig
 import com.shelflife.feature.pantryEntry.di.configurePantryEntryDependencyInjection
+import com.shelflife.feature.pantryEntryImage.di.configurePantryEntryImageDependencyInjection
 import com.shelflife.feature.product.di.configureProductDependencyInjection
 import com.shelflife.feature.quantityUnit.di.configureQuantityUnitDependencyInjection
 import com.shelflife.feature.storageLocation.di.configureStorageLocationDependencyInjection
@@ -87,6 +96,19 @@ fun Application.configureDependencyInjection() {
 
             ResilientEmailService(baseService)
         }
+
+        provide<ImageStorage> {
+            if (appConfig.objectStorage.enabled) {
+                S3ImageStorage(S3ImageStorage.buildClient(appConfig.objectStorage), appConfig.objectStorage.bucket)
+            } else {
+                LocalDiskImageStorage(appConfig.media.localStorageDirectory)
+            }
+        }
+        provide<ImageSanitizer> { JavaImageSanitizer(appConfig.media) }
+
+        provide<VirusScanner> {
+            if (appConfig.clamAv.enabled) ClamAvVirusScanner(appConfig.clamAv) else NoOpVirusScanner()
+        }
     }
 
     configureAuthDependencyInjection()
@@ -94,5 +116,6 @@ fun Application.configureDependencyInjection() {
     configureProductDependencyInjection()
     configureStorageLocationDependencyInjection()
     configureQuantityUnitDependencyInjection()
+    configurePantryEntryImageDependencyInjection()
     configurePantryEntryDependencyInjection()
 }

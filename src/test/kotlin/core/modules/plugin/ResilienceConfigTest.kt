@@ -132,4 +132,47 @@ class ResilienceConfigTest {
             assertFalse(calledWhileOpen, "the wrapped block must not run at all while the circuit is open")
         }
     }
+
+    @Test
+    fun `a policy without a retry just runs the block through the circuit breaker`() {
+        runBlocking {
+            val policy =
+                ResiliencePolicy(
+                    CircuitBreaker.of("test-no-retry", ResilienceRegistry.s3CircuitBreaker.circuitBreakerConfig),
+                )
+            var calls = 0
+
+            assertFailsWith<TransientEmailDeliveryException> {
+                policy.execute {
+                    calls++
+                    throw TransientEmailDeliveryException("boom", null)
+                }
+            }
+
+            assertEquals(1, calls, "with no retry configured, a single failure must not be retried at all")
+        }
+    }
+
+    @Test
+    fun `a policy's retry loop counts as one outcome for its circuit breaker, not one per attempt`() {
+        runBlocking {
+            val policy =
+                ResiliencePolicy(
+                    circuitBreaker =
+                        CircuitBreaker.of(
+                            "test-nesting-breaker",
+                            ResilienceRegistry.emailCircuitBreaker.circuitBreakerConfig,
+                        ),
+                    retry = Retry.of("test-nesting-retry", ResilienceRegistry.emailRetry.retryConfig),
+                )
+
+            repeat(4) {
+                assertFailsWith<TransientEmailDeliveryException> {
+                    policy.execute<Unit> { throw TransientEmailDeliveryException("boom", null) }
+                }
+            }
+
+            assertEquals(State.CLOSED, policy.circuitBreaker.state)
+        }
+    }
 }

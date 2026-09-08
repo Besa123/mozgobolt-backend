@@ -1,6 +1,8 @@
 package com.shelflife.core.data.email
 
 import com.shelflife.core.domain.email.EmailService
+import com.shelflife.core.modules.plugin.ResiliencePolicy
+import com.shelflife.core.modules.plugin.ResilienceRegistry
 import com.shelflife.core.modules.plugin.withEmailResilience
 import io.github.oshai.kotlinlogging.KotlinLogging
 
@@ -8,13 +10,14 @@ private val logger = KotlinLogging.logger {}
 
 class ResilientEmailService(
     private val delegate: EmailService,
+    private val resilience: ResiliencePolicy = ResilienceRegistry.email,
 ) : EmailService {
     override suspend fun sendVerificationEmail(
         to: String,
         token: String,
     ) {
         try {
-            withEmailResilience {
+            withEmailResilience(resilience) {
                 delegate.sendVerificationEmail(to, token)
             }
         } catch (
@@ -30,7 +33,7 @@ class ResilientEmailService(
         token: String,
     ) {
         try {
-            withEmailResilience {
+            withEmailResilience(resilience) {
                 delegate.sendPasswordResetEmail(to, token)
             }
         } catch (

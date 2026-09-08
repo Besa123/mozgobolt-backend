@@ -8,12 +8,6 @@ import kotlinx.serialization.Serializable
 private const val MAX_NOTE_LENGTH = 255
 private const val MAX_NAME_LENGTH = 100
 
-/**
- * Exactly one of [productId] (an existing product the caller can see) or [newProductName] (create
- * a private product inline, same call, same transaction — the "typed a name autocomplete didn't
- * match" flow) must be provided. [expirationDate] is an ISO-8601 `YYYY-MM-DD` string —
- * kotlinx.serialization has no built-in java.time support.
- */
 @Serializable
 data class CreatePantryEntryRequestDto(
     val productId: Int? = null,

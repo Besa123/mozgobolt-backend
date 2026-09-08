@@ -119,9 +119,14 @@ dependencies {
     implementation(libs.resilience4j.kotlin)
     implementation(libs.resilience4j.retry)
     implementation(libs.resilience4j.circuitbreaker)
+    implementation(libs.thumbnailator)
+    implementation(libs.clamav.client)
+    implementation(libs.aws.sdk.s3)
+    implementation(libs.aws.sdk.url.connection.client)
 
     testImplementation(kotlin("test"))
     testImplementation(ktorLibs.server.testHost)
     testImplementation(libs.testcontainers.core)
     testImplementation(libs.testcontainers.postgresql)
+    testImplementation(libs.s3mock.testcontainers)
 }
