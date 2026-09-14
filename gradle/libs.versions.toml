@@ -17,7 +17,7 @@ detekt = "1.23.8"
 testcontainers = "2.0.5"
 thumbnailator = "0.4.21"
 clamav-client = "2.1.2"
-aws-sdk = "2.46.18"
+aws-sdk = "2.54.16"
 s3mock-testcontainers = "4.9.1"
 
 [libraries]
