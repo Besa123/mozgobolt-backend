@@ -1,4 +1,4 @@
-package com.shelflife.feature.product.domain.model
+package com.shelflife.feature.quantityUnit.domain.model
 
 enum class UnitCategory {
     MASS,

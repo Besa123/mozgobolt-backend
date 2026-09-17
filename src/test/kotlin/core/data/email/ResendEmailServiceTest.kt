@@ -1,5 +1,6 @@
 package com.shelflife.core.data.email
 
+import com.resend.core.exception.ResendException
 import java.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertIs
@@ -17,7 +18,7 @@ class ResendEmailServiceTest {
 
     @Test
     fun `a 429 rate-limit response is classified as transient`() {
-        val rateLimited = RuntimeException("Failed to send email: 429 Too Many Requests")
+        val rateLimited = ResendException(429, "Too Many Requests")
 
         val result = rateLimited.toEmailDeliveryException("user@example.com")
 
@@ -26,7 +27,7 @@ class ResendEmailServiceTest {
 
     @Test
     fun `a 500 server error is classified as transient`() {
-        val serverError = RuntimeException("Failed to send email: 500 Internal Server Error")
+        val serverError = ResendException(500, "Internal Server Error")
 
         val result = serverError.toEmailDeliveryException("user@example.com")
 
@@ -35,7 +36,7 @@ class ResendEmailServiceTest {
 
     @Test
     fun `a 503 server error is classified as transient`() {
-        val serverError = RuntimeException("Failed to send email: 503 Service Unavailable")
+        val serverError = ResendException(503, "Service Unavailable")
 
         val result = serverError.toEmailDeliveryException("user@example.com")
 
@@ -44,7 +45,7 @@ class ResendEmailServiceTest {
 
     @Test
     fun `a 400 bad request is classified as permanent`() {
-        val badRequest = RuntimeException("Failed to send email: 400 Bad Request")
+        val badRequest = ResendException(400, "Bad Request")
 
         val result = badRequest.toEmailDeliveryException("user@example.com")
 
@@ -53,7 +54,7 @@ class ResendEmailServiceTest {
 
     @Test
     fun `a 401 unauthorized (bad API key) is classified as permanent`() {
-        val unauthorized = RuntimeException("Failed to send email: 401 Unauthorized")
+        val unauthorized = ResendException(401, "Unauthorized")
 
         val result = unauthorized.toEmailDeliveryException("user@example.com")
 
@@ -62,7 +63,7 @@ class ResendEmailServiceTest {
 
     @Test
     fun `a 422 unprocessable recipient is classified as permanent`() {
-        val unprocessable = RuntimeException("Failed to send email: 422 Unprocessable Entity")
+        val unprocessable = ResendException(422, "Unprocessable Entity")
 
         val result = unprocessable.toEmailDeliveryException("user@example.com")
 
@@ -79,8 +80,17 @@ class ResendEmailServiceTest {
     }
 
     @Test
+    fun `a ResendException with no status code defaults to transient`() {
+        val unknown = ResendException("malformed response, no status code available")
+
+        val result = unknown.toEmailDeliveryException("user@example.com")
+
+        assertIs<TransientEmailDeliveryException>(result)
+    }
+
+    @Test
     fun `the original exception is preserved as the cause`() {
-        val original = RuntimeException("Failed to send email: 500 Internal Server Error")
+        val original = ResendException(500, "Internal Server Error")
 
         val result = original.toEmailDeliveryException("user@example.com")
 

@@ -6,7 +6,7 @@ import com.shelflife.feature.product.data.mapper.toProduct
 import com.shelflife.feature.product.domain.ProductRepository
 import com.shelflife.feature.product.domain.model.Product
 import com.shelflife.feature.product.domain.model.RenameOutcome
-import com.shelflife.feature.product.domain.model.UnitCategory
+import com.shelflife.feature.quantityUnit.domain.model.UnitCategory
 import org.jetbrains.exposed.v1.core.LikePattern
 import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.and
@@ -18,6 +18,7 @@ import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.exceptions.ExposedSQLException
 import org.jetbrains.exposed.v1.jdbc.insertIgnore
 import org.jetbrains.exposed.v1.jdbc.update
+import java.util.Locale
 
 private const val POSTGRES_UNIQUE_VIOLATION_SQL_STATE = "23505"
 
@@ -37,7 +38,7 @@ class ProductRepositoryI : ProductRepository {
 
     override suspend fun findGlobalByName(name: String): Product? =
         ProductEntity
-            .find { ProductsTable.userId.isNull() and (ProductsTable.name.lowerCase() eq name.lowercase()) }
+            .find { ProductsTable.userId.isNull() and (ProductsTable.name.lowerCase() eq name.lowercase(Locale.ROOT)) }
             .limit(1)
             .firstOrNull()
             ?.toProduct()
@@ -87,8 +88,9 @@ class ProductRepositoryI : ProductRepository {
         if (!inserted) return null
 
         return ProductEntity
-            .find { (ProductsTable.userId eq userId) and (ProductsTable.name.lowerCase() eq name.lowercase()) }
-            .limit(1)
+            .find {
+                (ProductsTable.userId eq userId) and (ProductsTable.name.lowerCase() eq name.lowercase(Locale.ROOT))
+            }.limit(1)
             .firstOrNull()
             ?.toProduct()
     }
@@ -117,7 +119,7 @@ class ProductRepositoryI : ProductRepository {
 
     private companion object {
         fun containsPattern(query: String): LikePattern {
-            val escaped = LikePattern.ofLiteral(query.trim().lowercase())
+            val escaped = LikePattern.ofLiteral(query.trim().lowercase(Locale.ROOT))
             return LikePattern(pattern = "%${escaped.pattern}%", escapeChar = escaped.escapeChar)
         }
     }

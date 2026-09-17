@@ -1,9 +1,9 @@
 package com.shelflife.core.data.validator
 
-import com.shelflife.core.data.validator.StandardPasswordValidator.Companion.MAX_PASSWORD_LENGTH
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import com.shelflife.core.domain.security.PasswordPolicy.MAX_LENGTH as MAX_PASSWORD_LENGTH
 
 class StandardPasswordValidatorTest {
     private val validator = StandardPasswordValidator()

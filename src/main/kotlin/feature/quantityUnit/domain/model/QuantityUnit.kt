@@ -1,6 +1,5 @@
 package com.shelflife.feature.quantityUnit.domain.model
 
-import com.shelflife.feature.product.domain.model.UnitCategory
 import java.math.BigDecimal
 
 data class QuantityUnit(

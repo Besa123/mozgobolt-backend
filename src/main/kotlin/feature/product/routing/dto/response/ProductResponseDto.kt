@@ -1,7 +1,7 @@
 package com.shelflife.feature.product.routing.dto.response
 
 import com.shelflife.feature.product.domain.model.Product
-import com.shelflife.feature.product.domain.model.UnitCategory
+import com.shelflife.feature.quantityUnit.domain.model.UnitCategory
 import kotlinx.serialization.Serializable
 
 @Serializable

@@ -14,20 +14,17 @@ import com.shelflife.core.utility.functions.currentUserIdOrNull
 import com.shelflife.core.utility.functions.protectedApi
 import com.shelflife.feature.pantryEntry.domain.PantryEntryService
 import com.shelflife.feature.pantryEntry.domain.model.PantryEntryError
-import com.shelflife.feature.pantryEntry.domain.model.PantryEntryFields
 import com.shelflife.feature.pantryEntry.domain.model.ProductReference
 import com.shelflife.feature.pantryEntry.domain.model.UpdateEntryOutcome
 import com.shelflife.feature.pantryEntry.routing.dto.request.CreatePantryEntryRequestDto
 import com.shelflife.feature.pantryEntry.routing.dto.request.UpdatePantryEntryRequestDto
+import com.shelflife.feature.pantryEntry.routing.dto.request.toFields
 import com.shelflife.feature.pantryEntry.routing.dto.response.toResponseDto
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.math.BigDecimal
-import java.time.LocalDate
 
 private const val PANTRY_ENTRY_BY_ID_PATH = "/pantry-entries/{id}"
 private const val INVALID_ENTRY_ID = "INVALID_ENTRY_ID"
@@ -92,14 +89,7 @@ private fun Route.registerCreateRoute(
                 .createEntry(
                     userId = userId,
                     product = productReference,
-                    fields =
-                        PantryEntryFields(
-                            storageLocationId = request.storageLocationId,
-                            unitId = request.unitId,
-                            quantityAmount = BigDecimal.valueOf(request.quantityAmount),
-                            expirationDate = request.expirationDate?.let { LocalDate.parse(it) },
-                            brandOrNote = request.brandOrNote,
-                        ),
+                    fields = request.toFields(),
                     originDeviceId = call.currentDeviceIdOrNull(),
                 ).fold(
                     onSuccess = { entry -> idempotentResult(HttpStatusCode.Created, entry.toResponseDto()) },
@@ -131,14 +121,7 @@ private fun Route.registerUpdateRoute(pantryEntryService: PantryEntryService) {
             .updateEntry(
                 userId = userId,
                 entryId = entryId,
-                fields =
-                    PantryEntryFields(
-                        storageLocationId = request.storageLocationId,
-                        unitId = request.unitId,
-                        quantityAmount = BigDecimal.valueOf(request.quantityAmount),
-                        expirationDate = request.expirationDate?.let { LocalDate.parse(it) },
-                        brandOrNote = request.brandOrNote,
-                    ),
+                fields = request.toFields(),
                 originDeviceId = call.currentDeviceIdOrNull(),
             ).fold(
                 onSuccess = { outcome ->

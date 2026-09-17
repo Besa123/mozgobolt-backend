@@ -2,7 +2,7 @@ package com.shelflife.feature.product.service
 
 import com.shelflife.core.domain.AppResult
 import com.shelflife.feature.product.domain.model.ProductError
-import com.shelflife.feature.product.domain.model.UnitCategory
+import com.shelflife.feature.quantityUnit.domain.model.UnitCategory
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals

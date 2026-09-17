@@ -8,7 +8,7 @@ import com.shelflife.feature.pantryEntry.domain.model.PantryEntryFields
 import com.shelflife.feature.pantryEntry.domain.model.PantryEntryPage
 import com.shelflife.feature.pantryEntry.domain.model.ProductReference
 import com.shelflife.feature.pantryEntry.domain.model.UpdateEntryOutcome
-import com.shelflife.feature.product.domain.model.UnitCategory
+import com.shelflife.feature.quantityUnit.domain.model.UnitCategory
 import java.math.BigDecimal
 import java.time.Instant
 

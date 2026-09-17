@@ -92,16 +92,22 @@ class PostgresNotifyListener(
         }
 
     private fun handle(payload: String) {
-        val parts = payload.split(":", limit = 3)
-        val userId = parts.getOrNull(0)?.toIntOrNull()
-        val eventId = parts.getOrNull(1)?.toLongOrNull()
-        val originDeviceId = parts.getOrNull(2)?.takeIf { it.isNotEmpty() }
+        try {
+            val parts = payload.split(":", limit = 3)
+            val userId = parts.getOrNull(0)?.toIntOrNull()
+            val eventId = parts.getOrNull(1)?.toLongOrNull()
+            val originDeviceId = parts.getOrNull(2)?.takeIf { it.isNotEmpty() }
 
-        if (userId == null || eventId == null) {
-            logger.warn { "Postgres NOTIFY payload didn't parse as 'userId:eventId[:deviceId]': $payload" }
-            return
+            if (userId == null || eventId == null) {
+                logger.warn { "Postgres NOTIFY payload didn't parse as 'userId:eventId[:deviceId]': $payload" }
+                return
+            }
+
+            syncEventHub.publish(userId, eventId, originDeviceId)
+        } catch (
+            @Suppress("TooGenericExceptionCaught") e: Exception,
+        ) {
+            logger.error(e) { "Failed to handle Postgres NOTIFY payload: $payload" }
         }
-
-        syncEventHub.publish(userId, eventId, originDeviceId)
     }
 }

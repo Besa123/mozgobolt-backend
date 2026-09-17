@@ -1,9 +1,11 @@
 package com.shelflife.core.data.email
 
 import com.resend.Resend
+import com.resend.core.exception.ResendException
 import com.resend.services.emails.model.CreateEmailOptions
 import com.shelflife.core.domain.email.EmailService
 import com.shelflife.core.modules.AppConfig
+import com.shelflife.core.utility.functions.runSuspendCatching
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -21,27 +23,12 @@ class ResendEmailService(
         token: String,
     ) {
         val verificationUrl = "${config.baseUrl}/api/v1/auth/verify-email?token=$token"
-
-        val params =
-            CreateEmailOptions
-                .builder()
-                .from(config.email.fromAddress)
-                .to(to)
-                .subject("Verify your email address")
-                .html(buildVerificationHtml(verificationUrl))
-                .build()
-
-        withContext(Dispatchers.IO) {
-            try {
-                val response = resend.emails().send(params)
-                logger.info { "Verification email sent to $to [id=${response.id}]" }
-            } catch (
-                @Suppress("TooGenericExceptionCaught") e: Exception,
-            ) {
-                logger.error(e) { "Resend API failed for $to" }
-                throw e.toEmailDeliveryException(to)
-            }
-        }
+        sendEmail(
+            to = to,
+            subject = "Verify your email address",
+            html = buildVerificationHtml(verificationUrl),
+            logLabel = "Verification email",
+        )
     }
 
     override suspend fun sendPasswordResetEmail(
@@ -49,26 +36,34 @@ class ResendEmailService(
         token: String,
     ) {
         val resetUrl = "${config.baseUrl}/reset?token=$token"
+        sendEmail(
+            to = to,
+            subject = "Reset your password",
+            html = buildPasswordResetHtml(resetUrl),
+            logLabel = "Password reset email",
+        )
+    }
 
+    private suspend fun sendEmail(
+        to: String,
+        subject: String,
+        html: String,
+        logLabel: String,
+    ) {
         val params =
             CreateEmailOptions
                 .builder()
                 .from(config.email.fromAddress)
                 .to(to)
-                .subject("Reset your password")
-                .html(buildPasswordResetHtml(resetUrl))
+                .subject(subject)
+                .html(html)
                 .build()
 
         withContext(Dispatchers.IO) {
-            try {
-                val response = resend.emails().send(params)
-                logger.info { "Password reset email sent to $to [id=${response.id}]" }
-            } catch (
-                @Suppress("TooGenericExceptionCaught") e: Exception,
-            ) {
-                logger.error(e) { "Resend API failed for $to" }
-                throw e.toEmailDeliveryException(to)
-            }
+            runSuspendCatching { resend.emails().send(params) }
+                .onSuccess { logger.info { "$logLabel sent to $to [id=${it.id}]" } }
+                .onFailure { logger.error(it) { "Resend API failed for $to" } }
+                .getOrElse { throw it.toEmailDeliveryException(to) }
         }
     }
 
@@ -93,17 +88,11 @@ class ResendEmailService(
         """.trimIndent()
 }
 
-private val HTTP_STATUS_CODE_REGEX = Regex("""Failed to send email: (\d{3})""")
 private const val HTTP_TOO_MANY_REQUESTS = 429
 private const val HTTP_SERVER_ERROR_THRESHOLD = 500
 
-internal fun Exception.toEmailDeliveryException(to: String): EmailDeliveryException {
-    val statusCode =
-        HTTP_STATUS_CODE_REGEX
-            .find(message.orEmpty())
-            ?.groupValues
-            ?.get(1)
-            ?.toIntOrNull()
+internal fun Throwable.toEmailDeliveryException(to: String): EmailDeliveryException {
+    val statusCode = (this as? ResendException)?.statusCode
 
     return when {
         cause is IOException ->

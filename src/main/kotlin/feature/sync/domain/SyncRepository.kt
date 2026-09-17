@@ -3,6 +3,7 @@ package com.shelflife.feature.sync.domain
 import com.shelflife.feature.sync.domain.model.SyncEntityType
 import com.shelflife.feature.sync.domain.model.SyncEvent
 import com.shelflife.feature.sync.domain.model.SyncOperation
+import com.shelflife.feature.sync.domain.model.SyncPage
 
 interface SyncRepository {
     suspend fun record(
@@ -17,5 +18,5 @@ interface SyncRepository {
         userId: Int,
         cursor: Long,
         limit: Int,
-    ): List<SyncEvent>
+    ): SyncPage
 }

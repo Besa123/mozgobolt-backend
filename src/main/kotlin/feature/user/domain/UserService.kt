@@ -20,7 +20,10 @@ interface UserService {
         email: String,
     ): AppResult<AuthResponse, LoginError>
 
-    suspend fun logoutUser(refreshToken: String)
+    suspend fun logoutUser(
+        userId: Int,
+        refreshToken: String,
+    )
 
     suspend fun logoutAllSessions(userId: Int)
 
@@ -30,7 +33,7 @@ interface UserService {
 
     suspend fun resendVerificationEmail(userId: Int): AppResult<Unit, VerifyEmailError>
 
-    suspend fun requestPasswordReset(email: String): AppResult<Unit, PasswordResetError>
+    suspend fun requestPasswordReset(email: String)
 
     suspend fun validatePasswordResetToken(token: String): AppResult<String, PasswordResetError>
 

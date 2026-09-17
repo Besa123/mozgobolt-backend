@@ -25,7 +25,12 @@ class FakeUserService : UserService {
     var signInResult: AppResult<AuthResponse, LoginError> =
         AppResult.Success(AuthResponse(accessToken = "fake-access", refreshToken = "fake-refresh"))
 
-    val logoutUserCalls = mutableListOf<String>()
+    data class LogoutCall(
+        val userId: Int,
+        val refreshToken: String,
+    )
+
+    val logoutUserCalls = mutableListOf<LogoutCall>()
     val logoutAllSessionsCalls = mutableListOf<Int>()
 
     var refreshTokenResult: AppResult<AuthResponse, RefreshError> =
@@ -38,7 +43,6 @@ class FakeUserService : UserService {
     var resendVerificationEmailResult: AppResult<Unit, VerifyEmailError> = AppResult.Success(Unit)
     val resendVerificationEmailCalls = mutableListOf<Int>()
 
-    var requestPasswordResetResult: AppResult<Unit, PasswordResetError> = AppResult.Success(Unit)
     val requestPasswordResetCalls = mutableListOf<String>()
 
     var validatePasswordResetTokenResult: AppResult<String, PasswordResetError> =
@@ -70,8 +74,11 @@ class FakeUserService : UserService {
         email: String,
     ): AppResult<AuthResponse, LoginError> = signInResult
 
-    override suspend fun logoutUser(refreshToken: String) {
-        logoutUserCalls += refreshToken
+    override suspend fun logoutUser(
+        userId: Int,
+        refreshToken: String,
+    ) {
+        logoutUserCalls += LogoutCall(userId, refreshToken)
     }
 
     override suspend fun logoutAllSessions(userId: Int) {
@@ -91,9 +98,8 @@ class FakeUserService : UserService {
         return resendVerificationEmailResult
     }
 
-    override suspend fun requestPasswordReset(email: String): AppResult<Unit, PasswordResetError> {
+    override suspend fun requestPasswordReset(email: String) {
         requestPasswordResetCalls += email
-        return requestPasswordResetResult
     }
 
     override suspend fun validatePasswordResetToken(token: String): AppResult<String, PasswordResetError> {

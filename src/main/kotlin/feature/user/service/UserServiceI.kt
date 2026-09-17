@@ -82,7 +82,7 @@ class UserServiceI(
             } ?: return AppResult.Error(RegisterError.ALREADY_EXISTS)
 
         runSuspendCatching { emailService.sendVerificationEmail(result.first.email, result.second) }
-            .onFailure { logger.error(it) { "Failed to send verification email to ${result.first.email}" } }
+            .onFailure { logger.error(it) { "Failed to send verification email to user ${result.first.id}" } }
 
         return AppResult.Success(Unit)
     }
@@ -139,10 +139,15 @@ class UserServiceI(
         }
     }
 
-    override suspend fun logoutUser(refreshToken: String) =
-        tx.transactional {
-            userRepository.revokeSpecificRefreshToken(token = tokenManager.hashTokenForStorage(refreshToken))
-        }
+    override suspend fun logoutUser(
+        userId: Int,
+        refreshToken: String,
+    ) = tx.transactional {
+        userRepository.revokeSpecificRefreshToken(
+            userId = userId,
+            token = tokenManager.hashTokenForStorage(refreshToken),
+        )
+    }
 
     override suspend fun logoutAllSessions(userId: Int) =
         tx.transactional {
@@ -212,7 +217,11 @@ class UserServiceI(
                 return@transactional AppResult.Error(VerifyEmailError.ALREADY_VERIFIED)
             }
 
-            userRepository.markTokenUsed(record.id)
+            val claimed = userRepository.markTokenUsed(record.id)
+            if (!claimed) {
+                return@transactional AppResult.Error(VerifyEmailError.INVALID_TOKEN)
+            }
+
             userRepository.markEmailVerified(record.userId)
             userRepository.invalidateVerificationTokens(record.userId)
 
@@ -243,22 +252,18 @@ class UserServiceI(
         }
 
         runSuspendCatching { emailService.sendVerificationEmail(user.email, verificationToken) }
-            .onFailure { logger.error(it) { "Failed to resend verification email to ${user.email}" } }
+            .onFailure { logger.error(it) { "Failed to resend verification email to user ${user.id}" } }
 
         return AppResult.Success(Unit)
     }
 
-    override suspend fun requestPasswordReset(email: String): AppResult<Unit, PasswordResetError> {
+    override suspend fun requestPasswordReset(email: String) {
         val normalizedEmail = emailValidator.normalize(email)
-        val user = tx.transactional { userRepository.findUser(normalizedEmail) }
-
-        if (user == null) {
-            return AppResult.Success(Unit)
-        }
+        val user = tx.transactional { userRepository.findUser(normalizedEmail) } ?: return
 
         if (user.isLocked) {
             logger.warn { "Password reset requested for locked account: ${user.id}" }
-            return AppResult.Success(Unit)
+            return
         }
 
         val resetToken = SecureTokenGenerator.generate()
@@ -270,9 +275,7 @@ class UserServiceI(
         }
 
         runSuspendCatching { emailService.sendPasswordResetEmail(user.email, resetToken) }
-            .onFailure { logger.error(it) { "Failed to send password reset email to ${user.email}" } }
-
-        return AppResult.Success(Unit)
+            .onFailure { logger.error(it) { "Failed to send password reset email to user ${user.id}" } }
     }
 
     override suspend fun validatePasswordResetToken(token: String): AppResult<String, PasswordResetError> {

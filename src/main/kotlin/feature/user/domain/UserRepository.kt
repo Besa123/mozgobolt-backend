@@ -40,7 +40,10 @@ interface UserRepository {
 
     suspend fun revokeAllTokensForUser(userId: Int)
 
-    suspend fun revokeSpecificRefreshToken(token: String)
+    suspend fun revokeSpecificRefreshToken(
+        userId: Int,
+        token: String,
+    )
 
     suspend fun createVerificationToken(
         userId: Int,
@@ -50,7 +53,7 @@ interface UserRepository {
 
     suspend fun findVerificationToken(token: String): VerificationTokenRecord?
 
-    suspend fun markTokenUsed(tokenId: Int)
+    suspend fun markTokenUsed(tokenId: Int): Boolean
 
     suspend fun markEmailVerified(userId: Int)
 

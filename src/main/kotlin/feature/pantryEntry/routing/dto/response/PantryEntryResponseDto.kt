@@ -2,7 +2,7 @@ package com.shelflife.feature.pantryEntry.routing.dto.response
 
 import com.shelflife.feature.pantryEntry.domain.model.PantryEntry
 import com.shelflife.feature.pantryEntry.domain.model.PantryEntryPage
-import com.shelflife.feature.product.domain.model.UnitCategory
+import com.shelflife.feature.quantityUnit.domain.model.UnitCategory
 import kotlinx.serialization.Serializable
 
 @Serializable

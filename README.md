@@ -8,7 +8,7 @@ see [docs/domain/pantry.md](docs/domain/pantry.md).
 
 ## Stack
 
-- **Kotlin** 2.3.21 / **JVM** 21, **Ktor** 3.5.2 (Netty engine)
+- **Kotlin** 2.4.10 / **JVM** 21, **Ktor** 3.5.2 (Netty engine)
 - **PostgreSQL** via **Exposed** (ORM) + **HikariCP** (connection pooling) + **Flyway** (migrations, run automatically
   on startup)
 - **JWT** auth (access + refresh tokens, refresh-token family rotation with theft detection — see
@@ -31,30 +31,13 @@ see [docs/domain/pantry.md](docs/domain/pantry.md).
 
 ## Getting started
 
-**Prerequisites:** JDK 21, a reachable PostgreSQL instance.
-
 ```bash
 cp .env.example .env      # fill in DB credentials, JWT secret, password pepper, etc.
 ./gradlew run              # starts the server; Flyway migrations run automatically
 ```
 
-The server listens on `http://localhost:8080` (`PORT` env var to override); console output is structured JSON. See
-`.env.example` for all configuration variables. Leaving `RESEND_API_KEY` blank falls back to a logging-only email
-service for local dev.
-
-## Common tasks
-
-| Task                                     | Description                                                                    |
-|------------------------------------------|--------------------------------------------------------------------------------|
-| `./gradlew run`                          | Start the server                                                               |
-| `./gradlew test`                         | Run the test suite (Docker-dependent Testcontainers tests skip without Docker) |
-| `./gradlew jacocoTestReport`             | Generate a coverage report at `build/reports/jacoco/test/html/index.html`      |
-| `./gradlew ktlintCheck` / `ktlintFormat` | Check / auto-fix formatting                                                    |
-| `./gradlew detekt`                       | Static analysis                                                                |
-| `./gradlew build`                        | Full build                                                                     |
-
-CI (`.github/workflows/ci.yml`) runs ktlint, detekt, tests, and coverage reporting on pushes and PRs targeting
-`master`, against a real Postgres service container.
+The server listens on `http://localhost:8080` (`PORT` env var to override). Leaving `RESEND_API_KEY` blank falls back to
+a logging-only email service for local dev.
 
 ## API
 

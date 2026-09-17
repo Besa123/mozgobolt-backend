@@ -1,12 +1,10 @@
 package com.shelflife.feature.pantryEntry.routing.dto.request
 
+import com.shelflife.core.domain.validation.DISPLAY_NAME_MAX_LENGTH
 import com.shelflife.core.domain.validation.ValidatedRequest
 import com.shelflife.core.domain.validation.isValidIsoDate
 import com.shelflife.core.domain.validation.validateDisplayName
 import kotlinx.serialization.Serializable
-
-private const val MAX_NOTE_LENGTH = 255
-private const val MAX_NAME_LENGTH = 100
 
 @Serializable
 data class CreatePantryEntryRequestDto(
@@ -27,7 +25,13 @@ data class CreatePantryEntryRequestDto(
                 add("Exactly one of productId or newProductName must be provided")
             }
             if (hasNew) {
-                addAll(validateDisplayName(newProductName.orEmpty(), MAX_NAME_LENGTH, fieldLabel = "New product name"))
+                addAll(
+                    validateDisplayName(
+                        newProductName.orEmpty(),
+                        DISPLAY_NAME_MAX_LENGTH,
+                        fieldLabel = "New product name",
+                    ),
+                )
             }
             if (quantityAmount <= 0.0) add("Quantity amount must be greater than zero")
             if (brandOrNote != null && brandOrNote.length > MAX_NOTE_LENGTH) {

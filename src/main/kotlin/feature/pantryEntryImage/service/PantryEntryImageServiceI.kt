@@ -21,7 +21,10 @@ import com.shelflife.feature.pantryEntryImage.domain.model.PantryEntryImagePolic
 import com.shelflife.feature.sync.domain.SyncService
 import com.shelflife.feature.sync.domain.model.SyncEntityType
 import com.shelflife.feature.sync.domain.model.SyncOperation
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.util.UUID
+
+private val logger = KotlinLogging.logger {}
 
 class PantryEntryImageServiceI(
     private val pantryEntryRepository: PantryEntryRepository,
@@ -50,6 +53,10 @@ class PantryEntryImageServiceI(
 
         val result =
             tx.transactional {
+                if (pantryEntryRepository.findByIdAndUserId(entryId, userId) == null) {
+                    return@transactional AppResult.Error(PantryEntryImageError.ENTRY_NOT_FOUND)
+                }
+
                 if (pantryEntryImageRepository.countByEntryId(entryId) >= policy.maxImagesPerEntry) {
                     return@transactional AppResult.Error(PantryEntryImageError.TOO_MANY_IMAGES)
                 }
@@ -80,16 +87,14 @@ class PantryEntryImageServiceI(
     private suspend fun checkCanAddImage(
         userId: Int,
         entryId: Int,
-    ): PantryEntryImageError? {
-        if (pantryEntryRepository.findByIdAndUserId(entryId, userId) == null) {
-            return PantryEntryImageError.ENTRY_NOT_FOUND
-        }
+    ): PantryEntryImageError? =
+        when {
+            pantryEntryRepository.findByIdAndUserId(entryId, userId) == null -> PantryEntryImageError.ENTRY_NOT_FOUND
+            pantryEntryImageRepository.countByEntryId(entryId) >= policy.maxImagesPerEntry ->
+                PantryEntryImageError.TOO_MANY_IMAGES
 
-        if (pantryEntryImageRepository.countByEntryId(entryId) >= policy.maxImagesPerEntry) {
-            return PantryEntryImageError.TOO_MANY_IMAGES
+            else -> null
         }
-        return null
-    }
 
     override suspend fun replaceImage(
         userId: Int,
@@ -253,7 +258,10 @@ class PantryEntryImageServiceI(
                 onSuccess = { bytes ->
                     bytes?.let { AppResult.Success(it) } ?: AppResult.Error(PantryEntryImageError.NOT_FOUND)
                 },
-                onFailure = { AppResult.Error(PantryEntryImageError.STORAGE_UNAVAILABLE) },
+                onFailure = {
+                    logger.error(it) { "Failed to read image at storageKey=$storageKey" }
+                    AppResult.Error(PantryEntryImageError.STORAGE_UNAVAILABLE)
+                },
             )
 
     private suspend fun sanitizeAndStore(
@@ -277,7 +285,13 @@ class PantryEntryImageServiceI(
         bytes: ByteArray,
     ): PantryEntryImageError? =
         runSuspendCatching { imageStorage.store(key, bytes) }
-            .fold(onSuccess = { null }, onFailure = { PantryEntryImageError.STORAGE_UNAVAILABLE })
+            .fold(
+                onSuccess = { null },
+                onFailure = {
+                    logger.error(it) { "Failed to store image at storageKey=$key" }
+                    PantryEntryImageError.STORAGE_UNAVAILABLE
+                },
+            )
 
     private suspend fun scanAndSanitize(rawBytes: ByteArray): AppResult<SanitizedImage, PantryEntryImageError> {
         scanForMalware(rawBytes)?.let { return AppResult.Error(it) }

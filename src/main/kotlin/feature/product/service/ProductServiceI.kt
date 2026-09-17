@@ -7,7 +7,7 @@ import com.shelflife.feature.product.domain.ProductService
 import com.shelflife.feature.product.domain.model.Product
 import com.shelflife.feature.product.domain.model.ProductError
 import com.shelflife.feature.product.domain.model.RenameOutcome
-import com.shelflife.feature.product.domain.model.UnitCategory
+import com.shelflife.feature.quantityUnit.domain.model.UnitCategory
 import com.shelflife.feature.sync.domain.SyncService
 import com.shelflife.feature.sync.domain.model.SyncEntityType
 import com.shelflife.feature.sync.domain.model.SyncOperation
@@ -48,14 +48,16 @@ class ProductServiceI(
         defaultUnitCategory: UnitCategory?,
         originDeviceId: String?,
     ): AppResult<Product, ProductError> {
+        val normalizedName = name.trim()
+
         val created =
             tx.transactional {
-                if (productRepository.findGlobalByName(name) != null) return@transactional null
+                if (productRepository.findGlobalByName(normalizedName) != null) return@transactional null
 
                 productRepository
                     .createPrivate(
                         userId = userId,
-                        name = name,
+                        name = normalizedName,
                         defaultLifespanDays = defaultLifespanDays,
                         defaultUnitCategory = defaultUnitCategory,
                     )?.also {
@@ -78,15 +80,17 @@ class ProductServiceI(
         newName: String,
         originDeviceId: String?,
     ): AppResult<Product, ProductError> {
+        val normalizedName = newName.trim()
+
         val outcome =
             tx.transactional {
                 if (!productRepository.existsOwnedBy(userId, productId)) return@transactional RenameOutcome.NotFound
 
-                if (productRepository.findGlobalByName(newName) != null) {
+                if (productRepository.findGlobalByName(normalizedName) != null) {
                     return@transactional RenameOutcome.DuplicateName
                 }
 
-                productRepository.renamePrivate(userId, productId, newName).also { renamed ->
+                productRepository.renamePrivate(userId, productId, normalizedName).also { renamed ->
                     if (renamed is RenameOutcome.Renamed) {
                         syncService.recordChange(
                             userId,

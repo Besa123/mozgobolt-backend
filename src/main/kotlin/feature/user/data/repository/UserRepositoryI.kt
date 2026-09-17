@@ -19,11 +19,14 @@ import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.plus
 import org.jetbrains.exposed.v1.jdbc.update
 import java.time.Instant
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
 import kotlin.time.toJavaDuration
 
 @Suppress("TooManyFunctions")
-class UserRepositoryI : UserRepository {
+class UserRepositoryI(
+    private val refreshTokenExpiration: Duration = DEFAULT_REFRESH_TOKEN_EXPIRATION,
+) : UserRepository {
     override suspend fun findUser(email: String): User? =
         UserEntity.find { UsersTable.email eq email }.firstOrNull()?.toUser()
 
@@ -59,7 +62,7 @@ class UserRepositoryI : UserRepository {
             this.token = token
             this.familyId = familyId
             this.createdAt = now
-            this.expiresAt = now.plus(REFRESH_TOKEN_DURATION.toJavaDuration())
+            this.expiresAt = now.plus(refreshTokenExpiration.toJavaDuration())
         }
     }
 
@@ -116,7 +119,6 @@ class UserRepositoryI : UserRepository {
     }
 
     override suspend fun revokeTokenFamily(familyId: String) {
-        if (familyId.isBlank()) return
         RefreshTokensTable.update(
             where = { RefreshTokensTable.familyId eq familyId },
         ) {
@@ -132,9 +134,12 @@ class UserRepositoryI : UserRepository {
         }
     }
 
-    override suspend fun revokeSpecificRefreshToken(token: String) {
+    override suspend fun revokeSpecificRefreshToken(
+        userId: Int,
+        token: String,
+    ) {
         RefreshTokensTable.update(
-            where = { RefreshTokensTable.token eq token },
+            where = { (RefreshTokensTable.userId eq userId) and (RefreshTokensTable.token eq token) },
         ) {
             it[isRevoked] = true
         }
@@ -167,12 +172,17 @@ class UserRepositoryI : UserRepository {
                 )
             }
 
-    override suspend fun markTokenUsed(tokenId: Int) {
-        EmailVerificationTokensTable.update(
-            where = { EmailVerificationTokensTable.id eq tokenId },
-        ) {
-            it[used] = true
-        }
+    override suspend fun markTokenUsed(tokenId: Int): Boolean {
+        val updated =
+            EmailVerificationTokensTable.update(
+                where = {
+                    (EmailVerificationTokensTable.id eq tokenId) and
+                        (EmailVerificationTokensTable.used eq false)
+                },
+            ) {
+                it[used] = true
+            }
+        return updated > 0
     }
 
     override suspend fun markEmailVerified(userId: Int) {
@@ -253,6 +263,6 @@ class UserRepositoryI : UserRepository {
     }
 
     companion object {
-        private val REFRESH_TOKEN_DURATION = 30.days
+        private val DEFAULT_REFRESH_TOKEN_EXPIRATION = 30.days
     }
 }

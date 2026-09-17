@@ -1,7 +1,7 @@
 package com.shelflife.feature.quantityUnit.service
 
-import com.shelflife.feature.product.domain.model.UnitCategory
 import com.shelflife.feature.quantityUnit.domain.model.QuantityUnit
+import com.shelflife.feature.quantityUnit.domain.model.UnitCategory
 import kotlinx.coroutines.runBlocking
 import java.math.BigDecimal
 import kotlin.test.Test

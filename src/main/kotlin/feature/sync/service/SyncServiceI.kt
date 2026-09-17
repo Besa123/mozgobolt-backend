@@ -33,8 +33,6 @@ class SyncServiceI(
     ): SyncPage {
         val clampedLimit = (limit ?: DEFAULT_PAGE_SIZE).coerceIn(1, MAX_PAGE_SIZE)
 
-        val events = tx.transactional { syncRepository.findSince(userId, cursor, clampedLimit) }
-
-        return SyncPage(events = events, nextCursor = events.lastOrNull()?.id ?: cursor)
+        return tx.transactional { syncRepository.findSince(userId, cursor, clampedLimit) }
     }
 }

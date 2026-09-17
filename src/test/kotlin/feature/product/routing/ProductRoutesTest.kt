@@ -5,8 +5,8 @@ import com.shelflife.core.domain.AppResult
 import com.shelflife.core.testAccessTokenFor
 import com.shelflife.feature.product.domain.model.Product
 import com.shelflife.feature.product.domain.model.ProductError
-import com.shelflife.feature.product.domain.model.UnitCategory
 import com.shelflife.feature.product.routing.dto.response.ProductResponseDto
+import com.shelflife.feature.quantityUnit.domain.model.UnitCategory
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
 import io.ktor.client.request.header

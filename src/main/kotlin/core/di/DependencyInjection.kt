@@ -40,6 +40,7 @@ import io.ktor.server.config.property
 import io.ktor.server.plugins.di.dependencies
 import io.ktor.server.plugins.di.provide
 import javax.sql.DataSource
+import kotlin.time.Duration.Companion.minutes
 
 private const val PRODUCTION_ENVIRONMENT = "production"
 
@@ -74,6 +75,8 @@ fun Application.configureDependencyInjection() {
                 secret = appConfig.jwt.secret,
                 issuer = appConfig.jwt.issuer,
                 audience = appConfig.jwt.audience,
+                accessTokenExpiration = appConfig.jwt.accessTokenExpiration.minutes,
+                refreshTokenExpiration = appConfig.jwt.refreshTokenExpiration.minutes,
             )
         provide<TokenManager> { jwtTokenManager }
         provide<JWTVerifier> { jwtTokenManager.accessTokenVerifier }
@@ -83,10 +86,6 @@ fun Application.configureDependencyInjection() {
                 when {
                     appConfig.email.resendApiKey.isNotBlank() -> ResendEmailService(appConfig) as EmailService
                     runtimeEnvironment == PRODUCTION_ENVIRONMENT ->
-                        // LoggingEmailService logs raw verification/password-reset tokens — acceptable for
-                        // local development only. Never allow it to activate silently in production because
-                        // a deploy forgot to set RESEND_API_KEY: that would leak account-takeover tokens
-                        // straight into production logs.
                         error(
                             "RESEND_API_KEY must be set in production — refusing to fall back to " +
                                 "LoggingEmailService, which logs raw tokens.",

@@ -5,6 +5,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
+import com.shelflife.core.domain.security.PasswordPolicy.MAX_LENGTH as MAX_PASSWORD_LENGTH
 
 class PasswordServiceImplTest {
     private val service = PasswordServiceImpl(pepper = "unit-test-pepper")
@@ -41,7 +42,7 @@ class PasswordServiceImplTest {
 
     @Test
     fun `hashing a password over the max length is rejected`() {
-        val tooLong = "a".repeat(PasswordServiceImpl.MAX_PASSWORD_LENGTH + 1)
+        val tooLong = "a".repeat(MAX_PASSWORD_LENGTH + 1)
 
         assertFailsWith<IllegalArgumentException> { service.hashPassword(tooLong) }
     }
@@ -49,7 +50,7 @@ class PasswordServiceImplTest {
     @Test
     fun `verifying a password over the max length returns false instead of throwing`() {
         val hash = service.hashPassword("Correct-Horse-1")
-        val tooLong = "a".repeat(PasswordServiceImpl.MAX_PASSWORD_LENGTH + 1)
+        val tooLong = "a".repeat(MAX_PASSWORD_LENGTH + 1)
 
         assertFalse(service.verifyPassword(password = tooLong, hash = hash))
     }
@@ -63,7 +64,7 @@ class PasswordServiceImplTest {
 
     @Test
     fun `a password at exactly the max length round-trips`() {
-        val atLimit = "a".repeat(PasswordServiceImpl.MAX_PASSWORD_LENGTH)
+        val atLimit = "a".repeat(MAX_PASSWORD_LENGTH)
         val hash = service.hashPassword(atLimit)
 
         assertTrue(service.verifyPassword(password = atLimit, hash = hash))

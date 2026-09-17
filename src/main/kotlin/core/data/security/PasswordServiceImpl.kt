@@ -3,6 +3,7 @@ package com.shelflife.core.data.security
 import com.password4j.Argon2Function
 import com.password4j.Password
 import com.password4j.types.Argon2
+import com.shelflife.core.domain.security.PasswordPolicy
 import com.shelflife.core.domain.security.PasswordService
 import io.github.oshai.kotlinlogging.KotlinLogging
 
@@ -21,7 +22,7 @@ class PasswordServiceImpl(
         )
 
     override fun hashPassword(password: String): String {
-        require(password.length <= MAX_PASSWORD_LENGTH) { "Password too long" }
+        require(password.length <= PasswordPolicy.MAX_LENGTH) { "Password too long" }
 
         return Password
             .hash(password)
@@ -35,19 +36,17 @@ class PasswordServiceImpl(
         password: String,
         hash: String,
     ): Boolean =
-        password.length <= MAX_PASSWORD_LENGTH &&
+        password.length <= PasswordPolicy.MAX_LENGTH &&
             runCatching {
                 Password
                     .check(password, hash)
                     .addPepper(pepper)
                     .with(argon2)
-            }.getOrElse { error ->
+            }.onFailure { error ->
                 logger.warn(error) { "Password hash could not be parsed during verification" }
-                false
-            }
+            }.getOrDefault(false)
 
     companion object {
-        const val MAX_PASSWORD_LENGTH = 128
         private const val ARGON2_MEMORY_KB = 65_536
         private const val ARGON2_ITERATIONS = 3
         private const val ARGON2_PARALLELISM = 2

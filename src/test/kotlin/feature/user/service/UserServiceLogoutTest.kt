@@ -10,13 +10,13 @@ class UserServiceLogoutTest {
     fun `logging out revokes only the presented refresh token`() {
         runBlocking {
             val harness = newHarness()
-            harness.repository.seedVerifiedUser(email = "user@example.com", password = "Str0ngPass")
+            val user = harness.repository.seedVerifiedUser(email = "user@example.com", password = "Str0ngPass")
             val signIn =
                 harness.service
                     .signInUser(password = "Str0ngPass", email = "user@example.com")
                     .fold(onSuccess = { it }, onError = { fail("expected success but got $it") })
 
-            harness.service.logoutUser(signIn.refreshToken)
+            harness.service.logoutUser(userId = user.id, refreshToken = signIn.refreshToken)
 
             val result = harness.service.refreshToken(signIn.refreshToken)
             assertError(RefreshError.TOKEN_REUSE_DETECTED, result)
@@ -28,7 +28,7 @@ class UserServiceLogoutTest {
         runBlocking {
             val harness = newHarness()
 
-            harness.service.logoutUser("some-refresh-token-that-was-never-issued")
+            harness.service.logoutUser(userId = 1, refreshToken = "some-refresh-token-that-was-never-issued")
         }
     }
 

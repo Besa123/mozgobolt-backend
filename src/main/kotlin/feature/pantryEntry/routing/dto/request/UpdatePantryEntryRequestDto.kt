@@ -4,15 +4,6 @@ import com.shelflife.core.domain.validation.ValidatedRequest
 import com.shelflife.core.domain.validation.isValidIsoDate
 import kotlinx.serialization.Serializable
 
-private const val MAX_NOTE_LENGTH = 255
-
-/**
- * Full-state PATCH, not a sparse delta: the client always resends every editable field, including
- * ones it isn't intentionally changing. `storageLocationId: null` unambiguously means "no
- * location" — there is no separate "field omitted" case to distinguish (kotlinx.serialization
- * can't tell "absent" from "sent as null" for a nullable field anyway). `quantityAmount <= 0`
- * deletes the row instead of updating it — see decision 3, docs/domain/pantry.md.
- */
 @Serializable
 data class UpdatePantryEntryRequestDto(
     val storageLocationId: Int? = null,

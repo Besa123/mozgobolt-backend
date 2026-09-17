@@ -4,8 +4,8 @@ import com.shelflife.core.configureTestEnvironment
 import com.shelflife.core.installTestModules
 import com.shelflife.core.routing.apiV1
 import com.shelflife.core.testAccessTokenFor
-import com.shelflife.feature.product.domain.model.UnitCategory
 import com.shelflife.feature.quantityUnit.domain.model.QuantityUnit
+import com.shelflife.feature.quantityUnit.domain.model.UnitCategory
 import com.shelflife.feature.quantityUnit.routing.dto.response.QuantityUnitResponseDto
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get

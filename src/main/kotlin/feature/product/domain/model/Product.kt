@@ -1,5 +1,7 @@
 package com.shelflife.feature.product.domain.model
 
+import com.shelflife.feature.quantityUnit.domain.model.UnitCategory
+
 data class Product(
     val id: Int,
     val name: String,

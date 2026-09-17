@@ -4,7 +4,7 @@ import com.shelflife.core.domain.AppResult
 import com.shelflife.feature.product.domain.ProductService
 import com.shelflife.feature.product.domain.model.Product
 import com.shelflife.feature.product.domain.model.ProductError
-import com.shelflife.feature.product.domain.model.UnitCategory
+import com.shelflife.feature.quantityUnit.domain.model.UnitCategory
 
 class FakeProductService : ProductService {
     data class CreateCall(

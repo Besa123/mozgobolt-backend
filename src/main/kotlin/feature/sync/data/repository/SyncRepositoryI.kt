@@ -6,6 +6,7 @@ import com.shelflife.feature.sync.domain.SyncRepository
 import com.shelflife.feature.sync.domain.model.SyncEntityType
 import com.shelflife.feature.sync.domain.model.SyncEvent
 import com.shelflife.feature.sync.domain.model.SyncOperation
+import com.shelflife.feature.sync.domain.model.SyncPage
 import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.VarCharColumnType
 import org.jetbrains.exposed.v1.core.and
@@ -63,11 +64,18 @@ class SyncRepositoryI : SyncRepository {
         userId: Int,
         cursor: Long,
         limit: Int,
-    ): List<SyncEvent> =
-        SyncEventsTable
-            .selectAll()
-            .where { (SyncEventsTable.userId eq userId) and (SyncEventsTable.id greater cursor) }
-            .orderBy(SyncEventsTable.id to SortOrder.ASC)
-            .limit(limit)
-            .map { it.toSyncEvent() }
+    ): SyncPage {
+        val rows =
+            SyncEventsTable
+                .selectAll()
+                .where { (SyncEventsTable.userId eq userId) and (SyncEventsTable.id greater cursor) }
+                .orderBy(SyncEventsTable.id to SortOrder.ASC)
+                .limit(limit)
+                .toList()
+
+        val nextCursor = rows.maxOfOrNull { it[SyncEventsTable.id] } ?: cursor
+        val events = rows.mapNotNull { it.toSyncEvent() }
+
+        return SyncPage(events = events, nextCursor = nextCursor)
+    }
 }

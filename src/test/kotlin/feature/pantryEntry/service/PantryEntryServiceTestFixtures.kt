@@ -7,11 +7,11 @@ import com.shelflife.feature.pantryEntry.domain.PantryEntryRepository
 import com.shelflife.feature.pantryEntry.domain.model.PantryEntry
 import com.shelflife.feature.pantryEntry.domain.model.PantryEntryFields
 import com.shelflife.feature.pantryEntry.domain.model.PantryEntryPage
-import com.shelflife.feature.product.domain.model.UnitCategory
 import com.shelflife.feature.product.service.FakeProductRepository
 import com.shelflife.feature.product.service.ProductServiceI
 import com.shelflife.feature.quantityUnit.domain.QuantityUnitRepository
 import com.shelflife.feature.quantityUnit.domain.model.QuantityUnit
+import com.shelflife.feature.quantityUnit.domain.model.UnitCategory
 import com.shelflife.feature.storageLocation.service.FakeStorageLocationRepository
 import com.shelflife.feature.sync.service.NoOpSyncService
 import java.math.BigDecimal

@@ -1,6 +1,6 @@
 package com.shelflife.feature.pantryEntry.domain.model
 
-import com.shelflife.feature.product.domain.model.UnitCategory
+import com.shelflife.feature.quantityUnit.domain.model.UnitCategory
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate

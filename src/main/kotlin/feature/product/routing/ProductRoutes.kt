@@ -3,6 +3,7 @@ package com.shelflife.feature.product.routing
 import com.shelflife.core.data.idempotency.IdempotencyStore
 import com.shelflife.core.data.idempotency.idempotent
 import com.shelflife.core.data.idempotency.idempotentResult
+import com.shelflife.core.domain.validation.DISPLAY_NAME_MAX_LENGTH
 import com.shelflife.core.modules.plugin.BodyLimit
 import com.shelflife.core.modules.plugin.RequestTimeout
 import com.shelflife.core.modules.plugin.validatedPatch
@@ -30,6 +31,9 @@ fun Route.productRoutes(
         get("/products/search") {
             val userId = call.currentUserIdOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
             val query = call.request.queryParameters["q"].orEmpty()
+            if (query.length > DISPLAY_NAME_MAX_LENGTH) {
+                return@get call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = "QUERY_TOO_LONG"))
+            }
 
             val results = productService.search(userId = userId, query = query)
             call.respond(HttpStatusCode.OK, results.map { it.toResponseDto() })

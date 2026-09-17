@@ -36,9 +36,6 @@ class StorageLocationRepositoryI : StorageLocationRepository {
         userId: Int,
         name: String,
     ): StorageLocation? {
-        // insertIgnore relies on the DB's uq_user_location_name constraint to no-op on a
-        // collision, so this is race-safe without a separate pre-check-then-insert step —
-        // mirrors ProductRepositoryI.createPrivate.
         val inserted =
             StorageLocationsTable
                 .insertIgnore {
@@ -68,10 +65,6 @@ class StorageLocationRepositoryI : StorageLocationRepository {
                     it[StorageLocationsTable.name] = name
                 }
             } catch (e: ExposedSQLException) {
-                // No "updateIgnore" exists in Exposed, so the real unique-violation SQLState is
-                // caught directly here — mirrors ProductRepositoryI.renamePrivate. Renaming to the
-                // row's own current name is not a violation (a row never conflicts with itself),
-                // so this only fires for an actual collision with another row.
                 if (e.sqlState == POSTGRES_UNIQUE_VIOLATION_SQL_STATE) return RenameLocationOutcome.DuplicateName
                 throw e
             }

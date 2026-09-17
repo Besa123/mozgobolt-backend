@@ -159,21 +159,10 @@ private fun Route.authPublicRoutes(
                 BodyLimit.TINY,
                 RequestTimeout.FAST,
             ) { request ->
-                userService.requestPasswordReset(request.email).fold(
-                    onSuccess = {
-                        call.respond(
-                            HttpStatusCode.OK,
-                            MessageResponseDto("If an account exists, a password reset link has been sent."),
-                        )
-                    },
-                    onError = { error ->
-                        val status =
-                            when (error) {
-                                PasswordResetError.ACCOUNT_LOCKED -> HttpStatusCode.TooManyRequests
-                                else -> HttpStatusCode.BadRequest
-                            }
-                        call.respond(status, ErrorResponse(error = error.name))
-                    },
+                userService.requestPasswordReset(request.email)
+                call.respond(
+                    HttpStatusCode.OK,
+                    MessageResponseDto("If an account exists, a password reset link has been sent."),
                 )
             }
 
@@ -231,7 +220,11 @@ private fun Route.authProtectedRoutes(userService: UserService) {
     protectedApi {
         route("/auth") {
             validatedPost<LogoutRequestDto>("/logout", BodyLimit.SMALL, RequestTimeout.FAST) { request ->
-                userService.logoutUser(refreshToken = request.refreshToken)
+                val userId =
+                    call.currentUserIdOrNull()
+                        ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
+
+                userService.logoutUser(userId = userId, refreshToken = request.refreshToken)
                 call.respond(HttpStatusCode.OK)
             }
 

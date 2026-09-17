@@ -1,12 +1,8 @@
 package com.shelflife.core.domain.validation
 
 private val INVALID_CHARACTERS = Regex("[<>\"'&;]")
+const val DISPLAY_NAME_MAX_LENGTH = 100
 
-/**
- * Shared rules for a user-supplied display name (user name, product name, ...): required,
- * length-bounded, no leading/trailing whitespace, no markup-like characters. [fieldLabel] is
- * capitalized as it appears in the returned messages, e.g. "Name is required".
- */
 fun validateDisplayName(
     name: String,
     maxLength: Int,

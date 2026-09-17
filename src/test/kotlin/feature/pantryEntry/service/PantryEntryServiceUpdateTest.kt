@@ -3,7 +3,7 @@ package com.shelflife.feature.pantryEntry.service
 import com.shelflife.core.domain.AppResult
 import com.shelflife.feature.pantryEntry.domain.model.PantryEntryError
 import com.shelflife.feature.pantryEntry.domain.model.UpdateEntryOutcome
-import com.shelflife.feature.product.domain.model.UnitCategory
+import com.shelflife.feature.quantityUnit.domain.model.UnitCategory
 import kotlinx.coroutines.runBlocking
 import java.math.BigDecimal
 import kotlin.test.Test

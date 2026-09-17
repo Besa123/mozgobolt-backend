@@ -11,18 +11,8 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
-/**
- * Triggers a reset and returns the token that was actually emailed. `requestPasswordReset` itself
- * only returns `AppResult<Unit, _>` (the raw token is never handed back through the service's public
- * API — it would otherwise be a live secret returned to a caller with no legitimate use for it); the
- * token is observable only via the recording fake's captured outbound email, exactly as a real
- * caller could only ever observe it by receiving the actual email.
- */
 private suspend fun Harness.requestPasswordResetToken(email: String): String {
-    service.requestPasswordReset(email).fold(
-        onSuccess = {},
-        onError = { fail("expected success but got $it") },
-    )
+    service.requestPasswordReset(email)
     return emailService.sentPasswordResetTokens.last().second
 }
 
@@ -34,9 +24,8 @@ class UserServicePasswordResetTest {
         runBlocking {
             val harness = newHarness()
 
-            val result = harness.service.requestPasswordReset("nobody@example.com")
+            harness.service.requestPasswordReset("nobody@example.com")
 
-            result.fold(onSuccess = {}, onError = { fail("expected success but got $it") })
             assertTrue(harness.emailService.sentPasswordResetTokens.isEmpty())
         }
     }
@@ -48,9 +37,8 @@ class UserServicePasswordResetTest {
             val user = harness.repository.seedVerifiedUser(email = "user@example.com", password = "Str0ngPass1")
             harness.repository.recordFailedLogin(user.id, lockUntil = Instant.now().plusSeconds(3600))
 
-            val result = harness.service.requestPasswordReset("user@example.com")
+            harness.service.requestPasswordReset("user@example.com")
 
-            result.fold(onSuccess = {}, onError = { fail("expected success but got $it") })
             assertTrue(harness.emailService.sentPasswordResetTokens.isEmpty())
         }
     }

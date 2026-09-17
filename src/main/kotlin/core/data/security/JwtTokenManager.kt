@@ -9,6 +9,7 @@ import com.shelflife.core.domain.security.TokenManager
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.toJavaDuration
@@ -17,6 +18,8 @@ class JwtTokenManager(
     secret: String,
     private val audience: String,
     private val issuer: String,
+    private val accessTokenExpiration: Duration = DEFAULT_ACCESS_TOKEN_EXPIRATION,
+    private val refreshTokenExpiration: Duration = DEFAULT_REFRESH_TOKEN_EXPIRATION,
 ) : TokenManager {
     private val algorithm = Algorithm.HMAC256(secret)
 
@@ -39,7 +42,7 @@ class JwtTokenManager(
     }
 
     override fun generateAccessToken(userId: Int): String {
-        val expirationDate = Instant.now().plus(ACCESS_TOKEN_EXPIRATION.toJavaDuration())
+        val expirationDate = Instant.now().plus(accessTokenExpiration.toJavaDuration())
 
         return JWT
             .create()
@@ -53,7 +56,7 @@ class JwtTokenManager(
     }
 
     override fun generateRefreshToken(userId: Int): String {
-        val expirationDate = Instant.now().plus(REFRESH_TOKEN_EXPIRATION.toJavaDuration())
+        val expirationDate = Instant.now().plus(refreshTokenExpiration.toJavaDuration())
 
         return JWT
             .create()
@@ -80,7 +83,7 @@ class JwtTokenManager(
     }
 
     companion object {
-        private val ACCESS_TOKEN_EXPIRATION = 15.minutes
-        private val REFRESH_TOKEN_EXPIRATION = 30.days
+        private val DEFAULT_ACCESS_TOKEN_EXPIRATION = 15.minutes
+        private val DEFAULT_REFRESH_TOKEN_EXPIRATION = 30.days
     }
 }

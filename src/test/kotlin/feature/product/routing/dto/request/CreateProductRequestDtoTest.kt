@@ -1,6 +1,6 @@
 package com.shelflife.feature.product.routing.dto.request
 
-import com.shelflife.feature.product.domain.model.UnitCategory
+import com.shelflife.feature.quantityUnit.domain.model.UnitCategory
 import kotlin.test.Test
 import kotlin.test.assertTrue
 

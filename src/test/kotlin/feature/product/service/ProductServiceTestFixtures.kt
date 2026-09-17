@@ -4,7 +4,7 @@ import com.shelflife.core.database.TransactionalRunner
 import com.shelflife.feature.product.domain.ProductRepository
 import com.shelflife.feature.product.domain.model.Product
 import com.shelflife.feature.product.domain.model.RenameOutcome
-import com.shelflife.feature.product.domain.model.UnitCategory
+import com.shelflife.feature.quantityUnit.domain.model.UnitCategory
 import com.shelflife.feature.sync.service.NoOpSyncService
 
 data class Harness(

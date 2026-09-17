@@ -36,9 +36,8 @@ yet). A PR that fails ktlint, detekt, or tests will not merge.
 
 ## Code conventions & security rules
 
-[CLAUDE.md](CLAUDE.md) is the canonical, full rule set for both AI-assisted and human contributions (layout,
-results-over-exceptions, interface-first naming, route/validation helpers, security non-negotiables, rate limits,
-etc.) — read it before writing code. [ARCHITECTURE.md](ARCHITECTURE.md) explains the reasoning behind those rules.
+[CLAUDE.md](CLAUDE.md) is the canonical rule set for both AI-assisted and human contributions — read it before writing
+code. [ARCHITECTURE.md](ARCHITECTURE.md) explains the reasoning behind those rules.
 
 ## Commit & PR style
 

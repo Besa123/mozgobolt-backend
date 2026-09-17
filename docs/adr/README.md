@@ -22,10 +22,13 @@ category or a change to the auth model does.
 
 ## Index
 
-| #                                                          | Title                                                | Status   |
-|------------------------------------------------------------|------------------------------------------------------|----------|
-| [0001](0001-record-architecture-decisions.md)              | Record architecture decisions                        | Accepted |
-| [0002](0002-feature-based-clean-architecture.md)           | Feature-based Clean Architecture layout              | Accepted |
-| [0003](0003-results-over-exceptions-for-business-logic.md) | `AppResult<T, E>` over exceptions for business logic | Accepted |
-| [0004](0004-refresh-token-family-rotation.md)              | Refresh-token family rotation with theft detection   | Accepted |
-| [0005](0005-resilience4j-for-external-calls.md)            | Resilience4j for external API calls                  | Accepted |
+| #                                                           | Title                                                 | Status   |
+|-------------------------------------------------------------|-------------------------------------------------------|----------|
+| [0001](0001-record-architecture-decisions.md)               | Record architecture decisions                         | Accepted |
+| [0002](0002-feature-based-clean-architecture.md)            | Feature-based Clean Architecture layout               | Accepted |
+| [0003](0003-results-over-exceptions-for-business-logic.md)  | `AppResult<T, E>` over exceptions for business logic  | Accepted |
+| [0004](0004-refresh-token-family-rotation.md)               | Refresh-token family rotation with theft detection    | Accepted |
+| [0005](0005-resilience4j-for-external-calls.md)             | Resilience4j for external API calls                   | Accepted |
+| [0006](0006-multi-device-sync-outbox-and-cursor-pull.md)    | Multi-device sync: outbox + cursor pull + NOTIFY hint | Accepted |
+| [0007](0007-pantry-entry-image-storage-and-sanitization.md) | Pantry entry image storage and sanitization           | Accepted |
+| [0008](0008-r2-object-storage-for-pantry-entry-images.md)   | Cloudflare R2 as the image storage backend            | Accepted |

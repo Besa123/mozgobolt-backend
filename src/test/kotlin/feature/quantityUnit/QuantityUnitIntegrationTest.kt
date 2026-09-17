@@ -1,7 +1,7 @@
 package com.shelflife.feature.quantityUnit
 
 import com.shelflife.core.skipIfNoDocker
-import com.shelflife.feature.product.domain.model.UnitCategory
+import com.shelflife.feature.quantityUnit.domain.model.UnitCategory
 import java.math.BigDecimal
 import kotlin.test.Test
 import kotlin.test.assertEquals

@@ -1,14 +1,13 @@
 package com.shelflife.feature.storageLocation.routing.dto.request
 
+import com.shelflife.core.domain.validation.DISPLAY_NAME_MAX_LENGTH
 import com.shelflife.core.domain.validation.ValidatedRequest
 import com.shelflife.core.domain.validation.validateDisplayName
 import kotlinx.serialization.Serializable
-
-private const val MAX_NAME_LENGTH = 100
 
 @Serializable
 data class CreateStorageLocationRequestDto(
     val name: String,
 ) : ValidatedRequest {
-    override fun validate() = validateDisplayName(name, MAX_NAME_LENGTH)
+    override fun validate() = validateDisplayName(name, DISPLAY_NAME_MAX_LENGTH)
 }

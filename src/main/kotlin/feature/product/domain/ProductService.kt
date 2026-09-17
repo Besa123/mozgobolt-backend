@@ -3,7 +3,7 @@ package com.shelflife.feature.product.domain
 import com.shelflife.core.domain.AppResult
 import com.shelflife.feature.product.domain.model.Product
 import com.shelflife.feature.product.domain.model.ProductError
-import com.shelflife.feature.product.domain.model.UnitCategory
+import com.shelflife.feature.quantityUnit.domain.model.UnitCategory
 
 interface ProductService {
     suspend fun search(

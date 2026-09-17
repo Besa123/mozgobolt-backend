@@ -215,8 +215,11 @@ class FakeUserRepository : UserRepository {
         revokeWhere { it.userId == userId }
     }
 
-    override suspend fun revokeSpecificRefreshToken(token: String) {
-        revokeWhere { it.token == token }
+    override suspend fun revokeSpecificRefreshToken(
+        userId: Int,
+        token: String,
+    ) {
+        revokeWhere { it.userId == userId && it.token == token }
     }
 
     private fun revokeWhere(predicate: (RefreshTokenRecord) -> Boolean) {
@@ -237,9 +240,11 @@ class FakeUserRepository : UserRepository {
     override suspend fun findVerificationToken(token: String): VerificationTokenRecord? =
         verificationTokens.values.find { it.token == token }
 
-    override suspend fun markTokenUsed(tokenId: Int) {
-        val record = verificationTokens[tokenId] ?: return
+    override suspend fun markTokenUsed(tokenId: Int): Boolean {
+        val record = verificationTokens[tokenId] ?: return false
+        if (record.used) return false
         verificationTokens[tokenId] = record.copy(used = true)
+        return true
     }
 
     override suspend fun markEmailVerified(userId: Int) {

@@ -23,7 +23,10 @@ class LogoutRouteTest {
                 }
 
             assertEquals(HttpStatusCode.OK, response.status)
-            assertEquals(listOf("some-refresh-token"), userService.logoutUserCalls)
+            assertEquals(
+                listOf(FakeUserService.LogoutCall(userId = 1, refreshToken = "some-refresh-token")),
+                userService.logoutUserCalls,
+            )
         }
 
     @Test
