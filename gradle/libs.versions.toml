@@ -19,6 +19,8 @@ thumbnailator = "0.4.21"
 clamav-client = "2.1.2"
 aws-sdk = "2.54.16"
 s3mock-testcontainers = "5.2.0"
+sentry = "8.57.0"
+sentry-gradle-plugin = "6.22.0"
 
 [libraries]
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
@@ -48,6 +50,7 @@ clamav-client = { module = "xyz.capybara:clamav-client", version.ref = "clamav-c
 aws-sdk-s3 = { module = "software.amazon.awssdk:s3", version.ref = "aws-sdk" }
 aws-sdk-url-connection-client = { module = "software.amazon.awssdk:url-connection-client", version.ref = "aws-sdk" }
 s3mock-testcontainers = { module = "com.adobe.testing:s3mock-testcontainers", version.ref = "s3mock-testcontainers" }
+sentry-logback = { module = "io.sentry:sentry-logback", version.ref = "sentry" }
 
 [plugins]
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
@@ -55,3 +58,4 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint-plugin" }
 detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
+sentry-gradle = { id = "io.sentry.jvm.gradle", version.ref = "sentry-gradle-plugin" }

@@ -49,7 +49,9 @@ use a streaming byte-count cap instead — see
 ## Observability
 
 Structured JSON logs (Logback/Logstash), request-correlated via `callId`. `/health` checks DB connectivity,
-`/ready` reports readiness (`feature/health/`). No metrics (Micrometer/Prometheus) or distributed tracing yet.
+`/ready` reports readiness (`feature/health/`). Error tracking: every `logger.error` becomes a Sentry issue when
+`SENTRY_DSN` is set (`core/modules/plugin/SentryConfig.kt`) — no-op, no code changes needed, when unset. No metrics
+(Micrometer/Prometheus) or distributed tracing yet.
 
 ## Known gaps
 

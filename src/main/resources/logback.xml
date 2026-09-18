@@ -74,6 +74,8 @@
         <discardingThreshold>0</discardingThreshold>
     </appender>
 
+    <appender name="SENTRY" class="io.sentry.logback.SentryAppender"/>
+
     <logger name="io.netty" level="WARN" />
     <logger name="io.ktor" level="INFO" />
     <logger name="org.jetbrains.exposed" level="WARN" />
@@ -86,6 +88,7 @@
             <root level="WARN">
                 <appender-ref ref="ASYNC_JSON_FILE" />
                 <appender-ref ref="ASYNC_ERROR_FILE" />
+                <appender-ref ref="SENTRY"/>
             </root>
         </then>
         <else>
@@ -94,6 +97,7 @@
                 <appender-ref ref="CONSOLE" />
                 <appender-ref ref="ASYNC_JSON_FILE" />
                 <appender-ref ref="ASYNC_ERROR_FILE" />
+                <appender-ref ref="SENTRY"/>
             </root>
         </else>
     </if>

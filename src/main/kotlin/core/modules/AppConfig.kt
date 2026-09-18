@@ -13,6 +13,7 @@ data class AppConfig(
     val media: Media = Media(),
     val clamAv: ClamAv = ClamAv(),
     val objectStorage: ObjectStorage = ObjectStorage(),
+    val sentry: Sentry = Sentry(),
 ) {
     @Serializable
     data class Database(
@@ -82,5 +83,10 @@ data class AppConfig(
         val region: String = "auto",
         val apiCallTimeoutMs: Long = 30_000,
         val apiCallAttemptTimeoutMs: Long = 10_000,
+    )
+
+    @Serializable
+    data class Sentry(
+        val dsn: String = "",
     )
 }

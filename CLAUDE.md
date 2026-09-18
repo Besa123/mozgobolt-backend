@@ -30,7 +30,8 @@ Idiomatic modern Kotlin, not Java-style. Clean Architecture, SOLID, DRY, YAGNI.
 ## Security — non-negotiable
 
 - Hash tokens (`tokenManager.hashTokenForStorage()`) before persisting; never store plaintext.
-- Never log passwords, raw tokens, emails, or credentials — user IDs only.
+- Never log passwords, raw tokens, emails, or credentials — user IDs only. Every `logger.error` also reaches Sentry when
+  configured, so this isn't just a local-file concern.
 - Errors: always `ErrorResponse`, never leak internals (stack traces, DB errors).
 - Secrets only from `AppConfig`/env vars — never hardcoded.
 - Rate limits via `protectedApi`/`publicRateLimitedApi`: `AUTH_LIMIT` 5/min, `API_LIMIT` 60/min, `UPLOAD_LIMIT`

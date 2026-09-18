@@ -22,6 +22,7 @@ import com.shelflife.feature.sync.domain.SyncService
 import com.shelflife.feature.sync.domain.model.SyncEntityType
 import com.shelflife.feature.sync.domain.model.SyncOperation
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException
 import java.util.UUID
 
 private val logger = KotlinLogging.logger {}
@@ -259,7 +260,7 @@ class PantryEntryImageServiceI(
                     bytes?.let { AppResult.Success(it) } ?: AppResult.Error(PantryEntryImageError.NOT_FOUND)
                 },
                 onFailure = {
-                    logger.error(it) { "Failed to read image at storageKey=$storageKey" }
+                    logStorageFailure(it, "read", storageKey)
                     AppResult.Error(PantryEntryImageError.STORAGE_UNAVAILABLE)
                 },
             )
@@ -288,10 +289,22 @@ class PantryEntryImageServiceI(
             .fold(
                 onSuccess = { null },
                 onFailure = {
-                    logger.error(it) { "Failed to store image at storageKey=$key" }
+                    logStorageFailure(it, "store", key)
                     PantryEntryImageError.STORAGE_UNAVAILABLE
                 },
             )
+
+    private fun logStorageFailure(
+        throwable: Throwable,
+        operation: String,
+        storageKey: String,
+    ) {
+        if (throwable is CallNotPermittedException) {
+            logger.warn(throwable) { "Image $operation skipped for storageKey=$storageKey — circuit open" }
+        } else {
+            logger.error(throwable) { "Failed to $operation image at storageKey=$storageKey" }
+        }
+    }
 
     private suspend fun scanAndSanitize(rawBytes: ByteArray): AppResult<SanitizedImage, PantryEntryImageError> {
         scanForMalware(rawBytes)?.let { return AppResult.Error(it) }

@@ -6,6 +6,7 @@ import com.shelflife.core.modules.plugin.ResilienceRegistry
 import com.shelflife.core.modules.plugin.withEmailResilience
 import com.shelflife.core.utility.functions.runSuspendCatching
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException
 
 private val logger = KotlinLogging.logger {}
 
@@ -20,8 +21,7 @@ class ResilientEmailService(
         withEmailResilience(resilience) {
             delegate.sendVerificationEmail(to, token)
         }
-    }.onFailure { logger.error(it) { "Email delivery failed for $to after retries and circuit-breaker" } }
-        .getOrThrow()
+    }.onFailure { logDeliveryFailure(it, to) }.getOrThrow()
 
     override suspend fun sendPasswordResetEmail(
         to: String,
@@ -30,6 +30,16 @@ class ResilientEmailService(
         withEmailResilience(resilience) {
             delegate.sendPasswordResetEmail(to, token)
         }
-    }.onFailure { logger.error(it) { "Email delivery failed for $to after retries and circuit-breaker" } }
-        .getOrThrow()
+    }.onFailure { logDeliveryFailure(it, to) }.getOrThrow()
+
+    private fun logDeliveryFailure(
+        throwable: Throwable,
+        to: String,
+    ) {
+        if (throwable is CallNotPermittedException) {
+            logger.warn(throwable) { "Email delivery skipped for $to — circuit open" }
+        } else {
+            logger.error(throwable) { "Email delivery failed for $to after retries and circuit-breaker" }
+        }
+    }
 }

@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ktlint)
     alias(libs.plugins.detekt)
+    alias(libs.plugins.sentry.gradle)
     jacoco
 }
 
@@ -66,6 +67,14 @@ jacoco {
     toolVersion = "0.8.13"
 }
 
+sentry {
+    val sentryAuthToken = readLocalSecret("SENTRY_AUTH_TOKEN")
+    includeSourceContext.set(!sentryAuthToken.isNullOrBlank())
+    org.set("molnar-balazs")
+    projectName.set("shelflife-backend")
+    authToken.set(sentryAuthToken)
+}
+
 tasks.test {
     finalizedBy(tasks.jacocoTestReport)
 }
@@ -103,6 +112,7 @@ dependencies {
     implementation(libs.kotlin.logging)
     implementation(libs.logstash.logback.encoder)
     implementation(libs.janino)
+    implementation(libs.sentry.logback)
     implementation(libs.exposed.core)
     implementation(libs.exposed.jdbc)
     implementation(libs.exposed.dao)
@@ -130,3 +140,17 @@ dependencies {
     testImplementation(libs.testcontainers.postgresql)
     testImplementation(libs.s3mock.testcontainers)
 }
+
+private fun readLocalSecret(key: String): String? =
+    System.getenv(key) ?: run {
+        val envFile = rootProject.file(".env")
+        if (!envFile.exists()) return@run null
+        envFile
+            .readLines()
+            .map { it.trim() }
+            .filterNot { it.isEmpty() || it.startsWith("#") }
+            .firstOrNull { it.startsWith("$key=") }
+            ?.substringAfter("=")
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }

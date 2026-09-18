@@ -4,6 +4,7 @@ import com.shelflife.core.data.email.TransientEmailDeliveryException
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig
+import io.github.resilience4j.circuitbreaker.event.CircuitBreakerOnStateTransitionEvent
 import io.github.resilience4j.core.IntervalFunction
 import io.github.resilience4j.kotlin.circuitbreaker.executeSuspendFunction
 import io.github.resilience4j.kotlin.retry.executeSuspendFunction
@@ -14,6 +15,18 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException
 import java.time.Duration
 
 private val logger = KotlinLogging.logger {}
+
+private fun logStateTransition(
+    dependencyName: String,
+    event: CircuitBreakerOnStateTransitionEvent,
+) {
+    val message = { "$dependencyName circuit-breaker: ${event.stateTransition}" }
+    if (event.stateTransition.toState == CircuitBreaker.State.OPEN) {
+        logger.error(message)
+    } else {
+        logger.warn(message)
+    }
+}
 
 class ResiliencePolicy(
     val circuitBreaker: CircuitBreaker,
@@ -65,9 +78,7 @@ object ResilienceRegistry {
                     .slidingWindowSize(20)
                     .build(),
             ).apply {
-                eventPublisher.onStateTransition { event ->
-                    logger.warn { "Email circuit-breaker: ${event.stateTransition}" }
-                }
+                eventPublisher.onStateTransition { event -> logStateTransition("Email", event) }
             }
 
     val email: ResiliencePolicy = ResiliencePolicy(emailCircuitBreaker, emailRetry)
@@ -102,9 +113,7 @@ object ResilienceRegistry {
                     .slidingWindowSize(10)
                     .build(),
             ).apply {
-                eventPublisher.onStateTransition { event ->
-                    logger.warn { "ClamAV circuit-breaker: ${event.stateTransition}" }
-                }
+                eventPublisher.onStateTransition { event -> logStateTransition("ClamAV", event) }
             }
 
     val clamAv: ResiliencePolicy = ResiliencePolicy(clamAvCircuitBreaker, clamAvRetry)
@@ -124,9 +133,7 @@ object ResilienceRegistry {
                     .ignoreExceptions(NoSuchKeyException::class.java)
                     .build(),
             ).apply {
-                eventPublisher.onStateTransition { event ->
-                    logger.warn { "S3 circuit-breaker: ${event.stateTransition}" }
-                }
+                eventPublisher.onStateTransition { event -> logStateTransition("S3", event) }
             }
 
     val s3: ResiliencePolicy = ResiliencePolicy(s3CircuitBreaker)
