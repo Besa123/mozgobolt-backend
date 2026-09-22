@@ -2,14 +2,12 @@
 
 Ktor backend, feature-based Clean Architecture: `core/` (cross-cutting infra only, no business logic) +
 `feature/<name>/{domain,data,service,routing,di}` per capability. Contributor rules: [CLAUDE.md](CLAUDE.md). Decision
-rationale: [docs/adr/](docs/adr/). Pantry domain specifics: [docs/domain/pantry.md](docs/domain/pantry.md).
+rationale: [docs/adr/](docs/adr/).
 
 ## Layout notes not obvious from the folders
 
-- `feature/user/` is the reference implementation of the full pattern; `feature/health/` is intentionally
-  `routing/`-only (no domain logic).
-- One exception to the per-feature layout: `product`/`storageLocation`/`quantityUnit`/`pantryEntry`'s Exposed tables all
-  live in `feature/product/data/database/` (FK/DAO relations) — see pantry.md decision 12.
+- `feature/user/` is the reference implementation of the full pattern (now also the home of role-gating —
+  `RoleGuard.kt`); `feature/health/` is intentionally `routing/`-only (no domain logic).
 - Rationale for feature-based over layer-based: [ADR 0002](docs/adr/0002-feature-based-clean-architecture.md).
 
 ## Request lifecycle

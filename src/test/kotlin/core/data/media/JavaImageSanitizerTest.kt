@@ -1,8 +1,8 @@
-package com.shelflife.core.data.media
+package com.mozgobolt.core.data.media
 
-import com.shelflife.core.domain.AppResult
-import com.shelflife.core.domain.media.ImageSanitizationError
-import com.shelflife.core.modules.AppConfig
+import com.mozgobolt.core.domain.AppResult
+import com.mozgobolt.core.domain.media.ImageSanitizationError
+import com.mozgobolt.core.modules.AppConfig
 import kotlinx.coroutines.runBlocking
 import java.awt.Color
 import java.awt.image.BufferedImage

@@ -1,6 +1,6 @@
-package com.shelflife.feature.user.routing.dto.request
+package com.mozgobolt.feature.user.routing.dto.request
 
-import com.shelflife.core.domain.validation.ValidatedRequest
+import com.mozgobolt.core.domain.validation.ValidatedRequest
 import kotlinx.serialization.Serializable
 
 @Serializable

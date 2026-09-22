@@ -1,7 +1,7 @@
-package com.shelflife.feature.health.routing
+package com.mozgobolt.feature.health.routing
 
-import com.shelflife.core.routing.dto.response.ErrorResponse
-import com.shelflife.core.utility.functions.runSuspendCatching
+import com.mozgobolt.core.routing.dto.response.ErrorResponse
+import com.mozgobolt.core.utility.functions.runSuspendCatching
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond

@@ -1,0 +1,10 @@
+services:
+  # Local cross-instance fanout for the real-time hubs — see REDIS_URL in .env.example. Not
+  # needed to run this app at all; only relevant once you're testing multi-instance behavior.
+  # Valkey (not Redis) on purpose: it's the still-fully-open-source (BSD), API-compatible fork
+  # maintained by the Linux Foundation, backed by AWS/Google/DigitalOcean/Aiven, after Redis
+  # Ltd. moved Redis itself to a source-available license in 2024.
+  redis:
+    image: valkey/valkey:8-alpine
+    ports:
+      - "6379:6379"

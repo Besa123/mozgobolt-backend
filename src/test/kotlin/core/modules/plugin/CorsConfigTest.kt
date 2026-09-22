@@ -1,6 +1,6 @@
-package com.shelflife.core.modules.plugin
+package com.mozgobolt.core.modules.plugin
 
-import com.shelflife.core.utility.functions.DEVICE_ID_HEADER
+import com.mozgobolt.core.utility.functions.DEVICE_ID_HEADER
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.options

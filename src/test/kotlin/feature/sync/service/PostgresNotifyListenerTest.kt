@@ -1,7 +1,7 @@
-package com.shelflife.feature.sync.service
+package com.mozgobolt.feature.sync.service
 
-import com.shelflife.core.skipIfNoDocker
-import com.shelflife.feature.sync.data.repository.SYNC_NOTIFY_CHANNEL
+import com.mozgobolt.core.skipIfNoDocker
+import com.mozgobolt.feature.sync.data.repository.SYNC_NOTIFY_CHANNEL
 import io.github.resilience4j.core.IntervalFunction
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope

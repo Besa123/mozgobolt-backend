@@ -1,6 +1,6 @@
-package com.shelflife.core.domain.media
+package com.mozgobolt.core.domain.media
 
-import com.shelflife.core.domain.AppResult
+import com.mozgobolt.core.domain.AppResult
 
 @Suppress("UseDataClass")
 class SanitizedImage(

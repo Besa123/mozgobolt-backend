@@ -1,8 +1,8 @@
-package com.shelflife.core.data.security
+package com.mozgobolt.core.data.security
 
 import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
-import com.shelflife.core.domain.security.AuthConstants
+import com.mozgobolt.core.domain.security.AuthConstants
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import kotlin.test.Test
@@ -20,12 +20,13 @@ class JwtTokenManagerTest {
         )
 
     @Test
-    fun `an access token verifies and carries the correct user id`() {
-        val token = manager.generateAccessToken(userId = 42)
+    fun `an access token verifies and carries the correct user id and role`() {
+        val token = manager.generateAccessToken(userId = 42, role = "VENDOR")
 
         val decoded = manager.accessTokenVerifier.verify(token)
 
         assertEquals(42, decoded.getClaim(AuthConstants.CLAIM_USER_ID).asInt())
+        assertEquals("VENDOR", decoded.getClaim(AuthConstants.CLAIM_USER_ROLE).asString())
         assertEquals(AuthConstants.TOKEN_TYPE_ACCESS, decoded.getClaim(AuthConstants.CLAIM_TOKEN_TYPE).asString())
     }
 
@@ -38,7 +39,7 @@ class JwtTokenManagerTest {
 
     @Test
     fun `an access token is not accepted where a refresh token is expected`() {
-        val accessToken = manager.generateAccessToken(userId = 1)
+        val accessToken = manager.generateAccessToken(userId = 1, role = "BUYER")
 
         assertNull(manager.verifyAndGetUserIdFromRefreshToken(accessToken))
     }

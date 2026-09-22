@@ -1,4 +1,4 @@
-package com.shelflife.core.domain.security
+package com.mozgobolt.core.domain.security
 
 import java.security.SecureRandom
 import java.util.Base64

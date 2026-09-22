@@ -1,22 +1,22 @@
-package com.shelflife.core
+package com.mozgobolt.core
 
 import com.auth0.jwt.JWTVerifier
-import com.shelflife.core.data.security.JwtTokenManager
-import com.shelflife.core.domain.security.TokenManager
-import com.shelflife.core.modules.plugin.configureCallId
-import com.shelflife.core.modules.plugin.configureCallLogging
-import com.shelflife.core.modules.plugin.configureContentNegotiation
-import com.shelflife.core.modules.plugin.configureCors
-import com.shelflife.core.modules.plugin.configureDefaultHeaders
-import com.shelflife.core.modules.plugin.configureForwardedHeaders
-import com.shelflife.core.modules.plugin.configureGlobalBodyLimit
-import com.shelflife.core.modules.plugin.configureHttpRequestLifecycle
-import com.shelflife.core.modules.plugin.configureRateLimit
-import com.shelflife.core.modules.plugin.configureRequestTimeout
-import com.shelflife.core.modules.plugin.configureRequestValidation
-import com.shelflife.core.modules.plugin.configureSecurity
-import com.shelflife.core.modules.plugin.configureSse
-import com.shelflife.core.modules.plugin.configureStatusPages
+import com.mozgobolt.core.data.security.JwtTokenManager
+import com.mozgobolt.core.domain.security.TokenManager
+import com.mozgobolt.core.modules.plugin.configureCallId
+import com.mozgobolt.core.modules.plugin.configureCallLogging
+import com.mozgobolt.core.modules.plugin.configureContentNegotiation
+import com.mozgobolt.core.modules.plugin.configureCors
+import com.mozgobolt.core.modules.plugin.configureDefaultHeaders
+import com.mozgobolt.core.modules.plugin.configureForwardedHeaders
+import com.mozgobolt.core.modules.plugin.configureGlobalBodyLimit
+import com.mozgobolt.core.modules.plugin.configureHttpRequestLifecycle
+import com.mozgobolt.core.modules.plugin.configureRateLimit
+import com.mozgobolt.core.modules.plugin.configureRequestTimeout
+import com.mozgobolt.core.modules.plugin.configureRequestValidation
+import com.mozgobolt.core.modules.plugin.configureSecurity
+import com.mozgobolt.core.modules.plugin.configureSse
+import com.mozgobolt.core.modules.plugin.configureStatusPages
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.config.MapApplicationConfig
@@ -34,7 +34,10 @@ private fun testJwtTokenManager(): JwtTokenManager =
 
 fun testTokenManager(): TokenManager = testJwtTokenManager()
 
-fun testAccessTokenFor(userId: Int): String = testJwtTokenManager().generateAccessToken(userId)
+fun testAccessTokenFor(
+    userId: Int,
+    role: String = "BUYER",
+): String = testJwtTokenManager().generateAccessToken(userId, role)
 
 fun ApplicationTestBuilder.configureTestEnvironment(
     corsAllowedHosts: String = "",

@@ -1,9 +1,9 @@
-package com.shelflife.feature.sync.service
+package com.mozgobolt.feature.sync.service
 
-import com.shelflife.core.skipIfNoDocker
-import com.shelflife.feature.sync.domain.model.SyncEntityType
-import com.shelflife.feature.sync.domain.model.SyncOperation
-import com.shelflife.feature.sync.withRealSyncDatabase
+import com.mozgobolt.core.skipIfNoDocker
+import com.mozgobolt.feature.sync.domain.model.SyncEntityType
+import com.mozgobolt.feature.sync.domain.model.SyncOperation
+import com.mozgobolt.feature.sync.withRealSyncDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -14,13 +14,13 @@ class SyncServiceTest {
         skipIfNoDocker()
 
         withRealSyncDatabase { harness ->
-            harness.service.recordChange(1, SyncEntityType.STORAGE_LOCATION, 42, SyncOperation.UPSERT)
+            harness.service.recordChange(1, SyncEntityType.COMPANY, 42, SyncOperation.UPSERT)
 
             val page = harness.service.changesSince(userId = 1, cursor = 0, limit = null)
 
             assertEquals(1, page.events.size)
             val event = page.events.first()
-            assertEquals(SyncEntityType.STORAGE_LOCATION, event.entityType)
+            assertEquals(SyncEntityType.COMPANY, event.entityType)
             assertEquals(42, event.entityId)
             assertEquals(SyncOperation.UPSERT, event.operation)
             assertEquals(page.nextCursor, event.id)
@@ -32,9 +32,9 @@ class SyncServiceTest {
         skipIfNoDocker()
 
         withRealSyncDatabase { harness ->
-            harness.service.recordChange(1, SyncEntityType.PRODUCT, 1, SyncOperation.UPSERT)
+            harness.service.recordChange(1, SyncEntityType.VEHICLE, 1, SyncOperation.UPSERT)
             val firstPage = harness.service.changesSince(userId = 1, cursor = 0, limit = null)
-            harness.service.recordChange(1, SyncEntityType.PRODUCT, 2, SyncOperation.UPSERT)
+            harness.service.recordChange(1, SyncEntityType.VEHICLE, 2, SyncOperation.UPSERT)
 
             val secondPage = harness.service.changesSince(userId = 1, cursor = firstPage.nextCursor, limit = null)
 
@@ -48,8 +48,8 @@ class SyncServiceTest {
         skipIfNoDocker()
 
         withRealSyncDatabase { harness ->
-            harness.service.recordChange(1, SyncEntityType.PRODUCT, 1, SyncOperation.UPSERT)
-            harness.service.recordChange(2, SyncEntityType.PRODUCT, 2, SyncOperation.UPSERT)
+            harness.service.recordChange(1, SyncEntityType.VEHICLE, 1, SyncOperation.UPSERT)
+            harness.service.recordChange(2, SyncEntityType.VEHICLE, 2, SyncOperation.UPSERT)
 
             val page = harness.service.changesSince(userId = 1, cursor = 0, limit = null)
 
@@ -81,32 +81,32 @@ class SyncServiceTest {
         withRealSyncDatabase { harness ->
             // The device was last online at cursor 0. While it was offline, three different
             // features were touched, in this order.
-            harness.service.recordChange(1, SyncEntityType.STORAGE_LOCATION, 10, SyncOperation.UPSERT)
-            harness.service.recordChange(1, SyncEntityType.PRODUCT, 20, SyncOperation.UPSERT)
-            harness.service.recordChange(1, SyncEntityType.PANTRY_ENTRY, 30, SyncOperation.UPSERT)
-            harness.service.recordChange(1, SyncEntityType.PANTRY_ENTRY, 30, SyncOperation.UPSERT) // edited again
-            harness.service.recordChange(1, SyncEntityType.PANTRY_ENTRY, 31, SyncOperation.DELETE)
+            harness.service.recordChange(1, SyncEntityType.COMPANY, 10, SyncOperation.UPSERT)
+            harness.service.recordChange(1, SyncEntityType.VEHICLE, 20, SyncOperation.UPSERT)
+            harness.service.recordChange(1, SyncEntityType.VEHICLE_ASSIGNMENT, 30, SyncOperation.UPSERT)
+            harness.service.recordChange(1, SyncEntityType.VEHICLE_ASSIGNMENT, 30, SyncOperation.UPSERT) // edited again
+            harness.service.recordChange(1, SyncEntityType.VEHICLE_ASSIGNMENT, 31, SyncOperation.DELETE)
 
             // A concurrent device's activity must never leak into this device's catch-up.
-            harness.service.recordChange(2, SyncEntityType.PRODUCT, 999, SyncOperation.UPSERT)
+            harness.service.recordChange(2, SyncEntityType.VEHICLE, 999, SyncOperation.UPSERT)
 
             val page = harness.service.changesSince(userId = 1, cursor = 0, limit = null)
 
             assertEquals(5, page.events.size)
             assertEquals(
                 listOf(
-                    SyncEntityType.STORAGE_LOCATION to SyncOperation.UPSERT,
-                    SyncEntityType.PRODUCT to SyncOperation.UPSERT,
-                    SyncEntityType.PANTRY_ENTRY to SyncOperation.UPSERT,
-                    SyncEntityType.PANTRY_ENTRY to SyncOperation.UPSERT,
-                    SyncEntityType.PANTRY_ENTRY to SyncOperation.DELETE,
+                    SyncEntityType.COMPANY to SyncOperation.UPSERT,
+                    SyncEntityType.VEHICLE to SyncOperation.UPSERT,
+                    SyncEntityType.VEHICLE_ASSIGNMENT to SyncOperation.UPSERT,
+                    SyncEntityType.VEHICLE_ASSIGNMENT to SyncOperation.UPSERT,
+                    SyncEntityType.VEHICLE_ASSIGNMENT to SyncOperation.DELETE,
                 ),
                 page.events.map { it.entityType to it.operation },
             )
             // Real ids, not deduplicated by entityId — the repeated edit to entity 30 appears
             // twice. Collapsing redundant pointers to the same entity is a client-side
-            // optimization, if the client wants one; the backend never re-derives it (see
-            // docs/domain/pantry.md's "backend does persistence, not formatting" split).
+            // optimization, if the client wants one; the backend never re-derives it (backend
+            // does persistence and correctness only, never sort/group/format).
             assertEquals(listOf(10, 20, 30, 30, 31), page.events.map { it.entityId })
             assertEquals(page.nextCursor, page.events.last().id)
 
@@ -122,7 +122,7 @@ class SyncServiceTest {
 
         withRealSyncDatabase { harness ->
             repeat(5) {
-                harness.service.recordChange(1, SyncEntityType.PRODUCT, it, SyncOperation.UPSERT)
+                harness.service.recordChange(1, SyncEntityType.VEHICLE, it, SyncOperation.UPSERT)
             }
 
             val page = harness.service.changesSince(userId = 1, cursor = 0, limit = 2)
@@ -136,8 +136,8 @@ class SyncServiceTest {
         skipIfNoDocker()
 
         withRealSyncDatabase { harness ->
-            harness.service.recordChange(1, SyncEntityType.PRODUCT, 1, SyncOperation.UPSERT)
-            harness.service.recordChange(1, SyncEntityType.PRODUCT, 2, SyncOperation.UPSERT)
+            harness.service.recordChange(1, SyncEntityType.VEHICLE, 1, SyncOperation.UPSERT)
+            harness.service.recordChange(1, SyncEntityType.VEHICLE, 2, SyncOperation.UPSERT)
 
             val zeroLimit = harness.service.changesSince(userId = 1, cursor = 0, limit = 0)
             val negativeLimit = harness.service.changesSince(userId = 1, cursor = 0, limit = -100)

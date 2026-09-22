@@ -1,6 +1,6 @@
-package com.shelflife.core.modules.plugin
+package com.mozgobolt.core.modules.plugin
 
-import com.shelflife.core.modules.AppConfig
+import com.mozgobolt.core.modules.AppConfig
 import io.ktor.server.application.Application
 import io.ktor.server.plugins.di.dependencies
 import io.sentry.Sentry

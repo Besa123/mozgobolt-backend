@@ -1,7 +1,7 @@
-package com.shelflife.feature.user.service
+package com.mozgobolt.feature.user.service
 
-import com.shelflife.feature.user.domain.model.PasswordResetError
-import com.shelflife.feature.user.domain.model.TokenValidationResult
+import com.mozgobolt.feature.user.domain.model.PasswordResetError
+import com.mozgobolt.feature.user.domain.model.TokenValidationResult
 import kotlinx.coroutines.runBlocking
 import java.time.Instant
 import kotlin.test.Test

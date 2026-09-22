@@ -1,25 +1,58 @@
-package com.shelflife.feature.user.routing
+package com.mozgobolt.feature.user.routing
 
-import com.shelflife.core.domain.AppResult
-import com.shelflife.feature.user.domain.UserService
-import com.shelflife.feature.user.domain.model.AuthResponse
-import com.shelflife.feature.user.domain.model.LoginError
-import com.shelflife.feature.user.domain.model.PasswordResetError
-import com.shelflife.feature.user.domain.model.RefreshError
-import com.shelflife.feature.user.domain.model.RegisterError
-import com.shelflife.feature.user.domain.model.VerifyEmailError
+import com.mozgobolt.core.domain.AppResult
+import com.mozgobolt.feature.user.domain.UserService
+import com.mozgobolt.feature.user.domain.model.AuthResponse
+import com.mozgobolt.feature.user.domain.model.ContactInfoError
+import com.mozgobolt.feature.user.domain.model.DriverContactInfo
+import com.mozgobolt.feature.user.domain.model.LoginError
+import com.mozgobolt.feature.user.domain.model.PasswordResetError
+import com.mozgobolt.feature.user.domain.model.RefreshError
+import com.mozgobolt.feature.user.domain.model.RegisterError
+import com.mozgobolt.feature.user.domain.model.UserContactInfo
+import com.mozgobolt.feature.user.domain.model.UserRole
+import com.mozgobolt.feature.user.domain.model.VerifyEmailError
 
 class FakeUserService : UserService {
     data class CreateUserCall(
         val password: String,
         val email: String,
         val name: String,
+        val role: UserRole,
+        val phoneNumber: String?,
+        val whatsappNumber: String?,
+        val viberNumber: String?,
+        val messengerUsername: String?,
     )
 
     var createUserResult: AppResult<Unit, RegisterError> = AppResult.Success(Unit)
     var lastCreateUserCall: CreateUserCall? = null
         private set
     var createUserCallCount: Int = 0
+        private set
+
+    var findContactInfoResult: DriverContactInfo? = null
+    val findContactInfoCalls = mutableListOf<Int>()
+
+    data class UpdateContactInfoCall(
+        val userId: Int,
+        val contactInfo: UserContactInfo,
+    )
+
+    var updateContactInfoResult: AppResult<UserContactInfo, ContactInfoError> =
+        AppResult.Success(
+            UserContactInfo(
+                phoneNumber = null,
+                phoneNumberVisible = true,
+                whatsappNumber = null,
+                whatsappVisible = true,
+                viberNumber = null,
+                viberVisible = true,
+                messengerUsername = null,
+                messengerVisible = true,
+            ),
+        )
+    var lastUpdateContactInfoCall: UpdateContactInfoCall? = null
         private set
 
     var signInResult: AppResult<AuthResponse, LoginError> =
@@ -63,10 +96,29 @@ class FakeUserService : UserService {
         password: String,
         email: String,
         name: String,
+        role: UserRole,
+        phoneNumber: String?,
+        whatsappNumber: String?,
+        viberNumber: String?,
+        messengerUsername: String?,
     ): AppResult<Unit, RegisterError> {
         createUserCallCount++
-        lastCreateUserCall = CreateUserCall(password, email, name)
+        lastCreateUserCall =
+            CreateUserCall(password, email, name, role, phoneNumber, whatsappNumber, viberNumber, messengerUsername)
         return createUserResult
+    }
+
+    override suspend fun findContactInfo(userId: Int): DriverContactInfo? {
+        findContactInfoCalls += userId
+        return findContactInfoResult
+    }
+
+    override suspend fun updateContactInfo(
+        userId: Int,
+        contactInfo: UserContactInfo,
+    ): AppResult<UserContactInfo, ContactInfoError> {
+        lastUpdateContactInfoCall = UpdateContactInfoCall(userId, contactInfo)
+        return updateContactInfoResult
     }
 
     override suspend fun signInUser(

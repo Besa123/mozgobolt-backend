@@ -1,10 +1,10 @@
-package com.shelflife.core.modules.plugin
+package com.mozgobolt.core.modules.plugin
 
-import com.shelflife.core.configureTestEnvironment
-import com.shelflife.core.installTestModules
-import com.shelflife.core.testAccessTokenFor
-import com.shelflife.core.utility.functions.protectedApi
-import com.shelflife.core.utility.functions.publicRateLimitedApi
+import com.mozgobolt.core.configureTestEnvironment
+import com.mozgobolt.core.installTestModules
+import com.mozgobolt.core.testAccessTokenFor
+import com.mozgobolt.core.utility.functions.protectedApi
+import com.mozgobolt.core.utility.functions.publicRateLimitedApi
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
 import io.ktor.client.request.post

@@ -1,4 +1,4 @@
-package com.shelflife.feature.health.routing
+package com.mozgobolt.feature.health.routing
 
 import io.ktor.client.request.get
 import io.ktor.http.HttpStatusCode

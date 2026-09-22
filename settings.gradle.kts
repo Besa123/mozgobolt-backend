@@ -18,4 +18,4 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "shelflife"
+rootProject.name = "mozgobolt"

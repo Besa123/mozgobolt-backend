@@ -1,4 +1,4 @@
-package com.shelflife.core.data.idempotency
+package com.mozgobolt.core.data.idempotency
 
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.javatime.timestamp

@@ -1,11 +1,11 @@
-package com.shelflife.core.modules.plugin
+package com.mozgobolt.core.modules.plugin
 
 import com.auth0.jwt.JWTVerifier
-import com.shelflife.core.domain.security.AuthConstants.CLAIM_TOKEN_TYPE
-import com.shelflife.core.domain.security.AuthConstants.CLAIM_USER_ID
-import com.shelflife.core.domain.security.AuthConstants.PROTECT_ENDPOINT_JWT
-import com.shelflife.core.domain.security.AuthConstants.TOKEN_TYPE_ACCESS
-import com.shelflife.core.routing.dto.response.ErrorResponse
+import com.mozgobolt.core.domain.security.AuthConstants.CLAIM_TOKEN_TYPE
+import com.mozgobolt.core.domain.security.AuthConstants.CLAIM_USER_ID
+import com.mozgobolt.core.domain.security.AuthConstants.PROTECT_ENDPOINT_JWT
+import com.mozgobolt.core.domain.security.AuthConstants.TOKEN_TYPE_ACCESS
+import com.mozgobolt.core.routing.dto.response.ErrorResponse
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
@@ -16,7 +16,7 @@ import io.ktor.server.plugins.di.dependencies
 import io.ktor.server.response.respond
 
 fun Application.configureSecurity() {
-    val jwtRealm = "ShelfLife"
+    val jwtRealm = "MozgoBolt"
     val accessTokenVerifier: JWTVerifier by dependencies
 
     install(Authentication) {
@@ -29,11 +29,9 @@ fun Application.configureSecurity() {
                 val userId = credential.payload.getClaim(CLAIM_USER_ID).asInt()
                 val tokenType = credential.payload.getClaim(CLAIM_TOKEN_TYPE).asString()
 
-                if (userId != null && tokenType == TOKEN_TYPE_ACCESS) {
-                    JWTPrincipal(credential.payload)
-                } else {
-                    null
-                }
+                credential
+                    .takeIf { userId != null && tokenType == TOKEN_TYPE_ACCESS }
+                    ?.let { JWTPrincipal(it.payload) }
             }
 
             challenge { _, _ ->

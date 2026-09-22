@@ -1,6 +1,6 @@
-package com.shelflife.core.data.validator
+package com.mozgobolt.core.data.validator
 
-import com.shelflife.core.domain.validation.EmailValidator
+import com.mozgobolt.core.domain.validation.EmailValidator
 
 class StandardEmailValidator : EmailValidator {
     override fun normalize(email: String): String = email.trim().lowercase()

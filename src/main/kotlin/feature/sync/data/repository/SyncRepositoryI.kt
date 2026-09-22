@@ -1,12 +1,12 @@
-package com.shelflife.feature.sync.data.repository
+package com.mozgobolt.feature.sync.data.repository
 
-import com.shelflife.feature.sync.data.database.SyncEventsTable
-import com.shelflife.feature.sync.data.mapper.toSyncEvent
-import com.shelflife.feature.sync.domain.SyncRepository
-import com.shelflife.feature.sync.domain.model.SyncEntityType
-import com.shelflife.feature.sync.domain.model.SyncEvent
-import com.shelflife.feature.sync.domain.model.SyncOperation
-import com.shelflife.feature.sync.domain.model.SyncPage
+import com.mozgobolt.feature.sync.data.database.SyncEventsTable
+import com.mozgobolt.feature.sync.data.mapper.toSyncEvent
+import com.mozgobolt.feature.sync.domain.SyncRepository
+import com.mozgobolt.feature.sync.domain.model.SyncEntityType
+import com.mozgobolt.feature.sync.domain.model.SyncEvent
+import com.mozgobolt.feature.sync.domain.model.SyncOperation
+import com.mozgobolt.feature.sync.domain.model.SyncPage
 import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.VarCharColumnType
 import org.jetbrains.exposed.v1.core.and

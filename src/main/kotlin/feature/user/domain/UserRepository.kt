@@ -1,9 +1,11 @@
-package com.shelflife.feature.user.domain
+package com.mozgobolt.feature.user.domain
 
-import com.shelflife.feature.user.domain.model.PasswordResetToken
-import com.shelflife.feature.user.domain.model.TokenValidationResult
-import com.shelflife.feature.user.domain.model.User
-import com.shelflife.feature.user.domain.model.VerificationTokenRecord
+import com.mozgobolt.feature.user.domain.model.PasswordResetToken
+import com.mozgobolt.feature.user.domain.model.TokenValidationResult
+import com.mozgobolt.feature.user.domain.model.User
+import com.mozgobolt.feature.user.domain.model.UserContactInfo
+import com.mozgobolt.feature.user.domain.model.UserRole
+import com.mozgobolt.feature.user.domain.model.VerificationTokenRecord
 import java.time.Instant
 
 @Suppress("TooManyFunctions", "ComplexInterface")
@@ -16,6 +18,11 @@ interface UserRepository {
         email: String,
         password: String,
         name: String,
+        role: UserRole,
+        phoneNumber: String? = null,
+        whatsappNumber: String? = null,
+        viberNumber: String? = null,
+        messengerUsername: String? = null,
     ): User
 
     suspend fun saveRefreshToken(
@@ -77,5 +84,10 @@ interface UserRepository {
     suspend fun updatePassword(
         userId: Int,
         newPasswordHash: String,
+    )
+
+    suspend fun updateContactInfo(
+        userId: Int,
+        contactInfo: UserContactInfo,
     )
 }

@@ -1,11 +1,11 @@
-package com.shelflife.core.data.media
+package com.mozgobolt.core.data.media
 
-import com.shelflife.core.domain.media.ImageStorage
-import com.shelflife.core.modules.AppConfig
-import com.shelflife.core.modules.plugin.ResiliencePolicy
-import com.shelflife.core.modules.plugin.ResilienceRegistry
-import com.shelflife.core.modules.plugin.withS3Resilience
-import com.shelflife.core.utility.functions.runSuspendCatching
+import com.mozgobolt.core.domain.media.ImageStorage
+import com.mozgobolt.core.modules.AppConfig
+import com.mozgobolt.core.modules.plugin.ResiliencePolicy
+import com.mozgobolt.core.modules.plugin.ResilienceRegistry
+import com.mozgobolt.core.modules.plugin.withS3Resilience
+import com.mozgobolt.core.utility.functions.runSuspendCatching
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

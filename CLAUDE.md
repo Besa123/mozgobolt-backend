@@ -4,8 +4,11 @@ Idiomatic modern Kotlin, not Java-style. Clean Architecture, SOLID, DRY, YAGNI.
 
 ## Patterns
 
-- Pantry feature (`product`/`storageLocation`/`quantityUnit`/`pantryEntry`) has non-obvious domain decisions — read
-  [docs/domain/pantry.md](docs/domain/pantry.md) first.
+- Single `User` table with a `role` (`BUYER`/`VENDOR`) — no parallel auth system per role. A vendor's first
+  registration creates a `Company` (invite-code join for others); a vendor links/delinks himself to a `Vehicle` for a
+  shift, and GPS telemetry is always tied to the vehicle's currently active `VehicleAssignment`, never directly to a
+  vendor. Role-gate a handler with `requireRole(UserRole.X)` (`feature/user/routing/RoleGuard.kt`) as its first line,
+  after `protectedApi { }` — a reusable guard, not an ad-hoc per-handler check.
 - `AppResult<T, E>` + `.fold()` for expected failures — never throw/catch for them.
 - `domain/` defines the interface, `data/`/`service/` implement it — `feature/` impls suffixed `*I`
   (`UserServiceI`); `core/` uses descriptive names (`JwtTokenManager`) since multiple config-selected impls often share
@@ -24,7 +27,9 @@ Idiomatic modern Kotlin, not Java-style. Clean Architecture, SOLID, DRY, YAGNI.
 - External calls: `withXResilience { }` (`ResilienceConfig.kt`), never hand-rolled retry —
   [ADR 0005](docs/adr/0005-resilience4j-for-external-calls.md).
 - A mutation to any synced entity calls `SyncService.recordChange(...)` in the same write transaction —
-  [ADR 0006](docs/adr/0006-multi-device-sync-outbox-and-cursor-pull.md).
+  [ADR 0006](docs/adr/0006-multi-device-sync-outbox-and-cursor-pull.md). This is for a user's own low-frequency CRUD
+  mutations syncing across their own devices (`Company`/`Vehicle`/`VehicleAssignment`) — high-frequency GPS telemetry
+  is deliberately exempt; it goes through the in-memory fast-path hub instead (`feature/vehicleTracking`).
 - No wildcard imports.
 
 ## Security — non-negotiable

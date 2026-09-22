@@ -1,11 +1,11 @@
-package com.shelflife.feature.sync.routing
+package com.mozgobolt.feature.sync.routing
 
-import com.shelflife.core.installTestModules
-import com.shelflife.core.routing.apiV1
-import com.shelflife.core.testAccessTokenFor
-import com.shelflife.feature.sync.domain.SyncEventHub
-import com.shelflife.feature.sync.domain.SyncService
-import com.shelflife.feature.sync.service.InMemorySyncEventHub
+import com.mozgobolt.core.installTestModules
+import com.mozgobolt.core.routing.apiV1
+import com.mozgobolt.core.testAccessTokenFor
+import com.mozgobolt.feature.sync.domain.SyncEventHub
+import com.mozgobolt.feature.sync.domain.SyncService
+import com.mozgobolt.feature.sync.service.InMemorySyncEventHub
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get

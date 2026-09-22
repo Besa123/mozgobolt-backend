@@ -1,4 +1,4 @@
-package com.shelflife.feature.user.routing.dto.response
+package com.mozgobolt.feature.user.routing.dto.response
 
 import kotlinx.serialization.Serializable
 

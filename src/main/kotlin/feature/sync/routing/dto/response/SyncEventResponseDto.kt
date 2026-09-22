@@ -1,7 +1,7 @@
-package com.shelflife.feature.sync.routing.dto.response
+package com.mozgobolt.feature.sync.routing.dto.response
 
-import com.shelflife.feature.sync.domain.model.SyncEvent
-import com.shelflife.feature.sync.domain.model.SyncPage
+import com.mozgobolt.feature.sync.domain.model.SyncEvent
+import com.mozgobolt.feature.sync.domain.model.SyncPage
 import kotlinx.serialization.Serializable
 
 @Serializable

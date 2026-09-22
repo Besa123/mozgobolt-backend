@@ -1,9 +1,9 @@
-package com.shelflife.feature.sync.service
+package com.mozgobolt.feature.sync.service
 
-import com.shelflife.feature.sync.domain.SyncService
-import com.shelflife.feature.sync.domain.model.SyncEntityType
-import com.shelflife.feature.sync.domain.model.SyncOperation
-import com.shelflife.feature.sync.domain.model.SyncPage
+import com.mozgobolt.feature.sync.domain.SyncService
+import com.mozgobolt.feature.sync.domain.model.SyncEntityType
+import com.mozgobolt.feature.sync.domain.model.SyncOperation
+import com.mozgobolt.feature.sync.domain.model.SyncPage
 
 /**
  * Shared across product/storageLocation/pantryEntry's fake-repository unit tests: none of those

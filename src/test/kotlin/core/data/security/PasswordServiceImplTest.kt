@@ -1,11 +1,11 @@
-package com.shelflife.core.data.security
+package com.mozgobolt.core.data.security
 
 import kotlin.test.Test
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
-import com.shelflife.core.domain.security.PasswordPolicy.MAX_LENGTH as MAX_PASSWORD_LENGTH
+import com.mozgobolt.core.domain.security.PasswordPolicy.MAX_LENGTH as MAX_PASSWORD_LENGTH
 
 class PasswordServiceImplTest {
     private val service = PasswordServiceImpl(pepper = "unit-test-pepper")

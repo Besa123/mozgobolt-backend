@@ -1,4 +1,4 @@
-package com.shelflife.feature.sync.service
+package com.mozgobolt.feature.sync.service
 
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first

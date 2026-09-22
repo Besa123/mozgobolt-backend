@@ -1,9 +1,10 @@
-package com.shelflife.core
+package com.mozgobolt.core
 
-import com.shelflife.core.database.DatabaseFactory
-import com.shelflife.core.database.ExposedTransactionalRunner
-import com.shelflife.core.database.TransactionalRunner
-import com.shelflife.feature.user.data.database.UserEntity
+import com.mozgobolt.core.database.DatabaseFactory
+import com.mozgobolt.core.database.ExposedTransactionalRunner
+import com.mozgobolt.core.database.TransactionalRunner
+import com.mozgobolt.feature.user.data.database.UserEntity
+import com.mozgobolt.feature.user.domain.model.UserRole
 import kotlinx.coroutines.runBlocking
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.junit.Assume.assumeTrue
@@ -22,7 +23,7 @@ fun skipIfNoDocker() {
  * Runs the full Flyway migration history (including seed data) against a throwaway Postgres, and
  * seeds two generic `users` rows — they land on ids 1 and 2, in insertion order on an otherwise-
  * empty `SERIAL` primary key, which every feature's integration tests rely on when hardcoding
- * `userId` 1/2 for a private/owned resource (e.g. `products.user_id`'s foreign key). A real user
+ * `userId` 1/2 for a private/owned resource (e.g. a vehicle's `owner_user_id` foreign key). A real user
  * always exists in production (the id comes off an authenticated JWT); nothing seeds one here
  * automatically. Shared by every feature's own `withRealXDatabase` helper — don't re-copy this.
  */
@@ -50,11 +51,13 @@ fun withRealDatabase(block: suspend (Database, TransactionalRunner) -> Unit) {
                         email = "test-user-1@example.com"
                         name = "Test User One"
                         passwordHash = "unused"
+                        role = UserRole.BUYER
                     }
                     UserEntity.new {
                         email = "test-user-2@example.com"
                         name = "Test User Two"
                         passwordHash = "unused"
+                        role = UserRole.BUYER
                     }
                 }
                 block(database, tx)

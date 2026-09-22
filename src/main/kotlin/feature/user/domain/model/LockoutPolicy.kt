@@ -1,4 +1,4 @@
-package com.shelflife.feature.user.domain.model
+package com.mozgobolt.feature.user.domain.model
 
 import java.time.Duration
 import java.time.Instant
@@ -25,11 +25,10 @@ object LockoutPolicy {
     fun calculateLockUntil(failedAttempts: Int): Instant? {
         val attemptsOverThreshold = failedAttempts.coerceAtLeast(0) - MAX_ATTEMPTS_BEFORE_LOCK + 1
 
-        if (attemptsOverThreshold <= 0) return null
-
-        val multiplier = 1L shl (attemptsOverThreshold - 1).coerceAtMost(MAX_EXPONENT)
-        val lockDuration = BASE_LOCKOUT_DURATION.multipliedBy(multiplier).coerceAtMost(MAX_LOCKOUT_DURATION)
-
-        return Instant.now().plus(lockDuration)
+        return attemptsOverThreshold.takeIf { it > 0 }?.let { over ->
+            val multiplier = 1L shl (over - 1).coerceAtMost(MAX_EXPONENT)
+            val lockDuration = BASE_LOCKOUT_DURATION.multipliedBy(multiplier).coerceAtMost(MAX_LOCKOUT_DURATION)
+            Instant.now().plus(lockDuration)
+        }
     }
 }

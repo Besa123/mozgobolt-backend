@@ -1,8 +1,8 @@
-package com.shelflife.core.data.email
+package com.mozgobolt.core.data.email
 
-import com.shelflife.core.domain.email.EmailService
-import com.shelflife.core.modules.plugin.ResiliencePolicy
-import com.shelflife.core.modules.plugin.ResilienceRegistry
+import com.mozgobolt.core.domain.email.EmailService
+import com.mozgobolt.core.modules.plugin.ResiliencePolicy
+import com.mozgobolt.core.modules.plugin.ResilienceRegistry
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import io.github.resilience4j.retry.Retry

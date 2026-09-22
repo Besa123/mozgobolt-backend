@@ -319,7 +319,7 @@ naming:
     excludeClassPattern: '$^'
   InvalidPackageDeclaration:
     active: true
-    rootPackage: 'com.shelflife'
+    rootPackage: 'com.mozgobolt'
     requireRootInDeclaration: false
   LambdaParameterNaming:
     active: true              # ← enforces readable lambda param names

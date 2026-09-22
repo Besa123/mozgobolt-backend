@@ -1,4 +1,4 @@
-package com.shelflife.core.domain.validation
+package com.mozgobolt.core.domain.validation
 
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter

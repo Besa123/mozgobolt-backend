@@ -5,7 +5,7 @@
     </shutdownHook>
 
     <property name="LOG_DIR" value="${LOG_DIR:-logs}" />
-    <property name="APP_NAME" value="shelflife"/>
+    <property name="APP_NAME" value="mozgobolt"/>
     <property name="ENVIRONMENT" value="${ENVIRONMENT:-local}" />
 
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
@@ -84,7 +84,7 @@
 
     <if condition='p("ENVIRONMENT").equals("production")'>
         <then>
-            <logger name="com.shelflife" level="INFO"/>
+            <logger name="com.mozgobolt" level="INFO"/>
             <root level="WARN">
                 <appender-ref ref="ASYNC_JSON_FILE" />
                 <appender-ref ref="ASYNC_ERROR_FILE" />
@@ -92,7 +92,7 @@
             </root>
         </then>
         <else>
-            <logger name="com.shelflife" level="DEBUG"/>
+            <logger name="com.mozgobolt" level="DEBUG"/>
             <root level="INFO">
                 <appender-ref ref="CONSOLE" />
                 <appender-ref ref="ASYNC_JSON_FILE" />

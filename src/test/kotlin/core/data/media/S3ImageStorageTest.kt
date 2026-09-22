@@ -1,8 +1,8 @@
-package com.shelflife.core.data.media
+package com.mozgobolt.core.data.media
 
-import com.shelflife.core.modules.AppConfig
-import com.shelflife.core.modules.plugin.ResiliencePolicy
-import com.shelflife.core.modules.plugin.ResilienceRegistry
+import com.mozgobolt.core.modules.AppConfig
+import com.mozgobolt.core.modules.plugin.ResiliencePolicy
+import com.mozgobolt.core.modules.plugin.ResilienceRegistry
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import kotlinx.coroutines.runBlocking
 import software.amazon.awssdk.core.ResponseInputStream

@@ -1,4 +1,4 @@
-package com.shelflife.feature.user.domain.model
+package com.mozgobolt.feature.user.domain.model
 
 enum class VerifyEmailError {
     INVALID_TOKEN,

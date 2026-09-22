@@ -1,4 +1,4 @@
-package com.shelflife.core.data.media
+package com.mozgobolt.core.data.media
 
 import kotlinx.coroutines.runBlocking
 import java.nio.file.Files

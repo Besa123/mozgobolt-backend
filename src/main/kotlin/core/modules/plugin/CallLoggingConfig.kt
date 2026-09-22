@@ -1,7 +1,7 @@
-package com.shelflife.core.modules.plugin
+package com.mozgobolt.core.modules.plugin
 
-import com.shelflife.core.domain.security.AuthConstants.CLAIM_USER_ID
-import com.shelflife.core.utility.functions.currentDeviceIdOrNull
+import com.mozgobolt.core.domain.security.AuthConstants.CLAIM_USER_ID
+import com.mozgobolt.core.utility.functions.currentDeviceIdOrNull
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.Application
 import io.ktor.server.application.install

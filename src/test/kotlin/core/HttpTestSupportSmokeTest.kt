@@ -1,4 +1,4 @@
-package com.shelflife.core
+package com.mozgobolt.core
 
 import io.ktor.client.request.get
 import io.ktor.http.HttpStatusCode

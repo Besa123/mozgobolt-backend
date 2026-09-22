@@ -1,8 +1,8 @@
-package com.shelflife.feature.sync.routing
+package com.mozgobolt.feature.sync.routing
 
-import com.shelflife.core.configureTestEnvironment
-import com.shelflife.feature.sync.domain.model.SyncEntityType
-import com.shelflife.feature.sync.domain.model.SyncOperation
+import com.mozgobolt.core.configureTestEnvironment
+import com.mozgobolt.feature.sync.domain.model.SyncEntityType
+import com.mozgobolt.feature.sync.domain.model.SyncOperation
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication
@@ -21,7 +21,7 @@ class SyncRoutesTest {
         testApplication {
             configureTestEnvironment()
             val service = FakeSyncService()
-            runBlocking { service.recordChange(1, SyncEntityType.PRODUCT, 5, SyncOperation.UPSERT) }
+            runBlocking { service.recordChange(1, SyncEntityType.VEHICLE, 5, SyncOperation.UPSERT) }
             application { installSyncRoutesTestApp(service) }
 
             val response = getJson(SyncPaths.since())
@@ -49,8 +49,8 @@ class SyncRoutesTest {
             configureTestEnvironment()
             val service = FakeSyncService()
             runBlocking {
-                service.recordChange(1, SyncEntityType.PRODUCT, 1, SyncOperation.UPSERT)
-                service.recordChange(1, SyncEntityType.PRODUCT, 2, SyncOperation.UPSERT)
+                service.recordChange(1, SyncEntityType.VEHICLE, 1, SyncOperation.UPSERT)
+                service.recordChange(1, SyncEntityType.VEHICLE, 2, SyncOperation.UPSERT)
             }
             application { installSyncRoutesTestApp(service) }
 
@@ -68,8 +68,8 @@ class SyncRoutesTest {
             configureTestEnvironment()
             val service = FakeSyncService()
             runBlocking {
-                service.recordChange(1, SyncEntityType.PRODUCT, 1, SyncOperation.UPSERT)
-                service.recordChange(2, SyncEntityType.PRODUCT, 2, SyncOperation.UPSERT)
+                service.recordChange(1, SyncEntityType.VEHICLE, 1, SyncOperation.UPSERT)
+                service.recordChange(2, SyncEntityType.VEHICLE, 2, SyncOperation.UPSERT)
             }
             application { installSyncRoutesTestApp(service) }
 
@@ -85,7 +85,7 @@ class SyncRoutesTest {
         testApplication {
             configureTestEnvironment()
             val service = FakeSyncService()
-            runBlocking { service.recordChange(1, SyncEntityType.PRODUCT, 1, SyncOperation.UPSERT) }
+            runBlocking { service.recordChange(1, SyncEntityType.VEHICLE, 1, SyncOperation.UPSERT) }
             application { installSyncRoutesTestApp(service) }
 
             val response = getJson(SyncPaths.since(cursor = -1))

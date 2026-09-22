@@ -1,10 +1,10 @@
-package com.shelflife.core.data.email
+package com.mozgobolt.core.data.email
 
-import com.shelflife.core.domain.email.EmailService
-import com.shelflife.core.modules.plugin.ResiliencePolicy
-import com.shelflife.core.modules.plugin.ResilienceRegistry
-import com.shelflife.core.modules.plugin.withEmailResilience
-import com.shelflife.core.utility.functions.runSuspendCatching
+import com.mozgobolt.core.domain.email.EmailService
+import com.mozgobolt.core.modules.plugin.ResiliencePolicy
+import com.mozgobolt.core.modules.plugin.ResilienceRegistry
+import com.mozgobolt.core.modules.plugin.withEmailResilience
+import com.mozgobolt.core.utility.functions.runSuspendCatching
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException
 

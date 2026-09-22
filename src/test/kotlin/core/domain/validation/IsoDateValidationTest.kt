@@ -1,4 +1,4 @@
-package com.shelflife.core.domain.validation
+package com.mozgobolt.core.domain.validation
 
 import kotlin.test.Test
 import kotlin.test.assertFalse

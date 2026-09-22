@@ -1,19 +1,21 @@
-package com.shelflife.feature.user.data.repository
+package com.mozgobolt.feature.user.data.repository
 
-import com.shelflife.feature.user.data.database.EmailVerificationTokenEntity
-import com.shelflife.feature.user.data.database.EmailVerificationTokensTable
-import com.shelflife.feature.user.data.database.PasswordResetTokenEntity
-import com.shelflife.feature.user.data.database.PasswordResetTokensTable
-import com.shelflife.feature.user.data.database.RefreshTokenEntity
-import com.shelflife.feature.user.data.database.RefreshTokensTable
-import com.shelflife.feature.user.data.database.UserEntity
-import com.shelflife.feature.user.data.database.UsersTable
-import com.shelflife.feature.user.data.mapper.toUser
-import com.shelflife.feature.user.domain.UserRepository
-import com.shelflife.feature.user.domain.model.PasswordResetToken
-import com.shelflife.feature.user.domain.model.TokenValidationResult
-import com.shelflife.feature.user.domain.model.User
-import com.shelflife.feature.user.domain.model.VerificationTokenRecord
+import com.mozgobolt.feature.user.data.database.EmailVerificationTokenEntity
+import com.mozgobolt.feature.user.data.database.EmailVerificationTokensTable
+import com.mozgobolt.feature.user.data.database.PasswordResetTokenEntity
+import com.mozgobolt.feature.user.data.database.PasswordResetTokensTable
+import com.mozgobolt.feature.user.data.database.RefreshTokenEntity
+import com.mozgobolt.feature.user.data.database.RefreshTokensTable
+import com.mozgobolt.feature.user.data.database.UserEntity
+import com.mozgobolt.feature.user.data.database.UsersTable
+import com.mozgobolt.feature.user.data.mapper.toUser
+import com.mozgobolt.feature.user.domain.UserRepository
+import com.mozgobolt.feature.user.domain.model.PasswordResetToken
+import com.mozgobolt.feature.user.domain.model.TokenValidationResult
+import com.mozgobolt.feature.user.domain.model.User
+import com.mozgobolt.feature.user.domain.model.UserContactInfo
+import com.mozgobolt.feature.user.domain.model.UserRole
+import com.mozgobolt.feature.user.domain.model.VerificationTokenRecord
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.plus
@@ -41,12 +43,22 @@ class UserRepositoryI(
         email: String,
         password: String,
         name: String,
+        role: UserRole,
+        phoneNumber: String?,
+        whatsappNumber: String?,
+        viberNumber: String?,
+        messengerUsername: String?,
     ): User {
         val entity =
             UserEntity.new {
                 this.email = email
                 this.name = name
                 this.passwordHash = password
+                this.role = role
+                this.phoneNumber = phoneNumber
+                this.whatsappNumber = whatsappNumber
+                this.viberNumber = viberNumber
+                this.messengerUsername = messengerUsername
             }
         return entity.toUser()
     }
@@ -259,6 +271,22 @@ class UserRepositoryI(
     ) {
         UsersTable.update(where = { UsersTable.id eq userId }) {
             it[passwordHash] = newPasswordHash
+        }
+    }
+
+    override suspend fun updateContactInfo(
+        userId: Int,
+        contactInfo: UserContactInfo,
+    ) {
+        UsersTable.update(where = { UsersTable.id eq userId }) {
+            it[phoneNumber] = contactInfo.phoneNumber
+            it[phoneNumberVisible] = contactInfo.phoneNumberVisible
+            it[whatsappNumber] = contactInfo.whatsappNumber
+            it[whatsappVisible] = contactInfo.whatsappVisible
+            it[viberNumber] = contactInfo.viberNumber
+            it[viberVisible] = contactInfo.viberVisible
+            it[messengerUsername] = contactInfo.messengerUsername
+            it[messengerVisible] = contactInfo.messengerVisible
         }
     }
 

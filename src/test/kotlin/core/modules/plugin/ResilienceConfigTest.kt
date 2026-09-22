@@ -1,7 +1,7 @@
-package com.shelflife.core.modules.plugin
+package com.mozgobolt.core.modules.plugin
 
-import com.shelflife.core.data.email.PermanentEmailDeliveryException
-import com.shelflife.core.data.email.TransientEmailDeliveryException
+import com.mozgobolt.core.data.email.PermanentEmailDeliveryException
+import com.mozgobolt.core.data.email.TransientEmailDeliveryException
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import io.github.resilience4j.circuitbreaker.CircuitBreaker.State

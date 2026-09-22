@@ -1,9 +1,9 @@
-package com.shelflife.feature.sync.domain
+package com.mozgobolt.feature.sync.domain
 
-import com.shelflife.feature.sync.domain.model.SyncEntityType
-import com.shelflife.feature.sync.domain.model.SyncEvent
-import com.shelflife.feature.sync.domain.model.SyncOperation
-import com.shelflife.feature.sync.domain.model.SyncPage
+import com.mozgobolt.feature.sync.domain.model.SyncEntityType
+import com.mozgobolt.feature.sync.domain.model.SyncEvent
+import com.mozgobolt.feature.sync.domain.model.SyncOperation
+import com.mozgobolt.feature.sync.domain.model.SyncPage
 
 interface SyncRepository {
     suspend fun record(

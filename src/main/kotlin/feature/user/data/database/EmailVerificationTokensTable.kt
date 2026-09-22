@@ -1,4 +1,4 @@
-package com.shelflife.feature.user.data.database
+package com.mozgobolt.feature.user.data.database
 
 import org.jetbrains.exposed.v1.core.ReferenceOption
 import org.jetbrains.exposed.v1.core.dao.id.EntityID

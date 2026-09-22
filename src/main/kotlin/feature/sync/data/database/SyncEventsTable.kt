@@ -1,4 +1,4 @@
-package com.shelflife.feature.sync.data.database
+package com.mozgobolt.feature.sync.data.database
 
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.javatime.timestamp

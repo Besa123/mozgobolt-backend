@@ -1,6 +1,6 @@
-package com.shelflife.core.data.idempotency
+package com.mozgobolt.core.data.idempotency
 
-import com.shelflife.core.modules.plugin.configureContentNegotiation
+import com.mozgobolt.core.modules.plugin.configureContentNegotiation
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.statement.bodyAsText

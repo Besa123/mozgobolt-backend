@@ -1,4 +1,4 @@
-# Contributing to ShelfLife
+# Contributing to MozgoBolt
 
 The rules the codebase enforces in CI, written down. For the "why" behind the structure, see
 [ARCHITECTURE.md](ARCHITECTURE.md); for rationale behind specific decisions, see [docs/adr/](docs/adr/).

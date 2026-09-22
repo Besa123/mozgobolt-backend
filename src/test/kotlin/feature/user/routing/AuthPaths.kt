@@ -1,4 +1,4 @@
-package com.shelflife.feature.user.routing
+package com.mozgobolt.feature.user.routing
 
 object AuthPaths {
     private const val BASE = "/api/v1/auth"
@@ -12,4 +12,5 @@ object AuthPaths {
     const val PASSWORD_RESET_REQUEST = "$BASE/password-reset/request"
     const val PASSWORD_RESET_VALIDATE = "$BASE/password-reset/validate"
     const val PASSWORD_RESET_CONFIRM = "$BASE/password-reset/confirm"
+    const val CONTACT_INFO = "/api/v1/users/me/contact-info"
 }

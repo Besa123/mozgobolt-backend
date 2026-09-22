@@ -1,7 +1,10 @@
-package com.shelflife.core.domain.security
+package com.mozgobolt.core.domain.security
 
 interface TokenManager {
-    fun generateAccessToken(userId: Int): String
+    fun generateAccessToken(
+        userId: Int,
+        role: String,
+    ): String
 
     fun generateRefreshToken(userId: Int): String
 

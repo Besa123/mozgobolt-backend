@@ -1,11 +1,11 @@
-package com.shelflife.core.data.security
+package com.mozgobolt.core.data.security
 
 import com.auth0.jwt.JWT
 import com.auth0.jwt.JWTVerifier
 import com.auth0.jwt.algorithms.Algorithm
 import com.auth0.jwt.exceptions.JWTVerificationException
-import com.shelflife.core.domain.security.AuthConstants
-import com.shelflife.core.domain.security.TokenManager
+import com.mozgobolt.core.domain.security.AuthConstants
+import com.mozgobolt.core.domain.security.TokenManager
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
@@ -41,7 +41,10 @@ class JwtTokenManager(
             .build()
     }
 
-    override fun generateAccessToken(userId: Int): String {
+    override fun generateAccessToken(
+        userId: Int,
+        role: String,
+    ): String {
         val expirationDate = Instant.now().plus(accessTokenExpiration.toJavaDuration())
 
         return JWT
@@ -50,6 +53,7 @@ class JwtTokenManager(
             .withIssuer(issuer)
             .withJWTId(UUID.randomUUID().toString())
             .withClaim(AuthConstants.CLAIM_USER_ID, userId)
+            .withClaim(AuthConstants.CLAIM_USER_ROLE, role)
             .withClaim(AuthConstants.CLAIM_TOKEN_TYPE, AuthConstants.TOKEN_TYPE_ACCESS)
             .withExpiresAt(expirationDate)
             .sign(algorithm)

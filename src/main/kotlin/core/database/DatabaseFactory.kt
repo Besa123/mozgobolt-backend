@@ -1,4 +1,4 @@
-package com.shelflife.core.database
+package com.mozgobolt.core.database
 
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
@@ -33,7 +33,7 @@ object DatabaseFactory {
                 jdbcUrl = dbUrl
                 username = dbUser
                 password = dbPassword
-                poolName = "ShelfLife-Pool"
+                poolName = "MozgoBolt-Pool"
                 maximumPoolSize = poolSize
                 minimumIdle = MIN_IDLE_CONNECTIONS
                 isAutoCommit = false

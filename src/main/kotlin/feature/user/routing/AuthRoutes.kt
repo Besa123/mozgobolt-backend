@@ -1,34 +1,39 @@
-package com.shelflife.feature.user.routing
+package com.mozgobolt.feature.user.routing
 
-import com.shelflife.core.data.idempotency.IdempotencyStore
-import com.shelflife.core.data.idempotency.IdempotentResult
-import com.shelflife.core.data.idempotency.idempotent
-import com.shelflife.core.data.idempotency.idempotentResult
-import com.shelflife.core.modules.plugin.AUTH_LIMIT
-import com.shelflife.core.modules.plugin.BodyLimit
-import com.shelflife.core.modules.plugin.RequestTimeout
-import com.shelflife.core.modules.plugin.limitedPost
-import com.shelflife.core.modules.plugin.validatedPost
-import com.shelflife.core.routing.dto.response.ErrorResponse
-import com.shelflife.core.utility.functions.currentUserIdOrNull
-import com.shelflife.core.utility.functions.protectedApi
-import com.shelflife.core.utility.functions.publicRateLimitedApi
-import com.shelflife.feature.user.domain.UserService
-import com.shelflife.feature.user.domain.model.LoginError
-import com.shelflife.feature.user.domain.model.PasswordResetError
-import com.shelflife.feature.user.domain.model.RefreshError
-import com.shelflife.feature.user.domain.model.RegisterError
-import com.shelflife.feature.user.domain.model.VerifyEmailError
-import com.shelflife.feature.user.routing.dto.request.LoginRequestDto
-import com.shelflife.feature.user.routing.dto.request.LogoutRequestDto
-import com.shelflife.feature.user.routing.dto.request.PasswordResetConfirmRequestDto
-import com.shelflife.feature.user.routing.dto.request.PasswordResetRequestDto
-import com.shelflife.feature.user.routing.dto.request.PasswordResetValidateRequestDto
-import com.shelflife.feature.user.routing.dto.request.RefreshRequestDto
-import com.shelflife.feature.user.routing.dto.request.UserCreationRequestDto
-import com.shelflife.feature.user.routing.dto.response.MessageResponseDto
-import com.shelflife.feature.user.routing.dto.response.PasswordResetValidateResponseDto
-import com.shelflife.feature.user.routing.dto.response.SignInResponseDto
+import com.mozgobolt.core.data.idempotency.IdempotencyStore
+import com.mozgobolt.core.data.idempotency.IdempotentResult
+import com.mozgobolt.core.data.idempotency.idempotent
+import com.mozgobolt.core.data.idempotency.idempotentResult
+import com.mozgobolt.core.modules.plugin.AUTH_LIMIT
+import com.mozgobolt.core.modules.plugin.BodyLimit
+import com.mozgobolt.core.modules.plugin.RequestTimeout
+import com.mozgobolt.core.modules.plugin.limitedPost
+import com.mozgobolt.core.modules.plugin.validatedPatch
+import com.mozgobolt.core.modules.plugin.validatedPost
+import com.mozgobolt.core.routing.dto.response.ErrorResponse
+import com.mozgobolt.core.utility.functions.currentUserIdOrNull
+import com.mozgobolt.core.utility.functions.protectedApi
+import com.mozgobolt.core.utility.functions.publicRateLimitedApi
+import com.mozgobolt.feature.user.domain.UserService
+import com.mozgobolt.feature.user.domain.model.LoginError
+import com.mozgobolt.feature.user.domain.model.PasswordResetError
+import com.mozgobolt.feature.user.domain.model.RefreshError
+import com.mozgobolt.feature.user.domain.model.RegisterError
+import com.mozgobolt.feature.user.domain.model.UserRole
+import com.mozgobolt.feature.user.domain.model.VerifyEmailError
+import com.mozgobolt.feature.user.routing.dto.request.LoginRequestDto
+import com.mozgobolt.feature.user.routing.dto.request.LogoutRequestDto
+import com.mozgobolt.feature.user.routing.dto.request.PasswordResetConfirmRequestDto
+import com.mozgobolt.feature.user.routing.dto.request.PasswordResetRequestDto
+import com.mozgobolt.feature.user.routing.dto.request.PasswordResetValidateRequestDto
+import com.mozgobolt.feature.user.routing.dto.request.RefreshRequestDto
+import com.mozgobolt.feature.user.routing.dto.request.UpdateContactInfoRequestDto
+import com.mozgobolt.feature.user.routing.dto.request.UserCreationRequestDto
+import com.mozgobolt.feature.user.routing.dto.request.toDomain
+import com.mozgobolt.feature.user.routing.dto.response.MessageResponseDto
+import com.mozgobolt.feature.user.routing.dto.response.PasswordResetValidateResponseDto
+import com.mozgobolt.feature.user.routing.dto.response.SignInResponseDto
+import com.mozgobolt.feature.user.routing.dto.response.toResponseDto
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -59,6 +64,11 @@ private fun Route.authPublicRoutes(
                             password = request.password,
                             email = request.email,
                             name = request.name,
+                            role = UserRole.valueOf(request.role),
+                            phoneNumber = request.phoneNumber,
+                            whatsappNumber = request.whatsappNumber,
+                            viberNumber = request.viberNumber,
+                            messengerUsername = request.messengerUsername,
                         ).fold(
                             onError = { registerError ->
                                 val status =
@@ -66,6 +76,8 @@ private fun Route.authPublicRoutes(
                                         RegisterError.ALREADY_EXISTS -> HttpStatusCode.Conflict
                                         RegisterError.WEAK_PASSWORD -> HttpStatusCode.BadRequest
                                         RegisterError.INVALID_EMAIL -> HttpStatusCode.BadRequest
+                                        RegisterError.INVALID_PHONE_NUMBER -> HttpStatusCode.BadRequest
+                                        RegisterError.INVALID_MESSENGER_USERNAME -> HttpStatusCode.BadRequest
                                     }
                                 idempotentResult(status, ErrorResponse(error = registerError.name))
                             },
@@ -218,6 +230,19 @@ private fun Route.authPublicRoutes(
 
 private fun Route.authProtectedRoutes(userService: UserService) {
     protectedApi {
+        validatedPatch<UpdateContactInfoRequestDto>(
+            "/users/me/contact-info",
+            BodyLimit.TINY,
+            RequestTimeout.FAST,
+        ) { request ->
+            val userId = call.currentUserIdOrNull() ?: return@validatedPatch call.respond(HttpStatusCode.Unauthorized)
+
+            userService.updateContactInfo(userId, request.toDomain()).fold(
+                onSuccess = { call.respond(HttpStatusCode.OK, it.toResponseDto()) },
+                onError = { error -> call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = error.name)) },
+            )
+        }
+
         route("/auth") {
             validatedPost<LogoutRequestDto>("/logout", BodyLimit.SMALL, RequestTimeout.FAST) { request ->
                 val userId =

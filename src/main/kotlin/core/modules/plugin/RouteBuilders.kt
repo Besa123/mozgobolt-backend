@@ -1,7 +1,7 @@
-package com.shelflife.core.modules.plugin
+package com.mozgobolt.core.modules.plugin
 
-import com.shelflife.core.domain.validation.ValidatedRequest
-import com.shelflife.core.routing.dto.response.ErrorResponse
+import com.mozgobolt.core.domain.validation.ValidatedRequest
+import com.mozgobolt.core.routing.dto.response.ErrorResponse
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.PartData
 import io.ktor.http.content.forEachPart

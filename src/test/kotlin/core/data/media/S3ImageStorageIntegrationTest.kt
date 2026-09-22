@@ -1,8 +1,8 @@
-package com.shelflife.core.data.media
+package com.mozgobolt.core.data.media
 
 import com.adobe.testing.s3mock.testcontainers.S3MockContainer
-import com.shelflife.core.modules.AppConfig
-import com.shelflife.core.skipIfNoDocker
+import com.mozgobolt.core.modules.AppConfig
+import com.mozgobolt.core.skipIfNoDocker
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals

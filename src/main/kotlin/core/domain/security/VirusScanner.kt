@@ -1,4 +1,4 @@
-package com.shelflife.core.domain.security
+package com.mozgobolt.core.domain.security
 
 sealed interface VirusScanResult {
     data object Clean : VirusScanResult

@@ -1,19 +1,20 @@
-package com.shelflife.feature.user
+package com.mozgobolt.feature.user
 
-import com.shelflife.core.data.idempotency.ExposedIdempotencyStore
-import com.shelflife.core.data.security.JwtTokenManager
-import com.shelflife.core.data.security.PasswordServiceImpl
-import com.shelflife.core.data.validator.StandardEmailValidator
-import com.shelflife.core.data.validator.StandardPasswordValidator
-import com.shelflife.core.database.DatabaseFactory
-import com.shelflife.core.database.ExposedTransactionalRunner
-import com.shelflife.core.domain.AppResult
-import com.shelflife.core.domain.email.EmailService
-import com.shelflife.core.modules.AppConfig
-import com.shelflife.feature.user.data.repository.UserRepositoryI
-import com.shelflife.feature.user.domain.model.RefreshError
-import com.shelflife.feature.user.domain.model.RegisterError
-import com.shelflife.feature.user.service.UserServiceI
+import com.mozgobolt.core.data.idempotency.ExposedIdempotencyStore
+import com.mozgobolt.core.data.security.JwtTokenManager
+import com.mozgobolt.core.data.security.PasswordServiceImpl
+import com.mozgobolt.core.data.validator.StandardEmailValidator
+import com.mozgobolt.core.data.validator.StandardPasswordValidator
+import com.mozgobolt.core.database.DatabaseFactory
+import com.mozgobolt.core.database.ExposedTransactionalRunner
+import com.mozgobolt.core.domain.AppResult
+import com.mozgobolt.core.domain.email.EmailService
+import com.mozgobolt.core.modules.AppConfig
+import com.mozgobolt.feature.user.data.repository.UserRepositoryI
+import com.mozgobolt.feature.user.domain.model.RefreshError
+import com.mozgobolt.feature.user.domain.model.RegisterError
+import com.mozgobolt.feature.user.domain.model.UserRole
+import com.mozgobolt.feature.user.service.UserServiceI
 import com.zaxxer.hikari.HikariDataSource
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -54,6 +55,7 @@ class AuthFlowIntegrationTest {
                                 password = "Str0ngPass1",
                                 email = "racer@example.com",
                                 name = "A",
+                                role = UserRole.BUYER,
                             )
                         },
                         async {
@@ -61,6 +63,7 @@ class AuthFlowIntegrationTest {
                                 password = "Str0ngPass1",
                                 email = "racer@example.com",
                                 name = "B",
+                                role = UserRole.BUYER,
                             )
                         },
                     ).awaitAll()
@@ -112,8 +115,8 @@ class AuthFlowIntegrationTest {
                         tokenManager =
                             JwtTokenManager(
                                 secret = "integration-test-secret",
-                                issuer = "shelflife-test",
-                                audience = "shelflife-test",
+                                issuer = "mozgobolt-test",
+                                audience = "mozgobolt-test",
                             ),
                         passwordValidator = StandardPasswordValidator(),
                         emailValidator = StandardEmailValidator(),
@@ -136,8 +139,12 @@ class AuthFlowIntegrationTest {
         emailService: RecordingEmailService,
     ) {
         service
-            .createUser(password = "Str0ngPass1", email = "integration@example.com", name = "Integration Tester")
-            .fold(onSuccess = {}, onError = { fail("register failed: $it") })
+            .createUser(
+                password = "Str0ngPass1",
+                email = "integration@example.com",
+                name = "Integration Tester",
+                role = UserRole.BUYER,
+            ).fold(onSuccess = {}, onError = { fail("register failed: $it") })
 
         val (_, verificationToken) = emailService.sentTokens.single()
         service.verifyEmail(verificationToken).fold(onSuccess = {}, onError = { fail("verify failed: $it") })

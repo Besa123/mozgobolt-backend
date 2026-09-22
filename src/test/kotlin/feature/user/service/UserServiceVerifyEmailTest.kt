@@ -1,6 +1,7 @@
-package com.shelflife.feature.user.service
+package com.mozgobolt.feature.user.service
 
-import com.shelflife.feature.user.domain.model.VerifyEmailError
+import com.mozgobolt.feature.user.domain.model.UserRole
+import com.mozgobolt.feature.user.domain.model.VerifyEmailError
 import kotlinx.coroutines.runBlocking
 import java.time.Instant
 import kotlin.test.Test
@@ -13,7 +14,12 @@ class UserServiceVerifyEmailTest {
     fun `verifying with the token sent at registration succeeds`() {
         runBlocking {
             val harness = newHarness()
-            harness.service.createUser(password = "Str0ngPass", email = "user@example.com", name = "User")
+            harness.service.createUser(
+                password = "Str0ngPass",
+                email = "user@example.com",
+                name = "User",
+                role = UserRole.BUYER,
+            )
             val token =
                 harness.emailService.sentTokens
                     .single()
@@ -109,7 +115,12 @@ class UserServiceVerifyEmailTest {
     fun `verifying the same token twice fails the second time`() {
         runBlocking {
             val harness = newHarness()
-            harness.service.createUser(password = "Str0ngPass", email = "user@example.com", name = "User")
+            harness.service.createUser(
+                password = "Str0ngPass",
+                email = "user@example.com",
+                name = "User",
+                role = UserRole.BUYER,
+            )
             val token =
                 harness.emailService.sentTokens
                     .single()

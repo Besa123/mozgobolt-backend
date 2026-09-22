@@ -1,11 +1,11 @@
-package com.shelflife.feature.user.routing
+package com.mozgobolt.feature.user.routing
 
-import com.shelflife.core.TEST_JWT_AUDIENCE
-import com.shelflife.core.TEST_JWT_ISSUER
-import com.shelflife.core.TEST_JWT_SECRET
-import com.shelflife.core.configureTestEnvironment
-import com.shelflife.core.data.security.JwtTokenManager
-import com.shelflife.core.testAccessTokenFor
+import com.mozgobolt.core.TEST_JWT_AUDIENCE
+import com.mozgobolt.core.TEST_JWT_ISSUER
+import com.mozgobolt.core.TEST_JWT_SECRET
+import com.mozgobolt.core.configureTestEnvironment
+import com.mozgobolt.core.data.security.JwtTokenManager
+import com.mozgobolt.core.testAccessTokenFor
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -62,7 +62,7 @@ class AuthRoutesSecurityTest {
                     audience = TEST_JWT_AUDIENCE,
                     issuer = TEST_JWT_ISSUER,
                 )
-            val forgedToken = otherManager.generateAccessToken(userId = 1)
+            val forgedToken = otherManager.generateAccessToken(userId = 1, role = "BUYER")
 
             val response = client.post(AuthPaths.LOGOUT_ALL) { bearerAuth(forgedToken) }
 

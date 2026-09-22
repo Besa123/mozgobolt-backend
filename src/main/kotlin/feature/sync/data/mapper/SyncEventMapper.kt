@@ -1,9 +1,9 @@
-package com.shelflife.feature.sync.data.mapper
+package com.mozgobolt.feature.sync.data.mapper
 
-import com.shelflife.feature.sync.data.database.SyncEventsTable
-import com.shelflife.feature.sync.domain.model.SyncEntityType
-import com.shelflife.feature.sync.domain.model.SyncEvent
-import com.shelflife.feature.sync.domain.model.SyncOperation
+import com.mozgobolt.feature.sync.data.database.SyncEventsTable
+import com.mozgobolt.feature.sync.domain.model.SyncEntityType
+import com.mozgobolt.feature.sync.domain.model.SyncEvent
+import com.mozgobolt.feature.sync.domain.model.SyncOperation
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.jetbrains.exposed.v1.core.ResultRow
 

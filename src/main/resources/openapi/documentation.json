@@ -1,8 +1,8 @@
 {
   "openapi": "3.0.0",
   "info": {
-    "title": "ShelfLife API",
-    "description": "Backend API for ShelfLife.\n\nAll endpoints share a global rate limit of 150 requests/minute per client; every `/api/v1/auth/*` endpoint additionally enforces a 5 requests/minute limit (429), and every authenticated endpoint enforces a 60 requests/minute limit keyed by user id (429). POST bodies are size-limited (413 when exceeded) and requests time out server-side (504). Error bodies, where present, use the `ErrorResponse` shape; `error` is a machine-readable code.\n\nSorting, grouping, and aggregation of pantry data are frontend concerns, not this API's — endpoints return raw data (in insertion order for lists) and let the client format it.",
+    "title": "MozgoBolt API",
+    "description": "Backend API for MozgoBolt \u2014 real-time GPS tracking for mobile vendors (e.g. moving food trucks/bakeries) so buyers can see nearby vendor vehicles on a live map, ping a vehicle they're interested in, and get notified when a favorited company's vehicle enters an area they've saved.\n\nDomain model: a vendor's first company creation makes them its admin; other vendors join via invite code. A company owns vehicles; a vendor links themself to a vehicle for a driving session (an active `VehicleAssignment`) and unlinks at the end of it \u2014 all GPS telemetry is tied to whichever vehicle currently has an active assignment for the calling vendor, never directly to the vendor. A buyer favorites companies (not individual vehicles) and can save named locations to be notified about.\n\nRate limits: a global 150 requests/minute per client; every `/api/v1/auth/*` endpoint additionally enforces 5 requests/minute (429); every other authenticated endpoint enforces 60 requests/minute keyed by user id (429); file-upload endpoints enforce a stricter 10 requests/minute. POST/PATCH bodies are size-limited (413 when exceeded) and requests time out server-side (504). Error bodies, where present, use the `ErrorResponse` shape; `error` is the machine-readable code to switch on, `message`/`details` are human-readable context only.\n\nTwo endpoints are Server-Sent Events (SSE) streams, not typical request/response \u2014 `GET /vehicle-tracking/live` and `GET /vehicle-tracking/pings/live` \u2014 documented below with the event types each one emits, since OpenAPI has no first-class SSE modeling.",
     "version": "1.0.0"
   },
   "servers": [
@@ -11,6 +11,299 @@
       "description": "Local development server"
     }
   ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Machine-readable error code"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable context, optional"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "ContactInfo": {
+        "type": "object",
+        "properties": {
+          "phoneNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "phoneNumberVisible": {
+            "type": "boolean"
+          },
+          "whatsappNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "whatsappVisible": {
+            "type": "boolean"
+          },
+          "viberNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "viberVisible": {
+            "type": "boolean"
+          },
+          "messengerUsername": {
+            "type": "string",
+            "nullable": true
+          },
+          "messengerVisible": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Company": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "inviteCode": {
+            "type": "string"
+          }
+        }
+      },
+      "CompanyMembership": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "integer"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "ADMIN",
+              "MEMBER"
+            ]
+          }
+        }
+      },
+      "CompanyFavorite": {
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "integer"
+          }
+        }
+      },
+      "Vehicle": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "companyId": {
+            "type": "integer"
+          },
+          "label": {
+            "type": "string"
+          },
+          "licensePlate": {
+            "type": "string"
+          },
+          "pictureUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "currentDriverPhoneNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "currentDriverWhatsAppLink": {
+            "type": "string",
+            "nullable": true
+          },
+          "currentDriverViberLink": {
+            "type": "string",
+            "nullable": true
+          },
+          "currentDriverMessengerLink": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "VehicleAssignment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "vehicleId": {
+            "type": "integer"
+          },
+          "vendorUserId": {
+            "type": "integer"
+          }
+        }
+      },
+      "TelemetryPoint": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude",
+          "recordedAt"
+        ]
+      },
+      "VehicleLocation": {
+        "type": "object",
+        "properties": {
+          "vehicleId": {
+            "type": "integer"
+          },
+          "latitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "VehiclePingNotification": {
+        "type": "object",
+        "properties": {
+          "vehicleId": {
+            "type": "integer"
+          },
+          "sentAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "latitude": {
+            "type": "number",
+            "format": "double",
+            "description": "Privacy-coarsened to an H3 cell center, never the buyer's exact position"
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double",
+            "description": "Privacy-coarsened to an H3 cell center, never the buyer's exact position"
+          }
+        }
+      },
+      "DeviceInstallation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "ANDROID",
+              "IOS"
+            ]
+          }
+        }
+      },
+      "SavedLocation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "label": {
+            "type": "string"
+          },
+          "latitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "radiusKm": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "SyncEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "entityType": {
+            "type": "string"
+          },
+          "entityId": {
+            "type": "integer"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SyncPage": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SyncEvent"
+            }
+          },
+          "nextCursor": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      }
+    }
+  },
   "paths": {
     "/health": {
       "get": {
@@ -38,21 +331,11 @@
             }
           },
           "503": {
-            "description": "Service is unhealthy",
+            "description": "Service is unhealthy (database unreachable)",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": {
-                      "type": "string",
-                      "example": "unhealthy"
-                    },
-                    "reason": {
-                      "type": "string",
-                      "example": "database"
-                    }
-                  }
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -62,7 +345,8 @@
     },
     "/ready": {
       "get": {
-        "summary": "Readiness probe",
+        "summary": "Readiness check",
+        "description": "Returns whether the service is ready to accept traffic",
         "tags": [
           "Infrastructure"
         ],
@@ -90,154 +374,162 @@
     "/api/v1/auth/register": {
       "post": {
         "summary": "Register a new user",
-        "description": "Creates a user account and sends a verification email. Supports idempotent retries via the optional `Idempotency-Key` header: a replayed key with the same payload returns the original response (with `X-Idempotency-Replayed: true`); the same key with a different payload returns 422; a concurrent in-flight request with the same key returns 409 `REQUEST_IN_PROGRESS`.",
+        "description": "Creates a buyer or vendor account. Idempotent by request body \u2014 a network retry with the identical payload replays the original result rather than creating a duplicate account. Rate limit: 5/min (auth-limit).",
         "tags": [
-          "Authentication"
+          "Auth"
         ],
-        "operationId": "register",
-        "parameters": [
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "registerUser",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "email",
-                  "password",
-                  "name"
-                ],
                 "properties": {
-                  "email": {
-                    "type": "string",
-                    "format": "email",
-                    "example": "user@example.com"
-                  },
                   "password": {
-                    "type": "string",
-                    "format": "password",
-                    "minLength": 8,
-                    "maxLength": 128,
-                    "description": "Must contain at least one uppercase letter, one lowercase letter, and one digit.",
-                    "example": "SecurePassword123"
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
                   },
                   "name": {
+                    "type": "string"
+                  },
+                  "role": {
                     "type": "string",
-                    "maxLength": 100,
-                    "description": "No leading/trailing spaces; must not contain < > \" ' & ;",
-                    "example": "Ada Lovelace"
+                    "enum": [
+                      "BUYER",
+                      "VENDOR"
+                    ]
+                  },
+                  "phoneNumber": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Hungary-locked; optional"
+                  },
+                  "whatsappNumber": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Any country; optional"
+                  },
+                  "viberNumber": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Any country; optional"
+                  },
+                  "messengerUsername": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Optional"
                   }
-                }
+                },
+                "required": [
+                  "password",
+                  "email",
+                  "name",
+                  "role"
+                ]
               }
             }
           }
         },
         "responses": {
           "201": {
-            "description": "User registered; response body is empty"
+            "description": "Account created"
           },
           "400": {
-            "description": "Validation failed (`VALIDATION_FAILED`), weak password (`WEAK_PASSWORD`), invalid email (`INVALID_EMAIL`), or invalid idempotency key (`INVALID_IDEMPOTENCY_KEY`)",
+            "description": "Request failed validation",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VALIDATION_FAILED"
                 }
               }
             }
           },
           "409": {
-            "description": "Email already registered (`ALREADY_EXISTS`) or an identical idempotent request is in flight (`REQUEST_IN_PROGRESS`)",
+            "description": "Email already registered",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Idempotency key reused with a different payload (`IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "ALREADY_EXISTS"
                 }
               }
             }
           },
           "429": {
-            "$ref": "#/components/responses/TooManyRequests"
+            "description": "Rate limit exceeded"
           }
         }
       }
     },
     "/api/v1/auth/login": {
       "post": {
-        "summary": "User login",
-        "description": "Authenticate and receive access + refresh tokens",
+        "summary": "Log in",
+        "description": "Exchanges email+password for an access/refresh token pair. Rate limit: 5/min.",
         "tags": [
-          "Authentication"
+          "Auth"
         ],
-        "operationId": "login",
+        "operationId": "loginUser",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
+                },
                 "required": [
                   "email",
                   "password"
-                ],
-                "properties": {
-                  "email": {
-                    "type": "string",
-                    "format": "email",
-                    "example": "user@example.com"
-                  },
-                  "password": {
-                    "type": "string",
-                    "format": "password",
-                    "example": "SecurePassword123"
-                  }
-                }
+                ]
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Login successful",
+            "description": "Signed in",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenPair"
+                  "type": "object",
+                  "properties": {
+                    "accessToken": {
+                      "type": "string"
+                    },
+                    "refreshToken": {
+                      "type": "string"
+                    }
+                  }
                 }
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
           "401": {
-            "description": "Invalid credentials; response body is empty"
+            "description": "Invalid credentials"
           },
           "429": {
-            "description": "Rate limit exceeded (empty body), or account temporarily locked after repeated failed logins (`ACCOUNT_LOCKED`)",
+            "description": "Account temporarily locked after too many failed attempts, or rate limited",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "ACCOUNT_LOCKED"
                 }
               }
             }
@@ -247,57 +539,61 @@
     },
     "/api/v1/auth/refresh": {
       "post": {
-        "summary": "Refresh access token",
-        "description": "Exchanges a refresh token for a new token pair; the refresh token is rotated on each use. Reusing an already-rotated token invalidates the whole token family (theft detection).",
+        "summary": "Refresh an access token",
+        "description": "Rotates the refresh token family. Reusing an already-rotated (stale) refresh token invalidates the whole family, forcing re-login on every device \u2014 see ADR 0004.",
         "tags": [
-          "Authentication"
+          "Auth"
         ],
-        "operationId": "refresh",
+        "operationId": "refreshToken",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "refreshToken"
-                ],
                 "properties": {
                   "refreshToken": {
-                    "type": "string",
-                    "example": "eyJ..."
+                    "type": "string"
                   }
-                }
+                },
+                "required": [
+                  "refreshToken"
+                ]
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Token refreshed",
+            "description": "New token pair",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenPair"
+                  "type": "object",
+                  "properties": {
+                    "accessToken": {
+                      "type": "string"
+                    },
+                    "refreshToken": {
+                      "type": "string"
+                    }
+                  }
                 }
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
           "401": {
-            "description": "Invalid/expired refresh token (empty body), or reuse of a rotated token (`TOKEN_REUSE_DETECTED` — the entire token family is now invalidated)",
+            "description": "Invalid credentials, or reuse of an already-rotated token detected",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "TOKEN_REUSE_DETECTED"
                 }
               }
             }
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -305,9 +601,9 @@
     "/api/v1/auth/verify-email": {
       "get": {
         "summary": "Verify email address",
-        "description": "Consumes an email verification token; response bodies on success are empty",
+        "description": "Consumes a one-time email-verification token sent at registration.",
         "tags": [
-          "Authentication"
+          "Auth"
         ],
         "operationId": "verifyEmail",
         "parameters": [
@@ -315,48 +611,54 @@
             "name": "token",
             "in": "query",
             "required": true,
+            "description": "The verification token from the email link",
             "schema": {
               "type": "string"
-            },
-            "description": "Token from the verification email"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Email verified; response body is empty"
+            "description": "Email verified"
           },
           "400": {
-            "description": "Token missing (`MISSING_TOKEN`) or invalid (`INVALID_TOKEN`)",
+            "description": "Missing or invalid token",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "INVALID_TOKEN"
                 }
               }
             }
           },
           "409": {
-            "description": "Email already verified (`ALREADY_VERIFIED`)",
+            "description": "Already verified",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "ALREADY_VERIFIED"
                 }
               }
             }
           },
           "410": {
-            "description": "Verification token expired (`EXPIRED_TOKEN`)",
+            "description": "Token expired",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "EXPIRED_TOKEN"
                 }
               }
             }
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -364,9 +666,9 @@
     "/api/v1/auth/password-reset/request": {
       "post": {
         "summary": "Request a password reset",
-        "description": "Always responds 200 regardless of whether the email is registered, to avoid leaking account existence. Emits a reset email only if the account exists.",
+        "description": "Always returns 200 regardless of whether the email exists, to avoid leaking account existence.",
         "tags": [
-          "Authentication"
+          "Auth"
         ],
         "operationId": "requestPasswordReset",
         "requestBody": {
@@ -375,50 +677,21 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "email"
-                ],
                 "properties": {
                   "email": {
-                    "type": "string",
-                    "format": "email",
-                    "example": "user@example.com"
+                    "type": "string"
                   }
-                }
+                },
+                "required": [
+                  "email"
+                ]
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Request accepted (whether or not the account exists)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MessageResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Any `PasswordResetError` other than `ACCOUNT_LOCKED` (e.g. `INVALID_TOKEN`, `WEAK_PASSWORD`, `SAME_AS_OLD`, `USER_NOT_FOUND`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Rate limit exceeded, or account temporarily locked (`ACCOUNT_LOCKED`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
+            "description": "Reset email sent if the account exists"
           }
         }
       }
@@ -426,9 +699,9 @@
     "/api/v1/auth/password-reset/validate": {
       "post": {
         "summary": "Validate a password reset token",
-        "description": "Checks whether a reset token is still usable, without consuming it.",
+        "description": "Checks a reset token before showing the reset form.",
         "tags": [
-          "Authentication"
+          "Auth"
         ],
         "operationId": "validatePasswordResetToken",
         "requestBody": {
@@ -437,51 +710,63 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "token"
-                ],
                 "properties": {
                   "token": {
                     "type": "string"
                   }
-                }
+                },
+                "required": [
+                  "token"
+                ]
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Token is valid",
+            "description": "Token status",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PasswordResetValidateResponse"
+                  "type": "object",
+                  "properties": {
+                    "valid": {
+                      "type": "boolean"
+                    },
+                    "email": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  }
                 }
               }
             }
           },
           "400": {
-            "description": "Any `PasswordResetError` other than `EXPIRED_TOKEN` (e.g. `INVALID_TOKEN`)",
+            "description": "Invalid token",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "INVALID_TOKEN"
                 }
               }
             }
           },
           "410": {
-            "description": "Reset token expired (`EXPIRED_TOKEN`)",
+            "description": "Token expired",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "EXPIRED_TOKEN"
                 }
               }
             }
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -489,9 +774,9 @@
     "/api/v1/auth/password-reset/confirm": {
       "post": {
         "summary": "Confirm a password reset",
-        "description": "Consumes the reset token and sets a new password.",
+        "description": "Sets a new password using a validated reset token.",
         "tags": [
-          "Authentication"
+          "Auth"
         ],
         "operationId": "confirmPasswordReset",
         "requestBody": {
@@ -500,63 +785,61 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "token",
-                  "newPassword"
-                ],
                 "properties": {
                   "token": {
                     "type": "string"
                   },
                   "newPassword": {
-                    "type": "string",
-                    "format": "password",
-                    "minLength": 8,
-                    "maxLength": 128,
-                    "description": "Must contain at least one uppercase letter, one lowercase letter, and one digit; must differ from the current password (`SAME_AS_OLD` otherwise)."
+                    "type": "string"
                   }
-                }
+                },
+                "required": [
+                  "token",
+                  "newPassword"
+                ]
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Password reset",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MessageResponse"
-                }
-              }
-            }
+            "description": "Password reset"
           },
           "400": {
-            "description": "Any `PasswordResetError` other than `EXPIRED_TOKEN`/`ACCOUNT_LOCKED` (e.g. `INVALID_TOKEN`, `WEAK_PASSWORD`, `SAME_AS_OLD`, `USER_NOT_FOUND`)",
+            "description": "Invalid token or weak password",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "INVALID_TOKEN"
                 }
               }
             }
           },
           "410": {
-            "description": "Reset token expired (`EXPIRED_TOKEN`)",
+            "description": "Token expired",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "EXPIRED_TOKEN"
                 }
               }
             }
           },
           "429": {
-            "description": "Rate limit exceeded, or account temporarily locked (`ACCOUNT_LOCKED`)",
+            "description": "Account locked",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "ACCOUNT_LOCKED"
                 }
               }
             }
@@ -566,15 +849,990 @@
     },
     "/api/v1/auth/logout": {
       "post": {
-        "summary": "Logout user",
-        "description": "Invalidates the presented refresh token",
+        "summary": "Log out",
+        "description": "Revokes the given refresh token.",
         "tags": [
-          "Authentication"
+          "Auth"
         ],
-        "operationId": "logout",
+        "operationId": "logoutUser",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "refreshToken": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "refreshToken"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Logged out"
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          }
+        },
         "security": [
           {
             "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/logout-all": {
+      "post": {
+        "summary": "Log out everywhere",
+        "description": "Revokes every refresh token for the caller \u2014 all devices.",
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "logoutAllSessions",
+        "responses": {
+          "200": {
+            "description": "All sessions revoked"
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/resend-verification": {
+      "post": {
+        "summary": "Resend the verification email",
+        "description": "Re-sends the email-verification link.",
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "resendVerificationEmail",
+        "responses": {
+          "200": {
+            "description": "Verification email resent"
+          },
+          "401": {
+            "description": "Invalid token state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "INVALID_TOKEN"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "ALREADY_VERIFIED"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "EXPIRED_TOKEN"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/users/me/contact-info": {
+      "patch": {
+        "summary": "Update my contact info",
+        "description": "Full-replace, not a partial patch \u2014 the client always sends every field's current desired state. Setting a field to `null` removes it entirely; setting its matching `*Visible` flag to `false` hides an already-set value from buyers without deleting it (independent controls). `phoneNumber` validates as Hungary-only; `whatsappNumber`/`viberNumber` validate as any valid international number.",
+        "tags": [
+          "Auth",
+          "Users"
+        ],
+        "operationId": "updateContactInfo",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phoneNumber": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "phoneNumberVisible": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "whatsappNumber": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "whatsappVisible": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "viberNumber": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "viberVisible": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "messengerUsername": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "messengerVisible": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated contact info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request failed validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VALIDATION_FAILED"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/companies": {
+      "post": {
+        "summary": "Create a company",
+        "description": "Vendor-only. The creator becomes the company's first ADMIN. Idempotent by (caller, request body).",
+        "tags": [
+          "Companies"
+        ],
+        "operationId": "createCompany",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Company created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Company"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request failed validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VALIDATION_FAILED"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "403": {
+            "description": "Caller's role is not permitted, or not an admin of this company"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/companies/join": {
+      "post": {
+        "summary": "Join a company via invite code",
+        "description": "Vendor-only. Adds the caller as a MEMBER. A vendor can belong to multiple companies at once.",
+        "tags": [
+          "Companies"
+        ],
+        "operationId": "joinCompany",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "inviteCode": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "inviteCode"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Joined",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Company"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid invite code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "INVALID_INVITE_CODE"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "403": {
+            "description": "Caller's role is not permitted, or not an admin of this company"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/companies/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "Company id",
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "patch": {
+        "summary": "Rename a company",
+        "description": "Admin-of-this-company only.",
+        "tags": [
+          "Companies"
+        ],
+        "operationId": "renameCompany",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Renamed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Company"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request failed validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VALIDATION_FAILED"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "403": {
+            "description": "Caller's role is not permitted, or not an admin of this company"
+          },
+          "404": {
+            "description": "Company not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "COMPANY_NOT_FOUND"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "summary": "Delete a company",
+        "description": "Admin-of-this-company only. Cascades to its vehicles, memberships and vehicle assignments; any vehicle with an active driving session is properly ended first (clearing it from the live map) before the cascade runs.",
+        "tags": [
+          "Companies"
+        ],
+        "operationId": "deleteCompany",
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "403": {
+            "description": "Caller's role is not permitted, or not an admin of this company"
+          },
+          "404": {
+            "description": "Company not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "COMPANY_NOT_FOUND"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/companies/{id}/invite-code/regenerate": {
+      "post": {
+        "summary": "Regenerate the invite code",
+        "description": "Admin-only. The previous invite code stops working immediately. Idempotent \u2014 a retried request replays the one new code already generated rather than minting a second one.",
+        "tags": [
+          "Companies"
+        ],
+        "operationId": "regenerateInviteCode",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Company id",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "New invite code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Company"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "403": {
+            "description": "Caller's role is not permitted, or not an admin of this company"
+          },
+          "404": {
+            "description": "Company not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "COMPANY_NOT_FOUND"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/companies/{id}/members": {
+      "get": {
+        "summary": "List a company's members",
+        "description": "Any member of the company. Returns each member's user id and role.",
+        "tags": [
+          "Companies"
+        ],
+        "operationId": "listCompanyMembers",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Company id",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Members",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CompanyMembership"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "403": {
+            "description": "Caller's role is not permitted, or not an admin of this company"
+          },
+          "404": {
+            "description": "Company not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "COMPANY_NOT_FOUND"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/companies/{id}/members/{userId}/promote": {
+      "post": {
+        "summary": "Promote a member to admin",
+        "description": "Admin-only.",
+        "tags": [
+          "Companies"
+        ],
+        "operationId": "promoteMember",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Company id",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "description": "Target user id",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Promoted"
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "403": {
+            "description": "Caller's role is not permitted, or not an admin of this company"
+          },
+          "404": {
+            "description": "Company or target member not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "TARGET_NOT_A_MEMBER"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/companies/{id}/members/{userId}/demote": {
+      "post": {
+        "summary": "Demote an admin to member",
+        "description": "Admin-only. Rejected if it would leave the company with zero admins.",
+        "tags": [
+          "Companies"
+        ],
+        "operationId": "demoteMember",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Company id",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "description": "Target user id",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Demoted"
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "403": {
+            "description": "Caller's role is not permitted, or not an admin of this company"
+          },
+          "404": {
+            "description": "Company or target member not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "TARGET_NOT_A_MEMBER"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Would leave the company with no admins",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "LAST_ADMIN"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/companies/{id}/members/{userId}": {
+      "delete": {
+        "summary": "Remove a member",
+        "description": "Admin-only. If the target has an active driving session on one of this company's vehicles, it's ended properly (clearing it from the live map) first. Rejected if removing the target would leave the company with zero admins.",
+        "tags": [
+          "Companies"
+        ],
+        "operationId": "removeMember",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Company id",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "description": "Target user id",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "403": {
+            "description": "Caller's role is not permitted, or not an admin of this company"
+          },
+          "404": {
+            "description": "Company or target member not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "TARGET_NOT_A_MEMBER"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Would leave the company with no admins",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "LAST_ADMIN"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/companies/{id}/members/me": {
+      "delete": {
+        "summary": "Leave a company",
+        "description": "Self-service \u2014 any member. Same active-session and last-admin handling as removal by an admin.",
+        "tags": [
+          "Companies"
+        ],
+        "operationId": "leaveCompany",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Company id",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Left"
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "404": {
+            "description": "Not a member of this company",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "NOT_A_MEMBER"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Would leave the company with no admins",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "LAST_ADMIN"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/companies/{id}/favorite": {
+      "post": {
+        "summary": "Favorite a company",
+        "description": "Company-level only, by design \u2014 a buyer cares about \"any vehicle of this company nearby\", not one specific vehicle. Idempotent: favoriting twice is a no-op success.",
+        "tags": [
+          "Company Favorites"
+        ],
+        "operationId": "favoriteCompany",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Company id",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Favorited"
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "404": {
+            "description": "Company not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "COMPANY_NOT_FOUND"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "summary": "Unfavorite a company",
+        "description": "Idempotent: unfavoriting something not favorited is a no-op success.",
+        "tags": [
+          "Company Favorites"
+        ],
+        "operationId": "unfavoriteCompany",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Company id",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Unfavorited"
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "404": {
+            "description": "Company not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "COMPANY_NOT_FOUND"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/favorites": {
+      "get": {
+        "summary": "List my favorited companies",
+        "description": "",
+        "tags": [
+          "Company Favorites"
+        ],
+        "operationId": "listFavorites",
+        "responses": {
+          "200": {
+            "description": "Favorites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CompanyFavorite"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/companies/{id}/vehicles": {
+      "post": {
+        "summary": "Add a vehicle to a company",
+        "description": "Admin-only. Idempotent by (caller, company, request body).",
+        "tags": [
+          "Vehicles"
+        ],
+        "operationId": "createVehicle",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Company id",
+            "schema": {
+              "type": "integer"
+            }
           }
         ],
         "requestBody": {
@@ -583,13 +1841,370 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "refreshToken"
-                ],
                 "properties": {
-                  "refreshToken": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "licensePlate": {
+                    "type": "string"
+                  },
+                  "pictureUrl": {
                     "type": "string",
-                    "example": "eyJ..."
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "label",
+                  "licensePlate"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Vehicle created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vehicle"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request failed validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VALIDATION_FAILED"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "403": {
+            "description": "Not a member/admin of this company"
+          },
+          "404": {
+            "description": "Vehicle or company not found (also returned for an archived vehicle)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VEHICLE_NOT_FOUND"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "License plate already used by another vehicle in this company",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "LICENSE_PLATE_TAKEN"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "summary": "List a company's vehicles",
+        "description": "Any member of the company. Includes each vehicle's current driver's contact info (resolved live from whichever assignment is currently active). Archived vehicles are excluded.",
+        "tags": [
+          "Vehicles"
+        ],
+        "operationId": "listCompanyVehicles",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Company id",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vehicles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Vehicle"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "403": {
+            "description": "Not a member/admin of this company"
+          },
+          "404": {
+            "description": "Vehicle or company not found (also returned for an archived vehicle)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VEHICLE_NOT_FOUND"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "License plate already used by another vehicle in this company",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "LICENSE_PLATE_TAKEN"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/companies/{companyId}/vehicles/{id}": {
+      "patch": {
+        "summary": "Update a vehicle's plate/picture URL",
+        "description": "Admin-only. Rejected for an already-archived vehicle (treated as not-found).",
+        "tags": [
+          "Vehicles"
+        ],
+        "operationId": "updateVehicle",
+        "parameters": [
+          {
+            "name": "companyId",
+            "in": "path",
+            "required": true,
+            "description": "Company id",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Vehicle id",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "licensePlate": {
+                    "type": "string"
+                  },
+                  "pictureUrl": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "licensePlate"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vehicle"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request failed validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VALIDATION_FAILED"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "403": {
+            "description": "Not a member/admin of this company"
+          },
+          "404": {
+            "description": "Vehicle or company not found (also returned for an archived vehicle)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VEHICLE_NOT_FOUND"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "License plate already used by another vehicle in this company",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "LICENSE_PLATE_TAKEN"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/companies/{companyId}/vehicles/{id}/archive": {
+      "post": {
+        "summary": "Archive (soft-delete) a vehicle",
+        "description": "Admin-only. Not a hard delete \u2014 the vehicle's driving history is preserved (still governed by the normal 30-day retention purge). Force-ends any active driving session on it first (clearing it from the live map). Excluded from the fleet list and buyer-facing lookup afterward. Idempotent: archiving an already-archived vehicle is a clean no-op success.",
+        "tags": [
+          "Vehicles"
+        ],
+        "operationId": "archiveVehicle",
+        "parameters": [
+          {
+            "name": "companyId",
+            "in": "path",
+            "required": true,
+            "description": "Company id",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Vehicle id",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Archived"
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "403": {
+            "description": "Not a member/admin of this company"
+          },
+          "404": {
+            "description": "Vehicle or company not found (also returned for an archived vehicle)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VEHICLE_NOT_FOUND"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "License plate already used by another vehicle in this company",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "LICENSE_PLATE_TAKEN"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/companies/{companyId}/vehicles/{id}/picture": {
+      "post": {
+        "summary": "Upload a vehicle picture",
+        "description": "Admin-only. Rate limit: 10/min (upload-limit), stricter than the rest of this feature. Multipart file upload, max 5MB. The image is virus-scanned (fail-closed) and re-encoded to JPEG. A vehicle has at most one current picture \u2014 re-uploading overwrites it. Rejected for an already-archived vehicle.",
+        "tags": [
+          "Vehicles"
+        ],
+        "operationId": "uploadVehiclePicture",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
                   }
                 }
               }
@@ -598,85 +2213,56 @@
         },
         "responses": {
           "200": {
-            "description": "Logged out; response body is empty"
+            "description": "Picture stored, pictureUrl updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vehicle"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
           },
           "400": {
-            "$ref": "#/components/responses/BadRequest"
+            "description": "Not an image, corrupt, or flagged by the virus scanner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "INVALID_IMAGE"
+                }
+              }
+            }
           },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
+          "403": {
+            "description": "Not a member/admin of this company"
           },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          }
-        }
-      }
-    },
-    "/api/v1/auth/logout-all": {
-      "post": {
-        "summary": "Logout from all devices",
-        "description": "Invalidates all refresh tokens for the authenticated user",
-        "tags": [
-          "Authentication"
-        ],
-        "operationId": "logoutAll",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "All sessions ended; response body is empty"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          }
-        }
-      }
-    },
-    "/api/v1/auth/resend-verification": {
-      "post": {
-        "summary": "Resend email verification",
-        "description": "Sends a new verification email to the authenticated user. No request body.",
-        "tags": [
-          "Authentication"
-        ],
-        "operationId": "resendVerification",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Verification email sent; response body is empty"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
+          "404": {
+            "description": "Vehicle or company not found (also returned for an archived vehicle)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VEHICLE_NOT_FOUND"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Email already verified (`ALREADY_VERIFIED`)",
+            "description": "License plate already used by another vehicle in this company",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "description": "Verification token could not be issued (`INVALID_TOKEN`/`EXPIRED_TOKEN`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "LICENSE_PLATE_TAKEN"
                 }
               }
             }
@@ -684,14 +2270,373 @@
         }
       }
     },
-    "/api/v1/products/search": {
+    "/api/v1/vehicles/{id}": {
       "get": {
-        "summary": "Search products (autocomplete)",
-        "description": "Returns global products together with the caller's own private products, matching `q` case-insensitively. An empty/missing `q` returns an empty list — this is autocomplete, not a listing endpoint (use `GET /products/mine` for that).",
+        "summary": "Get a vehicle's public details",
+        "description": "Any authenticated user (buyer or vendor) \u2014 this is the buyer-facing counterpart to the admin fleet list, deliberately not company/membership-scoped.",
         "tags": [
-          "Products"
+          "Vehicles"
         ],
-        "operationId": "searchProducts",
+        "operationId": "getVehicle",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Vehicle id",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vehicle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vehicle"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "404": {
+            "description": "Vehicle not found or archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VEHICLE_NOT_FOUND"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/vehicles/{id}/picture": {
+      "get": {
+        "summary": "Get a vehicle's picture",
+        "description": "Any authenticated user. Returns the raw JPEG bytes.",
+        "tags": [
+          "Vehicles"
+        ],
+        "operationId": "getVehiclePicture",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Vehicle id",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "JPEG image",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "404": {
+            "description": "Vehicle not found, archived, or has no picture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VEHICLE_NOT_FOUND"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/vehicles/{id}/link": {
+      "post": {
+        "summary": "Start a driving session",
+        "description": "Vendor-only. Ends the vendor's own previous active session (on another vehicle) if any, atomically with starting this one \u2014 losing a race for this vehicle never costs the vendor their prior session. Idempotent: re-linking to the vehicle you're already on is a clean success. Rejected for an archived vehicle.",
+        "tags": [
+          "Vehicle Assignments"
+        ],
+        "operationId": "linkVehicle",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Vehicle id",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active assignment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VehicleAssignment"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "403": {
+            "description": "Not a member of this vehicle's company"
+          },
+          "404": {
+            "description": "Vehicle not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VEHICLE_NOT_FOUND"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already actively assigned to someone else, or archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VEHICLE_ALREADY_ASSIGNED"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/vehicles/{id}/unlink": {
+      "post": {
+        "summary": "End my driving session",
+        "description": "Vendor-only \u2014 ends the caller's own active session on this vehicle.",
+        "tags": [
+          "Vehicle Assignments"
+        ],
+        "operationId": "unlinkVehicle",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Vehicle id",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ended"
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "409": {
+            "description": "Not currently linked to this vehicle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "NOT_LINKED"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/vehicles/{id}/assignments/end-active": {
+      "post": {
+        "summary": "Force-end a vehicle's active session",
+        "description": "Admin-only \u2014 ends whoever currently has the active assignment on this vehicle, not just the caller's own.",
+        "tags": [
+          "Vehicle Assignments"
+        ],
+        "operationId": "endActiveAssignment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Vehicle id",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ended"
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "403": {
+            "description": "Caller's role is not permitted, or not an admin of this company"
+          },
+          "404": {
+            "description": "Vehicle not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VEHICLE_NOT_FOUND"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No active assignment on this vehicle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "NO_ACTIVE_ASSIGNMENT"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/vehicle-tracking/telemetry": {
+      "post": {
+        "summary": "Submit a GPS telemetry batch",
+        "description": "Vendor-only. Tied to the caller's currently active vehicle assignment \u2014 there is no vehicle id parameter; the backend resolves it server-side, so a vendor cannot report telemetry for a vehicle they're not driving. Points implausible relative to the previous accepted point (e.g. faster than 200 km/h, allowing ~500m of GPS jitter for ambiguously-ordered timestamps) are silently dropped, not rejected. Max 100 points per batch.",
+        "tags": [
+          "Vehicle Tracking"
+        ],
+        "operationId": "ingestTelemetry",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "points": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/TelemetryPoint"
+                    }
+                  }
+                },
+                "required": [
+                  "points"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted (points may have been individually dropped as implausible)"
+          },
+          "400": {
+            "description": "Request failed validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VALIDATION_FAILED"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "409": {
+            "description": "Caller has no active vehicle assignment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "NOT_LINKED_TO_VEHICLE"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/vehicle-tracking/live": {
+      "get": {
+        "summary": "Live vehicle positions (SSE)",
+        "description": "Server-Sent Events stream. Any authenticated user. Query params: `scope` (`nearby`, the default, or `all` \u2014 the explicit opt-in \"see everything nationwide\" mode, never a default), `lat`/`lon`/`radiusKm` (required when scope=nearby; radiusKm defaults to 5, max 25).\n\nOn connect, sends the current snapshot as a burst of `location` events, then streams live updates. Event types:\n- `location`: a `VehicleLocation` \u2014 a vehicle moved.\n- `offline`: `{\"vehicleId\": <int>}` \u2014 a vehicle's driving session ended; the client should remove its pin immediately rather than waiting for it to go stale.\n- `reconnect`: no data \u2014 sent shortly before the access token expires, so the client reconnects with a fresh one.\n- `error`: an `ErrorResponse` \u2014 sent once and the stream ends, if `scope`/`lat`/`lon`/`radiusKm` failed validation.",
+        "tags": [
+          "Vehicle Tracking"
+        ],
+        "operationId": "streamVehicleLocations",
         "security": [
           {
             "bearerAuth": []
@@ -699,168 +2644,70 @@
         ],
         "parameters": [
           {
-            "name": "q",
+            "name": "scope",
             "in": "query",
             "required": false,
+            "description": "nearby (default) or all",
             "schema": {
               "type": "string"
-            },
-            "description": "Search text; defaults to empty (which returns an empty list)"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Matching products, global and the caller's own",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Product"
-                  }
-                }
-              }
             }
           },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          }
-        }
-      }
-    },
-    "/api/v1/products/mine": {
-      "get": {
-        "summary": "List the caller's own private products",
-        "description": "All of the caller's own private products, no query needed — for a \"manage my products, rename them\" screen. Never includes global products.",
-        "tags": [
-          "Products"
-        ],
-        "operationId": "listMyProducts",
-        "security": [
           {
-            "bearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The caller's private products",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Product"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          }
-        }
-      }
-    },
-    "/api/v1/products": {
-      "post": {
-        "summary": "Create a private product",
-        "description": "Creates a product owned by the caller. Rejected if the (trimmed, case-insensitive) name collides with a global product or one of the caller's own. Supports idempotent retries the same way as `/auth/register` (see that endpoint's description).",
-        "tags": [
-          "Products"
-        ],
-        "operationId": "createProduct",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
+            "name": "lat",
+            "in": "query",
             "required": false,
+            "description": "Required when scope=nearby",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lon",
+            "in": "query",
+            "required": false,
+            "description": "Required when scope=nearby",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "radiusKm",
+            "in": "query",
+            "required": false,
+            "description": "Default 5, max 25",
             "schema": {
               "type": "string"
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateProductRequest"
-              }
-            }
-          }
-        },
         "responses": {
-          "201": {
-            "description": "Product created",
+          "200": {
+            "description": "SSE stream",
             "content": {
-              "application/json": {
+              "text/event-stream": {
                 "schema": {
-                  "$ref": "#/components/schemas/Product"
+                  "type": "string"
                 }
               }
             }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "409": {
-            "description": "Name collides with a global product or one of the caller's own (`DUPLICATE_NAME`), or an identical idempotent request is in flight (`REQUEST_IN_PROGRESS`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Idempotency key reused with a different payload (`IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
     },
-    "/api/v1/products/{id}": {
-      "patch": {
-        "summary": "Rename a private product",
-        "description": "Only the owner of a private product may rename it; global products can never be renamed via this endpoint (`NOT_FOUND` either way — a caller never learns whether `id` is someone else's product or a global one).",
+    "/api/v1/vehicles/{id}/ping": {
+      "post": {
+        "summary": "Ping a vehicle's driver",
+        "description": "Buyer-only. Signals \"I'd like to buy something\" to whoever's currently driving. Rate-limited by a per-(buyer, vehicle) cooldown (409/429-shaped as COOLDOWN_ACTIVE) independent of the standard API rate limit. The buyer's location is privacy-coarsened to an H3 cell center before it's stored or delivered anywhere \u2014 the exact coordinate never persists.",
         "tags": [
-          "Products"
+          "Vehicle Pings"
         ],
-        "operationId": "renameProduct",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
+        "operationId": "pingVehicle",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
+            "description": "Vehicle id",
             "schema": {
               "type": "integer"
             }
@@ -871,269 +2718,356 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RenameProductRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Product renamed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Product"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation failed (`VALIDATION_FAILED`), or `id` is not a valid integer (`INVALID_PRODUCT_ID`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "404": {
-            "description": "Not the caller's private product, or doesn't exist (`NOT_FOUND`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "New name collides with a global product or one of the caller's own (`DUPLICATE_NAME`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          }
-        }
-      }
-    },
-    "/api/v1/storage-locations": {
-      "get": {
-        "summary": "List the caller's storage locations",
-        "tags": [
-          "Storage Locations"
-        ],
-        "operationId": "listStorageLocations",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The caller's storage locations",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/StorageLocation"
+                "type": "object",
+                "properties": {
+                  "latitude": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "longitude": {
+                    "type": "number",
+                    "format": "double"
                   }
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          }
-        }
-      },
-      "post": {
-        "summary": "Create a storage location",
-        "description": "Names are unique per caller (case-sensitive). Supports idempotent retries the same way as `/auth/register`.",
-        "tags": [
-          "Storage Locations"
-        ],
-        "operationId": "createStorageLocation",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateStorageLocationRequest"
+                },
+                "required": [
+                  "latitude",
+                  "longitude"
+                ]
               }
             }
           }
         },
         "responses": {
-          "201": {
-            "description": "Storage location created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StorageLocation"
-                }
-              }
-            }
+          "202": {
+            "description": "Delivered (live via SSE if the driver's connected, and via push either way)"
           },
           "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "409": {
-            "description": "Name already used by the caller (`DUPLICATE_NAME`), or an identical idempotent request is in flight (`REQUEST_IN_PROGRESS`)",
+            "description": "Request failed validation",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VALIDATION_FAILED"
                 }
               }
             }
           },
-          "422": {
-            "description": "Idempotency key reused with a different payload (`IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD`)",
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "404": {
+            "description": "Vehicle not found",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VEHICLE_NOT_FOUND"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Vehicle has no active driving session right now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VEHICLE_NOT_ACTIVE"
                 }
               }
             }
           },
           "429": {
-            "$ref": "#/components/responses/TooManyRequests"
+            "description": "Cooldown active for this (buyer, vehicle) pair",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "COOLDOWN_ACTIVE"
+                }
+              }
+            }
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
-    "/api/v1/storage-locations/{id}": {
-      "patch": {
-        "summary": "Rename a storage location",
-        "description": "Only the owner may rename it — a caller never learns whether `id` belongs to another user or doesn't exist (`NOT_FOUND` either way).",
+    "/vehicle-tracking/pings/live": {
+      "get": {
+        "summary": "Live pings for the driving vendor (SSE)",
+        "description": "Server-Sent Events stream. Vendor-only. Streams `ping` events (a `VehiclePingNotification`) as buyers ping whichever vehicle the caller is currently driving. Also emits `reconnect` (no data) shortly before token expiry. A ping while the vendor isn't connected here is still delivered via push notification separately \u2014 this stream is the real-time-while-open complement, not the only delivery path.",
         "tags": [
-          "Storage Locations"
+          "Vehicle Pings"
         ],
-        "operationId": "renameStorageLocation",
+        "operationId": "streamVehiclePings",
         "security": [
           {
             "bearerAuth": []
           }
         ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer"
+        "responses": {
+          "200": {
+            "description": "SSE stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           }
+        }
+      }
+    },
+    "/api/v1/device-installations": {
+      "post": {
+        "summary": "Register a device for push notifications",
+        "description": "Any authenticated user. Re-registering the same installation id is a clean upsert, not an error. `installationId` is a Firebase Installation ID (FID), not a legacy FCM registration token.",
+        "tags": [
+          "Device Installations"
         ],
+        "operationId": "registerDeviceInstallation",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RenameStorageLocationRequest"
+                "type": "object",
+                "properties": {
+                  "installationId": {
+                    "type": "string"
+                  },
+                  "platform": {
+                    "type": "string",
+                    "enum": [
+                      "ANDROID",
+                      "IOS"
+                    ]
+                  }
+                },
+                "required": [
+                  "installationId",
+                  "platform"
+                ]
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Storage location renamed",
+            "description": "Registered",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/StorageLocation"
+                  "$ref": "#/components/schemas/DeviceInstallation"
                 }
               }
             }
           },
           "400": {
-            "description": "Validation failed (`VALIDATION_FAILED`), or `id` is not a valid integer (`INVALID_LOCATION_ID`)",
+            "description": "Request failed validation",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VALIDATION_FAILED"
                 }
               }
             }
           },
           "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "404": {
-            "description": "Not the caller's storage location, or doesn't exist (`NOT_FOUND`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "New name already used by the caller (`DUPLICATE_NAME`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
+            "description": "Missing or invalid access token"
           }
-        }
-      },
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/device-installations/{installationId}": {
       "delete": {
-        "summary": "Delete a storage location",
-        "description": "Pantry entries referencing this location are unaffected — `storageLocationId` on a `pantry_entries` row simply becomes invalid to re-set, it is not cascaded.",
+        "summary": "Unregister a device",
+        "description": "Only the owning user can remove their own installation.",
         "tags": [
-          "Storage Locations"
+          "Device Installations"
         ],
-        "operationId": "deleteStorageLocation",
+        "operationId": "unregisterDeviceInstallation",
+        "parameters": [
+          {
+            "name": "installationId",
+            "in": "path",
+            "required": true,
+            "description": "Firebase Installation ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Unregistered"
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "NOT_FOUND"
+                }
+              }
+            }
+          }
+        },
         "security": [
           {
             "bearerAuth": []
           }
+        ]
+      }
+    },
+    "/api/v1/saved-locations": {
+      "post": {
+        "summary": "Save a location",
+        "description": "The geofence source for proximity notifications about favorited companies' vehicles. Idempotent by (caller, request body).",
+        "tags": [
+          "Saved Locations"
         ],
+        "operationId": "createSavedLocation",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "latitude": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "longitude": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "radiusKm": {
+                    "type": "number",
+                    "format": "double"
+                  }
+                },
+                "required": [
+                  "label",
+                  "latitude",
+                  "longitude",
+                  "radiusKm"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedLocation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request failed validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VALIDATION_FAILED"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "summary": "List my saved locations",
+        "description": "",
+        "tags": [
+          "Saved Locations"
+        ],
+        "operationId": "listSavedLocations",
+        "responses": {
+          "200": {
+            "description": "Saved locations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SavedLocation"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/saved-locations/{id}": {
+      "delete": {
+        "summary": "Delete a saved location",
+        "description": "Only the owning user can delete their own \u2014 deleting someone else's returns not-found, never a permission-leak.",
+        "tags": [
+          "Saved Locations"
+        ],
+        "operationId": "deleteSavedLocation",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
+            "description": "Saved location id",
             "schema": {
               "type": "integer"
             }
@@ -1143,784 +3077,106 @@
           "204": {
             "description": "Deleted"
           },
-          "400": {
-            "description": "`id` is not a valid integer (`INVALID_LOCATION_ID`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
           "401": {
-            "$ref": "#/components/responses/Unauthorized"
+            "description": "Missing or invalid access token"
           },
           "404": {
-            "description": "Not the caller's storage location, or doesn't exist (`NOT_FOUND`)",
+            "description": "Not found",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "NOT_FOUND"
                 }
               }
             }
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
           }
-        }
-      }
-    },
-    "/api/v1/quantity-units": {
-      "get": {
-        "summary": "List all quantity units",
-        "description": "A small, fully-seeded closed set (grams, kilograms, millilitres, litres, pieces, ...). Never created or edited via the API.",
-        "tags": [
-          "Quantity Units"
-        ],
-        "operationId": "listQuantityUnits",
+        },
         "security": [
           {
             "bearerAuth": []
           }
-        ],
-        "responses": {
-          "200": {
-            "description": "All quantity units",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/QuantityUnit"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          }
-        }
+        ]
       }
     },
-    "/api/v1/pantry-entries": {
+    "/api/v1/sync": {
       "get": {
-        "summary": "List the caller's pantry entries",
-        "description": "Cursor-paginated, in insertion order (`id` ascending) — sorting, grouping, and aggregation for display are entirely a frontend concern. Pass `afterId` (the previous page's `nextCursor`) to fetch the next page; `nextCursor` is `null` on the last page. A non-numeric `afterId` is treated as absent (start from the beginning), not an error.",
+        "summary": "Pull changes since a cursor",
+        "description": "Multi-device sync outbox (ADR 0006) for the caller's own low-frequency CRUD entities (companies, vehicles, vehicle assignments, memberships, favorites, saved locations) \u2014 never high-frequency GPS telemetry, which is exempt by design.",
         "tags": [
-          "Pantry Entries"
+          "Sync"
         ],
-        "operationId": "listPantryEntries",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
+        "operationId": "pullSyncChanges",
         "parameters": [
           {
-            "name": "afterId",
+            "name": "since",
             "in": "query",
             "required": false,
+            "description": "Cursor (event id) to pull changes after; defaults to 0",
             "schema": {
-              "type": "integer"
-            },
-            "description": "Resume after this entry id; omit to start from the beginning"
+              "type": "string"
+            }
           },
           {
             "name": "limit",
             "in": "query",
             "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 50,
-              "minimum": 1,
-              "maximum": 200
-            },
-            "description": "Page size; clamped to [1, 200], defaults to 50"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "A page of pantry entries",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PantryEntryPage"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          }
-        }
-      },
-      "post": {
-        "summary": "Log a purchase (create a pantry entry)",
-        "description": "Exactly one of `productId` (an existing product the caller can see) or `newProductName` (create a private product inline, in the same transaction — the \"typed a name, autocomplete found nothing, add it anyway\" flow) must be provided. Always inserts a new row, even if one already matches exactly (buying more of something already in stock is not a merge). Supports idempotent retries the same way as `/auth/register`.",
-        "tags": [
-          "Pantry Entries"
-        ],
-        "operationId": "createPantryEntry",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreatePantryEntryRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Pantry entry created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PantryEntry"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation failed (`VALIDATION_FAILED`), `productId` isn't visible to the caller (`PRODUCT_NOT_VISIBLE`), `storageLocationId` isn't the caller's (`STORAGE_LOCATION_NOT_FOUND`), or `unitId` doesn't exist (`UNIT_NOT_FOUND`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "409": {
-            "description": "`newProductName` collides with a global product or one of the caller's own (`PRODUCT_NAME_ALREADY_EXISTS`), or an identical idempotent request is in flight (`REQUEST_IN_PROGRESS`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Idempotency key reused with a different payload (`IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          }
-        }
-      }
-    },
-    "/api/v1/pantry-entries/{id}": {
-      "patch": {
-        "summary": "Update a pantry entry",
-        "description": "Full-state replace, not a sparse delta — resend every editable field, including ones you aren't changing. `quantityAmount <= 0` deletes the row instead of updating it (200 with the updated entry, or 204 if deleted).",
-        "tags": [
-          "Pantry Entries"
-        ],
-        "operationId": "updatePantryEntry",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdatePantryEntryRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Entry updated (quantity remained positive)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PantryEntry"
-                }
-              }
-            }
-          },
-          "204": {
-            "description": "Entry deleted (quantity was zero or negative)"
-          },
-          "400": {
-            "description": "Validation failed (`VALIDATION_FAILED`), `id` is not a valid integer (`INVALID_ENTRY_ID`), `storageLocationId` isn't the caller's (`STORAGE_LOCATION_NOT_FOUND`), or `unitId` doesn't exist (`UNIT_NOT_FOUND`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "404": {
-            "description": "Not the caller's pantry entry, or doesn't exist (`NOT_FOUND`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          }
-        }
-      },
-      "delete": {
-        "summary": "Delete a pantry entry",
-        "tags": [
-          "Pantry Entries"
-        ],
-        "operationId": "deletePantryEntry",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
+            "description": "Max events to return",
             "schema": {
               "type": "integer"
             }
           }
         ],
         "responses": {
-          "204": {
-            "description": "Deleted"
-          },
-          "400": {
-            "description": "`id` is not a valid integer (`INVALID_ENTRY_ID`)",
+          "200": {
+            "description": "Page of changes",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/SyncPage"
                 }
               }
             }
           },
           "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "404": {
-            "description": "Not the caller's pantry entry, or doesn't exist (`NOT_FOUND`)",
+            "description": "Missing or invalid access token"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/sync/live": {
+      "get": {
+        "summary": "Live sync hint stream (SSE)",
+        "description": "Server-Sent Events stream. Emits a `changed` event (data: the sync event id) as a hint to re-pull via `GET /api/v1/sync` \u2014 never the changed data itself. Skips hints for the connecting device's own actions. Also emits `reconnect` (no data) shortly before token expiry. Backed by Postgres LISTEN/NOTIFY, so this works across multiple backend instances without needing Redis.",
+        "tags": [
+          "Sync"
+        ],
+        "operationId": "streamSyncChanges",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE stream",
             "content": {
-              "application/json": {
+              "text/event-stream": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "string"
                 }
               }
             }
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
     }
-  },
-  "components": {
-    "schemas": {
-      "ErrorResponse": {
-        "type": "object",
-        "required": [
-          "error"
-        ],
-        "properties": {
-          "error": {
-            "type": "string",
-            "description": "Machine-readable code, e.g. VALIDATION_FAILED, ALREADY_EXISTS, ACCOUNT_LOCKED, TOKEN_REUSE_DETECTED",
-            "example": "VALIDATION_FAILED"
-          },
-          "message": {
-            "type": "string",
-            "description": "Human-readable explanation (may be empty)",
-            "example": ""
-          },
-          "details": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Field-level issues (may be empty)",
-            "example": [
-              "Email is required"
-            ]
-          }
-        }
-      },
-      "TokenPair": {
-        "type": "object",
-        "required": [
-          "accessToken",
-          "refreshToken"
-        ],
-        "properties": {
-          "accessToken": {
-            "type": "string",
-            "example": "eyJ..."
-          },
-          "refreshToken": {
-            "type": "string",
-            "description": "Rotated on each /refresh call",
-            "example": "eyJ..."
-          }
-        }
-      },
-      "MessageResponse": {
-        "type": "object",
-        "required": [
-          "message"
-        ],
-        "properties": {
-          "message": {
-            "type": "string",
-            "example": "Password reset successfully. You can now log in."
-          }
-        }
-      },
-      "PasswordResetValidateResponse": {
-        "type": "object",
-        "required": [
-          "valid",
-          "email"
-        ],
-        "properties": {
-          "valid": {
-            "type": "boolean"
-          },
-          "email": {
-            "type": "string",
-            "format": "email"
-          }
-        }
-      },
-      "UnitCategory": {
-        "type": "string",
-        "enum": [
-          "MASS",
-          "VOLUME",
-          "PIECE"
-        ],
-        "description": "PIECE has no multiplier and is only ever the seeded `db` unit — a box/jar/pack isn't a fixed piece count."
-      },
-      "Product": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "isGlobal"
-        ],
-        "properties": {
-          "id": {
-            "type": "integer"
-          },
-          "name": {
-            "type": "string"
-          },
-          "isGlobal": {
-            "type": "boolean",
-            "description": "true if this product ships with the app and is visible to every user; false if it's private to its owner"
-          },
-          "defaultLifespanDays": {
-            "type": "integer",
-            "nullable": true,
-            "description": "Pre-fill hint for a new pantry entry's expiration date; not enforced server-side"
-          },
-          "defaultUnitCategory": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/UnitCategory"
-              }
-            ],
-            "nullable": true,
-            "description": "Pre-fill hint for a new pantry entry's unit; not enforced server-side"
-          }
-        }
-      },
-      "CreateProductRequest": {
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 100,
-            "description": "No leading/trailing spaces; must not contain < > \" ' & ;",
-            "example": "Sertéshús"
-          },
-          "defaultLifespanDays": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 3650,
-            "nullable": true
-          },
-          "defaultUnitCategory": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/UnitCategory"
-              }
-            ],
-            "nullable": true
-          }
-        }
-      },
-      "RenameProductRequest": {
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 100,
-            "description": "No leading/trailing spaces; must not contain < > \" ' & ;"
-          }
-        }
-      },
-      "StorageLocation": {
-        "type": "object",
-        "required": [
-          "id",
-          "name"
-        ],
-        "properties": {
-          "id": {
-            "type": "integer"
-          },
-          "name": {
-            "type": "string"
-          }
-        }
-      },
-      "CreateStorageLocationRequest": {
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 100,
-            "description": "No leading/trailing spaces; must not contain < > \" ' & ;",
-            "example": "Fridge"
-          }
-        }
-      },
-      "RenameStorageLocationRequest": {
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 100,
-            "description": "No leading/trailing spaces; must not contain < > \" ' & ;"
-          }
-        }
-      },
-      "QuantityUnit": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "category",
-          "multiplier"
-        ],
-        "properties": {
-          "id": {
-            "type": "integer"
-          },
-          "name": {
-            "type": "string",
-            "example": "kg"
-          },
-          "category": {
-            "$ref": "#/components/schemas/UnitCategory"
-          },
-          "multiplier": {
-            "type": "number",
-            "format": "double",
-            "description": "Multiplier to this category's base unit (g/ml/db) — lets the frontend sum same-category quantities across entries"
-          }
-        }
-      },
-      "PantryEntry": {
-        "type": "object",
-        "required": [
-          "id",
-          "productId",
-          "productName",
-          "unitId",
-          "unitName",
-          "unitCategory",
-          "unitMultiplier",
-          "quantityAmount",
-          "createdAt"
-        ],
-        "properties": {
-          "id": {
-            "type": "integer"
-          },
-          "productId": {
-            "type": "integer"
-          },
-          "productName": {
-            "type": "string",
-            "description": "Denormalized at read time via a join — always current, never cached on the row"
-          },
-          "storageLocationId": {
-            "type": "integer",
-            "nullable": true
-          },
-          "storageLocationName": {
-            "type": "string",
-            "nullable": true
-          },
-          "unitId": {
-            "type": "integer"
-          },
-          "unitName": {
-            "type": "string",
-            "example": "kg"
-          },
-          "unitCategory": {
-            "$ref": "#/components/schemas/UnitCategory"
-          },
-          "unitMultiplier": {
-            "type": "number",
-            "format": "double"
-          },
-          "quantityAmount": {
-            "type": "number",
-            "format": "double"
-          },
-          "expirationDate": {
-            "type": "string",
-            "format": "date",
-            "nullable": true,
-            "description": "ISO-8601 YYYY-MM-DD; no time-of-day component"
-          },
-          "brandOrNote": {
-            "type": "string",
-            "maxLength": 255,
-            "nullable": true
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "PantryEntryPage": {
-        "type": "object",
-        "required": [
-          "items"
-        ],
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PantryEntry"
-            },
-            "description": "In insertion order (id ascending) — sorting/grouping for display is a frontend concern"
-          },
-          "nextCursor": {
-            "type": "integer",
-            "nullable": true,
-            "description": "Pass as `afterId` to fetch the next page; null when this is the last page"
-          }
-        }
-      },
-      "CreatePantryEntryRequest": {
-        "type": "object",
-        "required": [
-          "unitId",
-          "quantityAmount"
-        ],
-        "properties": {
-          "productId": {
-            "type": "integer",
-            "nullable": true,
-            "description": "An existing product visible to the caller — exactly one of productId/newProductName is required"
-          },
-          "newProductName": {
-            "type": "string",
-            "maxLength": 100,
-            "nullable": true,
-            "description": "Creates a private product inline, in the same transaction — exactly one of productId/newProductName is required"
-          },
-          "storageLocationId": {
-            "type": "integer",
-            "nullable": true,
-            "description": "Must be one of the caller's own storage locations"
-          },
-          "unitId": {
-            "type": "integer"
-          },
-          "quantityAmount": {
-            "type": "number",
-            "format": "double",
-            "exclusiveMinimum": 0,
-            "description": "Must be strictly greater than zero on create"
-          },
-          "expirationDate": {
-            "type": "string",
-            "format": "date",
-            "nullable": true,
-            "description": "ISO-8601 YYYY-MM-DD"
-          },
-          "brandOrNote": {
-            "type": "string",
-            "maxLength": 255,
-            "nullable": true
-          }
-        }
-      },
-      "UpdatePantryEntryRequest": {
-        "type": "object",
-        "required": [
-          "unitId",
-          "quantityAmount"
-        ],
-        "properties": {
-          "storageLocationId": {
-            "type": "integer",
-            "nullable": true,
-            "description": "Must be one of the caller's own storage locations; null unambiguously means \"no location\""
-          },
-          "unitId": {
-            "type": "integer"
-          },
-          "quantityAmount": {
-            "type": "number",
-            "format": "double",
-            "minimum": 0,
-            "description": "Zero (or negative) deletes the entry instead of updating it"
-          },
-          "expirationDate": {
-            "type": "string",
-            "format": "date",
-            "nullable": true,
-            "description": "ISO-8601 YYYY-MM-DD"
-          },
-          "brandOrNote": {
-            "type": "string",
-            "maxLength": 255,
-            "nullable": true
-          }
-        }
-      }
-    },
-    "responses": {
-      "BadRequest": {
-        "description": "Validation failed or malformed body (`VALIDATION_FAILED`, `MALFORMED_REQUEST`, `INVALID_BODY`)",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/ErrorResponse"
-            }
-          }
-        }
-      },
-      "Unauthorized": {
-        "description": "Missing or invalid JWT access token; response body is empty"
-      },
-      "TooManyRequests": {
-        "description": "Rate limit exceeded (auth endpoints: 5 requests/minute; authenticated endpoints: 60 requests/minute per user); response body is empty"
-      }
-    },
-    "securitySchemes": {
-      "bearerAuth": {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "JWT",
-        "description": "JWT access token from /api/v1/auth/login or /api/v1/auth/refresh"
-      }
-    }
-  },
-  "tags": [
-    {
-      "name": "Infrastructure",
-      "description": "Health and readiness probes"
-    },
-    {
-      "name": "Authentication",
-      "description": "User registration, login, token refresh, logout, password reset"
-    },
-    {
-      "name": "Products",
-      "description": "The product dictionary — global (app-shipped) and private (per-user) products"
-    },
-    {
-      "name": "Storage Locations",
-      "description": "Per-user labels for where a pantry entry is stored (Fridge, Freezer, Pantry, ...)"
-    },
-    {
-      "name": "Quantity Units",
-      "description": "The fully-seeded, read-only set of units a pantry entry's quantity can be expressed in"
-    },
-    {
-      "name": "Pantry Entries",
-      "description": "The core feature — batches of a product currently in storage"
-    }
-  ]
+  }
 }

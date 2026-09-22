@@ -1,6 +1,6 @@
-package com.shelflife.core.modules.plugin
+package com.mozgobolt.core.modules.plugin
 
-import com.shelflife.core.domain.validation.ValidatedRequest
+import com.mozgobolt.core.domain.validation.ValidatedRequest
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.plugins.requestvalidation.RequestValidation

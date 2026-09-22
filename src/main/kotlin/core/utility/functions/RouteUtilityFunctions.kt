@@ -1,9 +1,9 @@
-package com.shelflife.core.utility.functions
+package com.mozgobolt.core.utility.functions
 
-import com.shelflife.core.domain.security.AuthConstants
-import com.shelflife.core.domain.security.AuthConstants.PROTECT_ENDPOINT_JWT
-import com.shelflife.core.modules.plugin.API_LIMIT
-import com.shelflife.core.modules.plugin.AUTH_LIMIT
+import com.mozgobolt.core.domain.security.AuthConstants
+import com.mozgobolt.core.domain.security.AuthConstants.PROTECT_ENDPOINT_JWT
+import com.mozgobolt.core.modules.plugin.API_LIMIT
+import com.mozgobolt.core.modules.plugin.AUTH_LIMIT
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.auth.authenticate
 import io.ktor.server.auth.jwt.JWTPrincipal
@@ -20,6 +20,9 @@ private const val MAX_DEVICE_ID_LENGTH = 300
 
 fun ApplicationCall.currentUserIdOrNull(): Int? =
     principal<JWTPrincipal>()?.payload?.getClaim(AuthConstants.CLAIM_USER_ID)?.asInt()
+
+fun ApplicationCall.currentUserRoleOrNull(): String? =
+    principal<JWTPrincipal>()?.payload?.getClaim(AuthConstants.CLAIM_USER_ROLE)?.asString()
 
 fun ApplicationCall.remainingJwtValidityOrNull(): Duration? {
     val expiresAt = principal<JWTPrincipal>()?.expiresAt?.toInstant() ?: return null

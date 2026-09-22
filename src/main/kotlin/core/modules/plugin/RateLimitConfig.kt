@@ -1,6 +1,6 @@
-package com.shelflife.core.modules.plugin
+package com.mozgobolt.core.modules.plugin
 
-import com.shelflife.core.domain.security.AuthConstants
+import com.mozgobolt.core.domain.security.AuthConstants
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.auth.jwt.JWTPrincipal

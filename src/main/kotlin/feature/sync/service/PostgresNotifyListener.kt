@@ -1,8 +1,8 @@
-package com.shelflife.feature.sync.service
+package com.mozgobolt.feature.sync.service
 
-import com.shelflife.core.utility.functions.runSuspendCatching
-import com.shelflife.feature.sync.data.repository.SYNC_NOTIFY_CHANNEL
-import com.shelflife.feature.sync.domain.SyncEventHub
+import com.mozgobolt.core.utility.functions.runSuspendCatching
+import com.mozgobolt.feature.sync.data.repository.SYNC_NOTIFY_CHANNEL
+import com.mozgobolt.feature.sync.domain.SyncEventHub
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.github.resilience4j.core.IntervalFunction
 import kotlinx.coroutines.CoroutineExceptionHandler

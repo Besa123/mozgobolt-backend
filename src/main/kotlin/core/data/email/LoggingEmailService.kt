@@ -1,7 +1,7 @@
-package com.shelflife.core.data.email
+package com.mozgobolt.core.data.email
 
-import com.shelflife.core.domain.email.EmailService
-import com.shelflife.core.modules.AppConfig
+import com.mozgobolt.core.domain.email.EmailService
+import com.mozgobolt.core.modules.AppConfig
 import io.github.oshai.kotlinlogging.KotlinLogging
 
 private val logger = KotlinLogging.logger {}

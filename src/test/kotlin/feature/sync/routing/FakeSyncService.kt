@@ -1,10 +1,10 @@
-package com.shelflife.feature.sync.routing
+package com.mozgobolt.feature.sync.routing
 
-import com.shelflife.feature.sync.domain.SyncService
-import com.shelflife.feature.sync.domain.model.SyncEntityType
-import com.shelflife.feature.sync.domain.model.SyncEvent
-import com.shelflife.feature.sync.domain.model.SyncOperation
-import com.shelflife.feature.sync.domain.model.SyncPage
+import com.mozgobolt.feature.sync.domain.SyncService
+import com.mozgobolt.feature.sync.domain.model.SyncEntityType
+import com.mozgobolt.feature.sync.domain.model.SyncEvent
+import com.mozgobolt.feature.sync.domain.model.SyncOperation
+import com.mozgobolt.feature.sync.domain.model.SyncPage
 import java.time.Instant
 
 class FakeSyncService : SyncService {

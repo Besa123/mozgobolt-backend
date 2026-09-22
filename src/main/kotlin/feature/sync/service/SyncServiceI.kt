@@ -1,11 +1,11 @@
-package com.shelflife.feature.sync.service
+package com.mozgobolt.feature.sync.service
 
-import com.shelflife.core.database.TransactionalRunner
-import com.shelflife.feature.sync.domain.SyncRepository
-import com.shelflife.feature.sync.domain.SyncService
-import com.shelflife.feature.sync.domain.model.SyncEntityType
-import com.shelflife.feature.sync.domain.model.SyncOperation
-import com.shelflife.feature.sync.domain.model.SyncPage
+import com.mozgobolt.core.database.TransactionalRunner
+import com.mozgobolt.feature.sync.domain.SyncRepository
+import com.mozgobolt.feature.sync.domain.SyncService
+import com.mozgobolt.feature.sync.domain.model.SyncEntityType
+import com.mozgobolt.feature.sync.domain.model.SyncOperation
+import com.mozgobolt.feature.sync.domain.model.SyncPage
 
 private const val DEFAULT_PAGE_SIZE = 200
 private const val MAX_PAGE_SIZE = 500

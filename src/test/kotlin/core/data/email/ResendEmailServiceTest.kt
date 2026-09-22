@@ -1,4 +1,4 @@
-package com.shelflife.core.data.email
+package com.mozgobolt.core.data.email
 
 import com.resend.core.exception.ResendException
 import java.io.IOException

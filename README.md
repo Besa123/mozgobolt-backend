@@ -1,10 +1,10 @@
-# ShelfLife
+# MozgoBolt
 
-A Kotlin backend built on [Ktor](https://ktor.io), following feature-based Clean Architecture. See
+A Kotlin backend built on [Ktor](https://ktor.io), following feature-based Clean Architecture, powering real-time
+GPS tracking for mobile vendors (buyers see where a vendor's vehicle currently is). See
 [ARCHITECTURE.md](ARCHITECTURE.md) for how the code is organized and why, [CONTRIBUTING.md](CONTRIBUTING.md)
 for local setup and the checks a PR needs to pass, and [docs/adr/](docs/adr/) for the reasoning behind specific
-decisions (refresh-token rotation, results-over-exceptions, etc.). For the pantry-tracking product domain itself,
-see [docs/domain/pantry.md](docs/domain/pantry.md).
+decisions (refresh-token rotation, results-over-exceptions, etc.).
 
 ## Stack
 
@@ -22,8 +22,9 @@ see [docs/domain/pantry.md](docs/domain/pantry.md).
 
 | Area          | Description                                                                                                        |
 |---------------|--------------------------------------------------------------------------------------------------------------------|
-| Auth          | Register, login, refresh (rotating), logout, logout-all, email verification/resend, password reset                 |
-| Pantry        | Products, storage locations, quantity units, pantry entries — see [docs/domain/pantry.md](docs/domain/pantry.md)   |
+| Auth          | Register (buyer/vendor role), login, refresh (rotating), logout, logout-all, email verification/resend, password reset |
+| Vendors       | Companies (invite-code join), vehicles, vehicle link/delink (`vehicle_assignments`)                                |
+| Tracking      | Batched GPS telemetry ingestion, live SSE feed for buyers, in-memory fast path + durable slow-path history          |
 | Rate limiting | Global 150 req/min baseline + tiered named limits (`AUTH_LIMIT`, `API_LIMIT`, `UPLOAD_LIMIT`)                      |
 | Security      | CORS, CSP/HSTS/security headers, password peppering (password4j), account lockout policy                           |
 | Reliability   | Idempotency keys, request timeouts, body-size limits, graceful shutdown, retry + circuit-breaker on external calls |

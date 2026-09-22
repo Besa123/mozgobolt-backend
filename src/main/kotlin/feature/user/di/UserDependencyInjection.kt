@@ -1,10 +1,10 @@
-package com.shelflife.feature.user.di
+package com.mozgobolt.feature.user.di
 
-import com.shelflife.core.modules.AppConfig
-import com.shelflife.feature.user.data.repository.UserRepositoryI
-import com.shelflife.feature.user.domain.UserRepository
-import com.shelflife.feature.user.domain.UserService
-import com.shelflife.feature.user.service.UserServiceI
+import com.mozgobolt.core.modules.AppConfig
+import com.mozgobolt.feature.user.data.repository.UserRepositoryI
+import com.mozgobolt.feature.user.domain.UserRepository
+import com.mozgobolt.feature.user.domain.UserService
+import com.mozgobolt.feature.user.service.UserServiceI
 import io.ktor.server.application.Application
 import io.ktor.server.plugins.di.dependencies
 import io.ktor.server.plugins.di.provide

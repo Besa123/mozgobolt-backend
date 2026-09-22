@@ -1,4 +1,4 @@
-package com.shelflife.feature.sync.domain.model
+package com.mozgobolt.feature.sync.domain.model
 
 data class SyncHint(
     val eventId: Long,

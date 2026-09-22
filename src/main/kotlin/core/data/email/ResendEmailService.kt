@@ -1,11 +1,11 @@
-package com.shelflife.core.data.email
+package com.mozgobolt.core.data.email
 
+import com.mozgobolt.core.domain.email.EmailService
+import com.mozgobolt.core.modules.AppConfig
+import com.mozgobolt.core.utility.functions.runSuspendCatching
 import com.resend.Resend
 import com.resend.core.exception.ResendException
 import com.resend.services.emails.model.CreateEmailOptions
-import com.shelflife.core.domain.email.EmailService
-import com.shelflife.core.modules.AppConfig
-import com.shelflife.core.utility.functions.runSuspendCatching
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

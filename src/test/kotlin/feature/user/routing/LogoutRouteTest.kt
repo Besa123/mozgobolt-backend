@@ -1,7 +1,7 @@
-package com.shelflife.feature.user.routing
+package com.mozgobolt.feature.user.routing
 
-import com.shelflife.core.configureTestEnvironment
-import com.shelflife.core.testAccessTokenFor
+import com.mozgobolt.core.configureTestEnvironment
+import com.mozgobolt.core.testAccessTokenFor
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.post
 import io.ktor.http.HttpStatusCode

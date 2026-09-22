@@ -1,4 +1,4 @@
-package com.shelflife.core.routing
+package com.mozgobolt.core.routing
 
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.route

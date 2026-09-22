@@ -1,25 +1,32 @@
-package com.shelflife.feature.user.service
+package com.mozgobolt.feature.user.service
 
-import com.shelflife.core.database.TransactionalRunner
-import com.shelflife.core.domain.AppResult
-import com.shelflife.core.domain.email.EmailService
-import com.shelflife.core.domain.security.PasswordService
-import com.shelflife.core.domain.security.SecureTokenGenerator
-import com.shelflife.core.domain.security.TokenManager
-import com.shelflife.core.domain.validation.EmailValidator
-import com.shelflife.core.domain.validation.PasswordValidator
-import com.shelflife.core.modules.AppConfig
-import com.shelflife.core.utility.functions.runSuspendCatching
-import com.shelflife.feature.user.domain.UserRepository
-import com.shelflife.feature.user.domain.UserService
-import com.shelflife.feature.user.domain.model.AuthResponse
-import com.shelflife.feature.user.domain.model.LockoutPolicy
-import com.shelflife.feature.user.domain.model.LoginError
-import com.shelflife.feature.user.domain.model.PasswordResetError
-import com.shelflife.feature.user.domain.model.RefreshError
-import com.shelflife.feature.user.domain.model.RegisterError
-import com.shelflife.feature.user.domain.model.TokenValidationResult
-import com.shelflife.feature.user.domain.model.VerifyEmailError
+import com.mozgobolt.core.database.TransactionalRunner
+import com.mozgobolt.core.domain.AppResult
+import com.mozgobolt.core.domain.email.EmailService
+import com.mozgobolt.core.domain.security.PasswordService
+import com.mozgobolt.core.domain.security.SecureTokenGenerator
+import com.mozgobolt.core.domain.security.TokenManager
+import com.mozgobolt.core.domain.validation.EmailValidator
+import com.mozgobolt.core.domain.validation.PasswordValidator
+import com.mozgobolt.core.domain.validation.normalizeInternationalPhoneNumber
+import com.mozgobolt.core.domain.validation.normalizePhoneNumber
+import com.mozgobolt.core.domain.validation.validateMessengerUsername
+import com.mozgobolt.core.modules.AppConfig
+import com.mozgobolt.core.utility.functions.runSuspendCatching
+import com.mozgobolt.feature.user.domain.UserRepository
+import com.mozgobolt.feature.user.domain.UserService
+import com.mozgobolt.feature.user.domain.model.AuthResponse
+import com.mozgobolt.feature.user.domain.model.ContactInfoError
+import com.mozgobolt.feature.user.domain.model.DriverContactInfo
+import com.mozgobolt.feature.user.domain.model.LockoutPolicy
+import com.mozgobolt.feature.user.domain.model.LoginError
+import com.mozgobolt.feature.user.domain.model.PasswordResetError
+import com.mozgobolt.feature.user.domain.model.RefreshError
+import com.mozgobolt.feature.user.domain.model.RegisterError
+import com.mozgobolt.feature.user.domain.model.TokenValidationResult
+import com.mozgobolt.feature.user.domain.model.UserContactInfo
+import com.mozgobolt.feature.user.domain.model.UserRole
+import com.mozgobolt.feature.user.domain.model.VerifyEmailError
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -46,6 +53,11 @@ class UserServiceI(
         password: String,
         email: String,
         name: String,
+        role: UserRole,
+        phoneNumber: String?,
+        whatsappNumber: String?,
+        viberNumber: String?,
+        messengerUsername: String?,
     ): AppResult<Unit, RegisterError> {
         val normalizedEmail = emailValidator.normalize(email)
 
@@ -55,6 +67,25 @@ class UserServiceI(
 
         val isPasswordValid = passwordValidator.isValid(password)
         if (!isPasswordValid) return AppResult.Error(RegisterError.WEAK_PASSWORD)
+
+        // Re-validated here, not just at the request DTO, so a caller that skips DTO validation
+        // (e.g. a future admin-created-account path) can't persist a value libphonenumber/the
+        // username pattern would reject — the same defense-in-depth already applied to email above.
+        val normalizedPhoneNumber =
+            phoneNumber?.let {
+                normalizePhoneNumber(it) ?: return AppResult.Error(RegisterError.INVALID_PHONE_NUMBER)
+            }
+        val normalizedWhatsappNumber =
+            whatsappNumber?.let {
+                normalizeInternationalPhoneNumber(it) ?: return AppResult.Error(RegisterError.INVALID_PHONE_NUMBER)
+            }
+        val normalizedViberNumber =
+            viberNumber?.let {
+                normalizeInternationalPhoneNumber(it) ?: return AppResult.Error(RegisterError.INVALID_PHONE_NUMBER)
+            }
+        if (validateMessengerUsername(messengerUsername).isNotEmpty()) {
+            return AppResult.Error(RegisterError.INVALID_MESSENGER_USERNAME)
+        }
 
         val hashedPassword = passwordService.hashPassword(password)
 
@@ -68,6 +99,11 @@ class UserServiceI(
                         email = normalizedEmail,
                         password = hashedPassword,
                         name = name,
+                        role = role,
+                        phoneNumber = normalizedPhoneNumber,
+                        whatsappNumber = normalizedWhatsappNumber,
+                        viberNumber = normalizedViberNumber,
+                        messengerUsername = messengerUsername,
                     )
 
                 val verificationToken = SecureTokenGenerator.generate()
@@ -85,6 +121,51 @@ class UserServiceI(
             .onFailure { logger.error(it) { "Failed to send verification email to user ${result.first.id}" } }
 
         return AppResult.Success(Unit)
+    }
+
+    override suspend fun findContactInfo(userId: Int): DriverContactInfo? =
+        tx.transactional {
+            userRepository.findUserById(userId)?.let { user ->
+                DriverContactInfo(
+                    phoneNumber = user.phoneNumber.takeIf { user.phoneNumberVisible },
+                    whatsappNumber = user.whatsappNumber.takeIf { user.whatsappVisible },
+                    viberNumber = user.viberNumber.takeIf { user.viberVisible },
+                    messengerUsername = user.messengerUsername.takeIf { user.messengerVisible },
+                )
+            }
+        }
+
+    @Suppress("ReturnCount")
+    override suspend fun updateContactInfo(
+        userId: Int,
+        contactInfo: UserContactInfo,
+    ): AppResult<UserContactInfo, ContactInfoError> {
+        val normalizedPhone =
+            contactInfo.phoneNumber?.let {
+                normalizePhoneNumber(it) ?: return AppResult.Error(ContactInfoError.INVALID_PHONE_NUMBER)
+            }
+        val normalizedWhatsapp =
+            contactInfo.whatsappNumber?.let {
+                normalizeInternationalPhoneNumber(it)
+                    ?: return AppResult.Error(ContactInfoError.INVALID_WHATSAPP_NUMBER)
+            }
+        val normalizedViber =
+            contactInfo.viberNumber?.let {
+                normalizeInternationalPhoneNumber(it) ?: return AppResult.Error(ContactInfoError.INVALID_VIBER_NUMBER)
+            }
+        if (validateMessengerUsername(contactInfo.messengerUsername).isNotEmpty()) {
+            return AppResult.Error(ContactInfoError.INVALID_MESSENGER_USERNAME)
+        }
+
+        val normalized =
+            contactInfo.copy(
+                phoneNumber = normalizedPhone,
+                whatsappNumber = normalizedWhatsapp,
+                viberNumber = normalizedViber,
+            )
+        tx.transactional { userRepository.updateContactInfo(userId, normalized) }
+
+        return AppResult.Success(normalized)
     }
 
     override suspend fun signInUser(
@@ -127,7 +208,7 @@ class UserServiceI(
                 userRepository.resetFailedLogins(user.id)
             }
 
-            val accessToken = tokenManager.generateAccessToken(userId = user.id)
+            val accessToken = tokenManager.generateAccessToken(userId = user.id, role = user.role.name)
             val refreshToken = tokenManager.generateRefreshToken(userId = user.id)
             val familyId = UUID.randomUUID().toString()
 
@@ -168,7 +249,7 @@ class UserServiceI(
 
             when (val result = userRepository.validateAndRevokeRefreshToken(userId, hashedOldToken)) {
                 is TokenValidationResult.Valid -> {
-                    val accessToken = tokenManager.generateAccessToken(userId = user.id)
+                    val accessToken = tokenManager.generateAccessToken(userId = user.id, role = user.role.name)
                     val refreshToken = tokenManager.generateRefreshToken(userId = user.id)
 
                     userRepository.saveRefreshToken(

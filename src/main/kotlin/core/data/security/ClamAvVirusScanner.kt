@@ -1,11 +1,11 @@
-package com.shelflife.core.data.security
+package com.mozgobolt.core.data.security
 
-import com.shelflife.core.domain.security.VirusScanResult
-import com.shelflife.core.domain.security.VirusScanner
-import com.shelflife.core.modules.AppConfig
-import com.shelflife.core.modules.plugin.ResiliencePolicy
-import com.shelflife.core.modules.plugin.ResilienceRegistry
-import com.shelflife.core.modules.plugin.withClamAvResilience
+import com.mozgobolt.core.domain.security.VirusScanResult
+import com.mozgobolt.core.domain.security.VirusScanner
+import com.mozgobolt.core.modules.AppConfig
+import com.mozgobolt.core.modules.plugin.ResiliencePolicy
+import com.mozgobolt.core.modules.plugin.ResilienceRegistry
+import com.mozgobolt.core.modules.plugin.withClamAvResilience
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers

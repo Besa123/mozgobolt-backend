@@ -1,8 +1,10 @@
-package com.shelflife.feature.sync.domain.model
+package com.mozgobolt.feature.sync.domain.model
 
 enum class SyncEntityType {
-    PRODUCT,
-    STORAGE_LOCATION,
-    PANTRY_ENTRY,
-    PANTRY_ENTRY_IMAGE,
+    COMPANY,
+    COMPANY_MEMBERSHIP,
+    VEHICLE,
+    VEHICLE_ASSIGNMENT,
+    COMPANY_FAVORITE,
+    USER_SAVED_LOCATION,
 }

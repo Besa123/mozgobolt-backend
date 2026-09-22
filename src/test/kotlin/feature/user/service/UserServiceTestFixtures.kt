@@ -1,18 +1,20 @@
-package com.shelflife.feature.user.service
+package com.mozgobolt.feature.user.service
 
-import com.shelflife.core.data.validator.StandardEmailValidator
-import com.shelflife.core.data.validator.StandardPasswordValidator
-import com.shelflife.core.database.TransactionalRunner
-import com.shelflife.core.domain.AppResult
-import com.shelflife.core.domain.email.EmailService
-import com.shelflife.core.domain.security.PasswordService
-import com.shelflife.core.domain.security.TokenManager
-import com.shelflife.core.modules.AppConfig
-import com.shelflife.feature.user.domain.UserRepository
-import com.shelflife.feature.user.domain.model.PasswordResetToken
-import com.shelflife.feature.user.domain.model.TokenValidationResult
-import com.shelflife.feature.user.domain.model.User
-import com.shelflife.feature.user.domain.model.VerificationTokenRecord
+import com.mozgobolt.core.data.validator.StandardEmailValidator
+import com.mozgobolt.core.data.validator.StandardPasswordValidator
+import com.mozgobolt.core.database.TransactionalRunner
+import com.mozgobolt.core.domain.AppResult
+import com.mozgobolt.core.domain.email.EmailService
+import com.mozgobolt.core.domain.security.PasswordService
+import com.mozgobolt.core.domain.security.TokenManager
+import com.mozgobolt.core.modules.AppConfig
+import com.mozgobolt.feature.user.domain.UserRepository
+import com.mozgobolt.feature.user.domain.model.PasswordResetToken
+import com.mozgobolt.feature.user.domain.model.TokenValidationResult
+import com.mozgobolt.feature.user.domain.model.User
+import com.mozgobolt.feature.user.domain.model.UserContactInfo
+import com.mozgobolt.feature.user.domain.model.UserRole
+import com.mozgobolt.feature.user.domain.model.VerificationTokenRecord
 import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.fail
@@ -80,7 +82,10 @@ class CountingPasswordService : PasswordService {
 class FakeTokenManager : TokenManager {
     private var counter = 0
 
-    override fun generateAccessToken(userId: Int): String = "access:$userId:${counter++}"
+    override fun generateAccessToken(
+        userId: Int,
+        role: String,
+    ): String = "access:$userId:$role:${counter++}"
 
     override fun generateRefreshToken(userId: Int): String = "refresh:$userId:${counter++}"
 
@@ -143,6 +148,7 @@ class FakeUserRepository : UserRepository {
         email: String,
         password: String,
         verified: Boolean = true,
+        role: UserRole = UserRole.BUYER,
     ): User {
         val user =
             User(
@@ -150,6 +156,7 @@ class FakeUserRepository : UserRepository {
                 email = email,
                 name = "Seeded User",
                 passwordHash = "hashed:$password",
+                role = role,
                 isEmailVerified = verified,
             )
         usersById[user.id] = user
@@ -158,14 +165,48 @@ class FakeUserRepository : UserRepository {
 
     override suspend fun findUser(email: String): User? = usersById.values.find { it.email == email }
 
+    override suspend fun updateContactInfo(
+        userId: Int,
+        contactInfo: UserContactInfo,
+    ) {
+        val user = usersById[userId] ?: return
+        usersById[userId] =
+            user.copy(
+                phoneNumber = contactInfo.phoneNumber,
+                phoneNumberVisible = contactInfo.phoneNumberVisible,
+                whatsappNumber = contactInfo.whatsappNumber,
+                whatsappVisible = contactInfo.whatsappVisible,
+                viberNumber = contactInfo.viberNumber,
+                viberVisible = contactInfo.viberVisible,
+                messengerUsername = contactInfo.messengerUsername,
+                messengerVisible = contactInfo.messengerVisible,
+            )
+    }
+
     override suspend fun findUserById(userId: Int): User? = usersById[userId]
 
     override suspend fun createUser(
         email: String,
         password: String,
         name: String,
+        role: UserRole,
+        phoneNumber: String?,
+        whatsappNumber: String?,
+        viberNumber: String?,
+        messengerUsername: String?,
     ): User {
-        val user = User(id = nextUserId++, email = email, name = name, passwordHash = password)
+        val user =
+            User(
+                id = nextUserId++,
+                email = email,
+                name = name,
+                passwordHash = password,
+                role = role,
+                phoneNumber = phoneNumber,
+                whatsappNumber = whatsappNumber,
+                viberNumber = viberNumber,
+                messengerUsername = messengerUsername,
+            )
         usersById[user.id] = user
         return user
     }

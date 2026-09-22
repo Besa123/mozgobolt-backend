@@ -11,12 +11,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DB_URL: jdbc:postgresql://localhost:5432/shelflife
-  DB_USER: shelflife
-  DB_PASSWORD: shelflife
+  DB_URL: jdbc:postgresql://localhost:5432/mozgobolt
+  DB_USER: mozgobolt
+  DB_PASSWORD: mozgobolt
   JWT_SECRET: ci-only-test-secret-not-used-anywhere-real
-  JWT_ISSUER: shelflife-ci
-  JWT_AUDIENCE: shelflife-ci
+  JWT_ISSUER: mozgobolt-ci
+  JWT_AUDIENCE: mozgobolt-ci
   PASSWORD_PEPPER: ci-only-test-pepper-not-used-anywhere-real
   ENVIRONMENT: test
 
@@ -28,9 +28,9 @@ jobs:
       postgres:
         image: postgres:18-alpine
         env:
-          POSTGRES_USER: shelflife
-          POSTGRES_PASSWORD: shelflife
-          POSTGRES_DB: shelflife
+          POSTGRES_USER: mozgobolt
+          POSTGRES_PASSWORD: mozgobolt
+          POSTGRES_DB: mozgobolt
         ports:
           - 5432:5432
         options: >-

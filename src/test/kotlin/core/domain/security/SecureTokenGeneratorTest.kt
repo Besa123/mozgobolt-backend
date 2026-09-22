@@ -1,4 +1,4 @@
-package com.shelflife.core.domain.security
+package com.mozgobolt.core.domain.security
 
 import java.util.Base64
 import kotlin.test.Test

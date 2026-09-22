@@ -1,8 +1,8 @@
-package com.shelflife.feature.user.routing
+package com.mozgobolt.feature.user.routing
 
-import com.shelflife.core.configureTestEnvironment
-import com.shelflife.core.domain.AppResult
-import com.shelflife.feature.user.domain.model.RegisterError
+import com.mozgobolt.core.configureTestEnvironment
+import com.mozgobolt.core.domain.AppResult
+import com.mozgobolt.feature.user.domain.model.RegisterError
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -62,7 +62,10 @@ class RegisterRouteTest {
             application { installAuthRoutesTestApp(userService) }
 
             val response =
-                postJson(AuthPaths.REGISTER, """{"password":"weak","email":"user@example.com","name":"User"}""")
+                postJson(
+                    AuthPaths.REGISTER,
+                    """{"password":"weak","email":"user@example.com","name":"User","role":"BUYER"}""",
+                )
 
             assertEquals(HttpStatusCode.BadRequest, response.status)
             assertEquals("WEAK_PASSWORD", response.errorBody().error)
@@ -82,7 +85,10 @@ class RegisterRouteTest {
             application { installAuthRoutesTestApp(userService) }
 
             val response =
-                postJson(AuthPaths.REGISTER, """{"password":"Str0ngPass1","email":"not-an-email","name":"User"}""")
+                postJson(
+                    AuthPaths.REGISTER,
+                    """{"password":"Str0ngPass1","email":"not-an-email","name":"User","role":"BUYER"}""",
+                )
 
             assertEquals(HttpStatusCode.BadRequest, response.status)
             assertEquals("INVALID_EMAIL", response.errorBody().error)
@@ -95,7 +101,11 @@ class RegisterRouteTest {
             val userService = FakeUserService()
             application { installAuthRoutesTestApp(userService) }
 
-            val response = postJson(AuthPaths.REGISTER, """{"password":"","email":"user@example.com","name":"User"}""")
+            val response =
+                postJson(
+                    AuthPaths.REGISTER,
+                    """{"password":"","email":"user@example.com","name":"User","role":"BUYER"}""",
+                )
 
             assertEquals(HttpStatusCode.BadRequest, response.status)
             assertEquals("VALIDATION_FAILED", response.errorBody().error)
@@ -112,7 +122,8 @@ class RegisterRouteTest {
             val response =
                 postJson(
                     AuthPaths.REGISTER,
-                    """{"password":"Str0ngPass1","email":"user@example.com","name":"<script>x</script>"}""",
+                    """{"password":"Str0ngPass1","email":"user@example.com","name":"<script>x</script>",""" +
+                        """"role":"BUYER"}""",
                 )
 
             assertEquals(HttpStatusCode.BadRequest, response.status)
@@ -170,7 +181,7 @@ class RegisterRouteTest {
             val response =
                 postJson(
                     AuthPaths.REGISTER,
-                    """{"password":"Str0ngPass1","email":"user@example.com","name":"$oversizedName"}""",
+                    """{"password":"Str0ngPass1","email":"user@example.com","name":"$oversizedName","role":"BUYER"}""",
                 )
 
             assertEquals(HttpStatusCode.PayloadTooLarge, response.status)
@@ -200,13 +211,16 @@ class RegisterRouteTest {
             val userService = FakeUserService()
             application { installAuthRoutesTestApp(userService) }
 
-            postJson(AuthPaths.REGISTER, """{"password":"Str0ngPass1","email":"first@example.com","name":"User"}""") {
+            postJson(
+                AuthPaths.REGISTER,
+                """{"password":"Str0ngPass1","email":"first@example.com","name":"User","role":"BUYER"}""",
+            ) {
                 header("Idempotency-Key", "reg-key-1")
             }
             val second =
                 postJson(
                     AuthPaths.REGISTER,
-                    """{"password":"Str0ngPass1","email":"second@example.com","name":"User"}""",
+                    """{"password":"Str0ngPass1","email":"second@example.com","name":"User","role":"BUYER"}""",
                 ) {
                     header("Idempotency-Key", "reg-key-1")
                 }
@@ -215,6 +229,6 @@ class RegisterRouteTest {
         }
 
     private companion object {
-        const val VALID_BODY = """{"password":"Str0ngPass1","email":"user@example.com","name":"User"}"""
+        const val VALID_BODY = """{"password":"Str0ngPass1","email":"user@example.com","name":"User","role":"BUYER"}"""
     }
 }

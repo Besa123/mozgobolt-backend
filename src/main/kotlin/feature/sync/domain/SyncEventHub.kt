@@ -1,6 +1,6 @@
-package com.shelflife.feature.sync.domain
+package com.mozgobolt.feature.sync.domain
 
-import com.shelflife.feature.sync.domain.model.SyncHint
+import com.mozgobolt.feature.sync.domain.model.SyncHint
 import kotlinx.coroutines.flow.Flow
 
 interface SyncEventHub {

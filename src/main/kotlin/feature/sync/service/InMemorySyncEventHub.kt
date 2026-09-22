@@ -1,7 +1,7 @@
-package com.shelflife.feature.sync.service
+package com.mozgobolt.feature.sync.service
 
-import com.shelflife.feature.sync.domain.SyncEventHub
-import com.shelflife.feature.sync.domain.model.SyncHint
+import com.mozgobolt.feature.sync.domain.SyncEventHub
+import com.mozgobolt.feature.sync.domain.model.SyncHint
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow

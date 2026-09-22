@@ -1,7 +1,7 @@
-package com.shelflife.core.data.validator
+package com.mozgobolt.core.data.validator
 
-import com.shelflife.core.domain.security.PasswordPolicy
-import com.shelflife.core.domain.validation.PasswordValidator
+import com.mozgobolt.core.domain.security.PasswordPolicy
+import com.mozgobolt.core.domain.validation.PasswordValidator
 
 class StandardPasswordValidator : PasswordValidator {
     override fun isValid(password: String): Boolean {

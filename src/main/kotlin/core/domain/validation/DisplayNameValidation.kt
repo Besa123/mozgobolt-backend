@@ -1,4 +1,4 @@
-package com.shelflife.core.domain.validation
+package com.mozgobolt.core.domain.validation
 
 private val INVALID_CHARACTERS = Regex("[<>\"'&;]")
 const val DISPLAY_NAME_MAX_LENGTH = 100

@@ -1,9 +1,12 @@
-package com.shelflife.core.data.media
+package com.mozgobolt.core.data.media
 
-import com.shelflife.core.domain.media.ImageStorage
-import com.shelflife.core.utility.functions.runSuspendCatching
+import com.mozgobolt.core.domain.media.ImageStorage
+import com.mozgobolt.core.utility.functions.runSuspendCatching
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
@@ -51,15 +54,22 @@ class LocalDiskImageStorage(
         }
     }
 
+    // Each key's delete is fully independent (its own file, its own try/catch, its own log line
+    // on failure) — no shared state or ordering between them, so they run concurrently rather
+    // than paying for N sequential IO round-trips.
     override suspend fun deleteBestEffort(keys: List<String>) {
-        for (key in keys) {
-            runSuspendCatching {
-                withContext(Dispatchers.IO) {
-                    Files.deleteIfExists(resolveWithinRoot(key))
-                }
-            }.onFailure { error ->
-                logger.warn(error) { "Failed to delete orphaned image file for key=$key — leaving it in place" }
+        coroutineScope {
+            keys.map { key -> async { deleteOne(key) } }.awaitAll()
+        }
+    }
+
+    private suspend fun deleteOne(key: String) {
+        runSuspendCatching {
+            withContext(Dispatchers.IO) {
+                Files.deleteIfExists(resolveWithinRoot(key))
             }
+        }.onFailure { error ->
+            logger.warn(error) { "Failed to delete orphaned image file for key=$key — leaving it in place" }
         }
     }
 

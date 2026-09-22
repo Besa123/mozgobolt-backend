@@ -1,4 +1,4 @@
-package com.shelflife.core.domain.security
+package com.mozgobolt.core.domain.security
 
 interface PasswordService {
     fun hashPassword(password: String): String

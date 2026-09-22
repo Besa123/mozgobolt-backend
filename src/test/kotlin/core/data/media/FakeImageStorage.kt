@@ -1,6 +1,6 @@
-package com.shelflife.core.data.media
+package com.mozgobolt.core.data.media
 
-import com.shelflife.core.domain.media.ImageStorage
+import com.mozgobolt.core.domain.media.ImageStorage
 
 class FakeImageStorage : ImageStorage {
     val stored = mutableMapOf<String, ByteArray>()

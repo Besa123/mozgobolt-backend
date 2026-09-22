@@ -11,11 +11,11 @@ plugins {
     jacoco
 }
 
-group = "com.shelflife"
+group = "com.mozgobolt"
 version = "1.0.0-SNAPSHOT"
 
 application {
-    mainClass = "com.shelflife.MainKt"
+    mainClass = "com.mozgobolt.MainKt"
 }
 
 kotlin {
@@ -71,7 +71,7 @@ sentry {
     val sentryAuthToken = readLocalSecret("SENTRY_AUTH_TOKEN")
     includeSourceContext.set(!sentryAuthToken.isNullOrBlank())
     org.set("molnar-balazs")
-    projectName.set("shelflife-backend")
+    projectName.set("mozgobolt-backend")
     authToken.set(sentryAuthToken)
 }
 
@@ -133,6 +133,11 @@ dependencies {
     implementation(libs.clamav.client)
     implementation(libs.aws.sdk.s3)
     implementation(libs.aws.sdk.url.connection.client)
+    implementation(libs.h3)
+    implementation(libs.libphonenumber)
+    implementation(libs.firebase.admin)
+    implementation(libs.lettuce.core)
+    implementation(libs.kotlinx.coroutines.reactive)
 
     testImplementation(kotlin("test"))
     testImplementation(ktorLibs.server.testHost)

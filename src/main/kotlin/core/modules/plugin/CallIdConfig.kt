@@ -1,4 +1,4 @@
-package com.shelflife.core.modules.plugin
+package com.mozgobolt.core.modules.plugin
 
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.Application

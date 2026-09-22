@@ -1,4 +1,4 @@
-package com.shelflife
+package com.mozgobolt
 
 import io.github.cdimascio.dotenv.dotenv
 import io.ktor.server.netty.EngineMain

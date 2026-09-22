@@ -1,6 +1,7 @@
-package com.shelflife.core.modules.plugin
+package com.mozgobolt.core.modules.plugin
 
-import com.shelflife.core.data.email.TransientEmailDeliveryException
+import com.mozgobolt.core.data.email.TransientEmailDeliveryException
+import com.mozgobolt.core.data.push.TransientPushDeliveryException
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig
@@ -137,6 +138,41 @@ object ResilienceRegistry {
             }
 
     val s3: ResiliencePolicy = ResiliencePolicy(s3CircuitBreaker)
+
+    val pushRetry: Retry =
+        Retry
+            .of(
+                "pushRetry",
+                RetryConfig
+                    .custom<Any>()
+                    .maxAttempts(3)
+                    .intervalFunction(IntervalFunction.ofExponentialBackoff(100, 2.0))
+                    .retryExceptions(TransientPushDeliveryException::class.java)
+                    .build(),
+            ).apply {
+                eventPublisher.onRetry { event ->
+                    logger.warn { "Push API retry #${event.numberOfRetryAttempts}" }
+                }
+            }
+
+    val pushCircuitBreaker: CircuitBreaker =
+        CircuitBreaker
+            .of(
+                "pushCircuitBreaker",
+                CircuitBreakerConfig
+                    .custom()
+                    .failureRateThreshold(50f)
+                    .slowCallRateThreshold(50f)
+                    .slowCallDurationThreshold(Duration.ofSeconds(5))
+                    .waitDurationInOpenState(Duration.ofSeconds(30))
+                    .minimumNumberOfCalls(10)
+                    .slidingWindowSize(20)
+                    .build(),
+            ).apply {
+                eventPublisher.onStateTransition { event -> logStateTransition("Push", event) }
+            }
+
+    val push: ResiliencePolicy = ResiliencePolicy(pushCircuitBreaker, pushRetry)
 }
 
 suspend fun <T> withEmailResilience(
@@ -151,5 +187,10 @@ suspend fun <T> withClamAvResilience(
 
 suspend fun <T> withS3Resilience(
     policy: ResiliencePolicy = ResilienceRegistry.s3,
+    block: suspend () -> T,
+): T = policy.execute(block)
+
+suspend fun <T> withPushResilience(
+    policy: ResiliencePolicy = ResilienceRegistry.push,
     block: suspend () -> T,
 ): T = policy.execute(block)

@@ -1,12 +1,12 @@
-package com.shelflife.feature.sync.routing
+package com.mozgobolt.feature.sync.routing
 
-import com.shelflife.core.utility.functions.currentDeviceIdOrNull
-import com.shelflife.core.utility.functions.currentUserIdOrNull
-import com.shelflife.core.utility.functions.protectedApi
-import com.shelflife.core.utility.functions.remainingJwtValidityOrNull
-import com.shelflife.feature.sync.domain.SyncEventHub
-import com.shelflife.feature.sync.domain.SyncService
-import com.shelflife.feature.sync.routing.dto.response.toResponseDto
+import com.mozgobolt.core.utility.functions.currentDeviceIdOrNull
+import com.mozgobolt.core.utility.functions.currentUserIdOrNull
+import com.mozgobolt.core.utility.functions.protectedApi
+import com.mozgobolt.core.utility.functions.remainingJwtValidityOrNull
+import com.mozgobolt.feature.sync.domain.SyncEventHub
+import com.mozgobolt.feature.sync.domain.SyncService
+import com.mozgobolt.feature.sync.routing.dto.response.toResponseDto
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route

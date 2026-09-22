@@ -1,4 +1,4 @@
-package com.shelflife.core.database
+package com.mozgobolt.core.database
 
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction

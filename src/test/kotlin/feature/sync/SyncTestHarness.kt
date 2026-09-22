@@ -1,11 +1,11 @@
-package com.shelflife.feature.sync
+package com.mozgobolt.feature.sync
 
-import com.shelflife.core.database.TransactionalRunner
-import com.shelflife.core.withRealDatabase
-import com.shelflife.feature.sync.data.repository.SyncRepositoryI
-import com.shelflife.feature.sync.domain.SyncEventHub
-import com.shelflife.feature.sync.service.InMemorySyncEventHub
-import com.shelflife.feature.sync.service.SyncServiceI
+import com.mozgobolt.core.database.TransactionalRunner
+import com.mozgobolt.core.withRealDatabase
+import com.mozgobolt.feature.sync.data.repository.SyncRepositoryI
+import com.mozgobolt.feature.sync.domain.SyncEventHub
+import com.mozgobolt.feature.sync.service.InMemorySyncEventHub
+import com.mozgobolt.feature.sync.service.SyncServiceI
 
 data class SyncTestHarness(
     val repository: SyncRepositoryI,

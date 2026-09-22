@@ -1,6 +1,6 @@
-package com.shelflife.feature.user.service
+package com.mozgobolt.feature.user.service
 
-import com.shelflife.feature.user.domain.model.LoginError
+import com.mozgobolt.feature.user.domain.model.LoginError
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals

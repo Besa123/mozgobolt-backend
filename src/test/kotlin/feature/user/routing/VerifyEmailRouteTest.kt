@@ -1,8 +1,8 @@
-package com.shelflife.feature.user.routing
+package com.mozgobolt.feature.user.routing
 
-import com.shelflife.core.configureTestEnvironment
-import com.shelflife.core.domain.AppResult
-import com.shelflife.feature.user.domain.model.VerifyEmailError
+import com.mozgobolt.core.configureTestEnvironment
+import com.mozgobolt.core.domain.AppResult
+import com.mozgobolt.feature.user.domain.model.VerifyEmailError
 import io.ktor.client.request.get
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication

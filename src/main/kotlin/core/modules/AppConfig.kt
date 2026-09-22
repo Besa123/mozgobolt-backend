@@ -1,4 +1,4 @@
-package com.shelflife.core.modules
+package com.mozgobolt.core.modules
 
 import kotlinx.serialization.Serializable
 
@@ -14,6 +14,8 @@ data class AppConfig(
     val clamAv: ClamAv = ClamAv(),
     val objectStorage: ObjectStorage = ObjectStorage(),
     val sentry: Sentry = Sentry(),
+    val push: Push = Push(),
+    val redis: Redis = Redis(),
 ) {
     @Serializable
     data class Database(
@@ -88,5 +90,24 @@ data class AppConfig(
     @Serializable
     data class Sentry(
         val dsn: String = "",
+    )
+
+    /** [serviceAccountJson] is the raw JSON content of a Firebase service-account key, never a
+     * file path — read directly from an env var, same as every other secret in this class, never
+     * hardcoded or checked into version control. No separate project-id field: the firebase-admin
+     * SDK derives it from the service account's own embedded `project_id`. */
+    @Serializable
+    data class Push(
+        val enabled: Boolean = false,
+        val serviceAccountJson: String = "",
+    )
+
+    /** Blank [url] (the default) means single-instance mode: every real-time hub falls back to a
+     * [com.mozgobolt.core.data.messaging.NoOpMessageRelay], and this app works exactly as it does
+     * without Redis at all. Set it only once you actually run more than one instance behind a
+     * load balancer and need their in-memory hubs to stay in sync. */
+    @Serializable
+    data class Redis(
+        val url: String = "",
     )
 }

@@ -1,4 +1,4 @@
-package com.shelflife.core.utility.functions
+package com.mozgobolt.core.utility.functions
 
 import java.security.MessageDigest
 

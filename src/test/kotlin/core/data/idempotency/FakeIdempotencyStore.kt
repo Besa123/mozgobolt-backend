@@ -1,4 +1,4 @@
-package com.shelflife.core.data.idempotency
+package com.mozgobolt.core.data.idempotency
 
 import java.time.Instant
 

@@ -1,4 +1,4 @@
-package com.shelflife.core.domain.media
+package com.mozgobolt.core.domain.media
 
 interface ImageStorage {
     suspend fun store(

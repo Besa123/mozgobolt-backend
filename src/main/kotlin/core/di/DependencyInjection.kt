@@ -1,41 +1,57 @@
-package com.shelflife.core.di
+package com.mozgobolt.core.di
 
 import com.auth0.jwt.JWTVerifier
-import com.shelflife.core.data.email.LoggingEmailService
-import com.shelflife.core.data.email.ResendEmailService
-import com.shelflife.core.data.email.ResilientEmailService
-import com.shelflife.core.data.idempotency.ExposedIdempotencyStore
-import com.shelflife.core.data.idempotency.IdempotencyStore
-import com.shelflife.core.data.media.JavaImageSanitizer
-import com.shelflife.core.data.media.LocalDiskImageStorage
-import com.shelflife.core.data.media.S3ImageStorage
-import com.shelflife.core.data.security.ClamAvVirusScanner
-import com.shelflife.core.data.security.JwtTokenManager
-import com.shelflife.core.data.security.NoOpVirusScanner
-import com.shelflife.core.data.security.PasswordServiceImpl
-import com.shelflife.core.data.validator.StandardEmailValidator
-import com.shelflife.core.data.validator.StandardPasswordValidator
-import com.shelflife.core.database.DatabaseFactory.createDatabase
-import com.shelflife.core.database.DatabaseFactory.createHikariDataSource
-import com.shelflife.core.database.ExposedTransactionalRunner
-import com.shelflife.core.database.TransactionalRunner
-import com.shelflife.core.domain.email.EmailService
-import com.shelflife.core.domain.media.ImageSanitizer
-import com.shelflife.core.domain.media.ImageStorage
-import com.shelflife.core.domain.security.PasswordService
-import com.shelflife.core.domain.security.TokenManager
-import com.shelflife.core.domain.security.VirusScanner
-import com.shelflife.core.domain.validation.EmailValidator
-import com.shelflife.core.domain.validation.PasswordValidator
-import com.shelflife.core.modules.AppConfig
-import com.shelflife.feature.pantryEntry.di.configurePantryEntryDependencyInjection
-import com.shelflife.feature.pantryEntryImage.di.configurePantryEntryImageDependencyInjection
-import com.shelflife.feature.product.di.configureProductDependencyInjection
-import com.shelflife.feature.quantityUnit.di.configureQuantityUnitDependencyInjection
-import com.shelflife.feature.storageLocation.di.configureStorageLocationDependencyInjection
-import com.shelflife.feature.sync.di.configureSyncDependencyInjection
-import com.shelflife.feature.user.di.configureAuthDependencyInjection
+import com.google.auth.oauth2.GoogleCredentials
+import com.google.firebase.FirebaseApp
+import com.google.firebase.FirebaseOptions
+import com.mozgobolt.core.data.email.LoggingEmailService
+import com.mozgobolt.core.data.email.ResendEmailService
+import com.mozgobolt.core.data.email.ResilientEmailService
+import com.mozgobolt.core.data.idempotency.ExposedIdempotencyStore
+import com.mozgobolt.core.data.idempotency.IdempotencyStore
+import com.mozgobolt.core.data.media.JavaImageSanitizer
+import com.mozgobolt.core.data.media.LocalDiskImageStorage
+import com.mozgobolt.core.data.media.S3ImageStorage
+import com.mozgobolt.core.data.messaging.NoOpMessageRelay
+import com.mozgobolt.core.data.messaging.RedisMessageRelay
+import com.mozgobolt.core.data.push.FcmPushNotificationSender
+import com.mozgobolt.core.data.push.FirebaseFcmMessageSender
+import com.mozgobolt.core.data.push.LoggingPushNotificationSender
+import com.mozgobolt.core.data.push.ResilientPushNotificationSender
+import com.mozgobolt.core.data.security.ClamAvVirusScanner
+import com.mozgobolt.core.data.security.JwtTokenManager
+import com.mozgobolt.core.data.security.NoOpVirusScanner
+import com.mozgobolt.core.data.security.PasswordServiceImpl
+import com.mozgobolt.core.data.validator.StandardEmailValidator
+import com.mozgobolt.core.data.validator.StandardPasswordValidator
+import com.mozgobolt.core.database.DatabaseFactory.createDatabase
+import com.mozgobolt.core.database.DatabaseFactory.createHikariDataSource
+import com.mozgobolt.core.database.ExposedTransactionalRunner
+import com.mozgobolt.core.database.TransactionalRunner
+import com.mozgobolt.core.domain.email.EmailService
+import com.mozgobolt.core.domain.media.ImageSanitizer
+import com.mozgobolt.core.domain.media.ImageStorage
+import com.mozgobolt.core.domain.messaging.MessageRelay
+import com.mozgobolt.core.domain.push.PushNotificationSender
+import com.mozgobolt.core.domain.security.PasswordService
+import com.mozgobolt.core.domain.security.TokenManager
+import com.mozgobolt.core.domain.security.VirusScanner
+import com.mozgobolt.core.domain.validation.EmailValidator
+import com.mozgobolt.core.domain.validation.PasswordValidator
+import com.mozgobolt.core.modules.AppConfig
+import com.mozgobolt.feature.company.di.configureCompanyDependencyInjection
+import com.mozgobolt.feature.companyFavorite.di.configureCompanyFavoriteDependencyInjection
+import com.mozgobolt.feature.deviceInstallation.di.configureDeviceInstallationDependencyInjection
+import com.mozgobolt.feature.proximityNotification.di.configureProximityNotificationDependencyInjection
+import com.mozgobolt.feature.savedLocation.di.configureSavedLocationDependencyInjection
+import com.mozgobolt.feature.sync.di.configureSyncDependencyInjection
+import com.mozgobolt.feature.user.di.configureAuthDependencyInjection
+import com.mozgobolt.feature.vehicle.di.configureVehicleDependencyInjection
+import com.mozgobolt.feature.vehicleAssignment.di.configureVehicleAssignmentDependencyInjection
+import com.mozgobolt.feature.vehiclePing.di.configureVehiclePingDependencyInjection
+import com.mozgobolt.feature.vehicleTracking.di.configureVehicleTrackingDependencyInjection
 import io.ktor.server.application.Application
+import io.ktor.server.application.ApplicationStopped
 import io.ktor.server.config.property
 import io.ktor.server.plugins.di.dependencies
 import io.ktor.server.plugins.di.provide
@@ -108,13 +124,71 @@ fun Application.configureDependencyInjection() {
         provide<VirusScanner> {
             if (appConfig.clamAv.enabled) ClamAvVirusScanner(appConfig.clamAv) else NoOpVirusScanner()
         }
+
+        provide<PushNotificationSender> {
+            val baseService =
+                when {
+                    appConfig.push.enabled && appConfig.push.serviceAccountJson.isNotBlank() ->
+                        FcmPushNotificationSender(
+                            FirebaseFcmMessageSender(firebaseAppFor(appConfig.push.serviceAccountJson)),
+                        )
+
+                    appConfig.push.enabled && runtimeEnvironment == PRODUCTION_ENVIRONMENT ->
+                        error(
+                            "PUSH_ENABLED is true but FCM_SERVICE_ACCOUNT_JSON is blank in production — " +
+                                "refusing to fall back to LoggingPushNotificationSender.",
+                        )
+
+                    else -> LoggingPushNotificationSender()
+                }
+
+            ResilientPushNotificationSender(baseService)
+        }
+
+        provide<MessageRelay> {
+            appConfig.redis.url
+                .takeIf { it.isNotBlank() }
+                ?.let { RedisMessageRelay(it) }
+                ?: NoOpMessageRelay()
+        }
     }
 
     configureAuthDependencyInjection()
     configureSyncDependencyInjection()
-    configureProductDependencyInjection()
-    configureStorageLocationDependencyInjection()
-    configureQuantityUnitDependencyInjection()
-    configurePantryEntryImageDependencyInjection()
-    configurePantryEntryDependencyInjection()
+    configureCompanyDependencyInjection()
+    configureCompanyFavoriteDependencyInjection()
+    configureSavedLocationDependencyInjection()
+    configureVehicleDependencyInjection()
+    configureVehicleAssignmentDependencyInjection()
+    configureDeviceInstallationDependencyInjection()
+    configureProximityNotificationDependencyInjection()
+    configureVehicleTrackingDependencyInjection()
+    configureVehiclePingDependencyInjection()
+}
+
+/**
+ * Started before any hub that relays through it (see `Application.rootModule`'s call order) so a
+ * hub's own [MessageRelay.subscribe] call always has an already-connected relay underneath it.
+ */
+fun Application.configureMessageRelay() {
+    val relay: MessageRelay by dependencies
+    relay.start()
+
+    monitor.subscribe(ApplicationStopped) {
+        relay.stop()
+    }
+}
+
+/**
+ * [FirebaseApp.initializeApp] throws if a default-named app already exists — reuse it instead of
+ * assuming this provider only ever runs once, since nothing about Ktor DI's `provide { }`
+ * contract guarantees that.
+ */
+private fun firebaseAppFor(serviceAccountJson: String): FirebaseApp {
+    val existing = FirebaseApp.getApps().firstOrNull()
+    if (existing != null) return existing
+
+    val credentials = GoogleCredentials.fromStream(serviceAccountJson.byteInputStream())
+    val options = FirebaseOptions.builder().setCredentials(credentials).build()
+    return FirebaseApp.initializeApp(options)
 }

@@ -1,4 +1,4 @@
-package com.shelflife.core.domain.validation
+package com.mozgobolt.core.domain.validation
 
 interface ValidatedRequest {
     fun validate(): List<String>

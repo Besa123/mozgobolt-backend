@@ -1,11 +1,12 @@
-package com.shelflife.feature.user.routing
+package com.mozgobolt.feature.user.routing
 
-import com.shelflife.core.data.idempotency.FakeIdempotencyStore
-import com.shelflife.core.data.idempotency.IdempotencyStore
-import com.shelflife.core.installTestModules
-import com.shelflife.core.routing.apiV1
-import com.shelflife.core.routing.dto.response.ErrorResponse
+import com.mozgobolt.core.data.idempotency.FakeIdempotencyStore
+import com.mozgobolt.core.data.idempotency.IdempotencyStore
+import com.mozgobolt.core.installTestModules
+import com.mozgobolt.core.routing.apiV1
+import com.mozgobolt.core.routing.dto.response.ErrorResponse
 import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
@@ -35,6 +36,17 @@ suspend fun ApplicationTestBuilder.postJson(
     block: HttpRequestBuilder.() -> Unit = {},
 ): HttpResponse =
     client.post(path) {
+        contentType(ContentType.Application.Json)
+        setBody(body)
+        block()
+    }
+
+suspend fun ApplicationTestBuilder.patchJson(
+    path: String,
+    body: String,
+    block: HttpRequestBuilder.() -> Unit = {},
+): HttpResponse =
+    client.patch(path) {
         contentType(ContentType.Application.Json)
         setBody(body)
         block()

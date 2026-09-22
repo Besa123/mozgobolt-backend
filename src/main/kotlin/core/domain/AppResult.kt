@@ -1,4 +1,4 @@
-package com.shelflife.core.domain
+package com.mozgobolt.core.domain
 
 sealed class AppResult<out T, out E> {
     data class Success<out T>(
