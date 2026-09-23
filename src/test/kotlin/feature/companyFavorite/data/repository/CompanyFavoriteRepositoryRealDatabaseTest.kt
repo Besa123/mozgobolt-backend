@@ -1,8 +1,10 @@
 package com.mozgobolt.feature.companyFavorite.data.repository
 
+import com.mozgobolt.core.domain.security.SecureTokenGenerator
 import com.mozgobolt.core.skipIfNoDocker
 import com.mozgobolt.core.withRealDatabase
 import com.mozgobolt.feature.company.data.repository.CompanyRepositoryI
+import com.mozgobolt.feature.company.domain.model.CompanyConstraints
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlin.test.Test
@@ -24,7 +26,11 @@ class CompanyFavoriteRepositoryRealDatabaseTest {
             val favoriteRepository = CompanyFavoriteRepositoryI()
             val companyId =
                 tx.transactional {
-                    CompanyRepositoryI().create(name = "FamilyFrost", inviteCode = "fav-race-code").id
+                    CompanyRepositoryI()
+                        .create(
+                            name = "FamilyFrost",
+                            inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
+                        ).id
                 }
 
             val results =

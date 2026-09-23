@@ -1,16 +1,17 @@
 package com.mozgobolt.feature.vehicleAssignment
 
 import com.mozgobolt.core.database.TransactionalRunner
+import com.mozgobolt.core.domain.security.SecureTokenGenerator
 import com.mozgobolt.core.withRealDatabase
 import com.mozgobolt.feature.company.data.repository.CompanyMembershipRepositoryI
 import com.mozgobolt.feature.company.data.repository.CompanyRepositoryI
+import com.mozgobolt.feature.company.domain.model.CompanyConstraints
 import com.mozgobolt.feature.company.domain.model.CompanyRole
 import com.mozgobolt.feature.sync.routing.FakeSyncService
 import com.mozgobolt.feature.vehicle.data.repository.VehicleRepositoryI
 import com.mozgobolt.feature.vehicleAssignment.data.repository.VehicleAssignmentRepositoryI
 import com.mozgobolt.feature.vehicleAssignment.service.VehicleAssignmentServiceI
 import com.mozgobolt.feature.vehicleTracking.NoOpVehicleLocationHub
-import java.time.Instant
 
 data class VehicleAssignmentTestHarness(
     val service: VehicleAssignmentServiceI,
@@ -28,7 +29,7 @@ data class VehicleAssignmentTestHarness(
             val company =
                 companyRepository.create(
                     name = "Shared Co",
-                    inviteCode = "seed-${Instant.now().toEpochMilli()}",
+                    inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
                 )
             membershipRepository.addIfAbsent(company.id, 1, CompanyRole.MEMBER)
             membershipRepository.addIfAbsent(company.id, 2, CompanyRole.MEMBER)
@@ -42,7 +43,7 @@ data class VehicleAssignmentTestHarness(
             val company =
                 companyRepository.create(
                     name = "Shared Co",
-                    inviteCode = "seed-${Instant.now().toEpochMilli()}",
+                    inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
                 )
             membershipRepository.addIfAbsent(company.id, 1, CompanyRole.MEMBER)
             membershipRepository.addIfAbsent(company.id, 2, CompanyRole.MEMBER)

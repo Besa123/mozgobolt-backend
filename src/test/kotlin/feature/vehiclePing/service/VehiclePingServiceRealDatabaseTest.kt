@@ -1,11 +1,12 @@
 package com.mozgobolt.feature.vehiclePing.service
 
+import com.mozgobolt.core.domain.security.SecureTokenGenerator
 import com.mozgobolt.core.skipIfNoDocker
 import com.mozgobolt.feature.company.data.repository.CompanyRepositoryI
+import com.mozgobolt.feature.company.domain.model.CompanyConstraints
 import com.mozgobolt.feature.vehicle.data.repository.VehicleRepositoryI
 import com.mozgobolt.feature.vehiclePing.domain.model.PingError
 import com.mozgobolt.feature.vehiclePing.withRealVehiclePingDatabase
-import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -67,7 +68,7 @@ class VehiclePingServiceRealDatabaseTest {
                     val company =
                         CompanyRepositoryI().create(
                             name = "Idle Co",
-                            inviteCode = "idle-${Instant.now().toEpochMilli()}",
+                            inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
                         )
                     VehicleRepositoryI()
                         .create(

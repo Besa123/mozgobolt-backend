@@ -1,8 +1,10 @@
 package com.mozgobolt.feature.proximityNotification.data.repository
 
+import com.mozgobolt.core.domain.security.SecureTokenGenerator
 import com.mozgobolt.core.skipIfNoDocker
 import com.mozgobolt.core.withRealDatabase
 import com.mozgobolt.feature.company.data.repository.CompanyRepositoryI
+import com.mozgobolt.feature.company.domain.model.CompanyConstraints
 import com.mozgobolt.feature.savedLocation.data.repository.SavedLocationRepositoryI
 import com.mozgobolt.feature.vehicle.data.repository.VehicleRepositoryI
 import kotlinx.coroutines.async
@@ -31,7 +33,11 @@ class ProximityNotificationRepositoryRealDatabaseTest {
             val repository = ProximityNotificationRepositoryI()
             val (savedLocationId, vehicleId) =
                 tx.transactional {
-                    val company = CompanyRepositoryI().create(name = "FamilyFrost", inviteCode = "prox-race-code")
+                    val company =
+                        CompanyRepositoryI().create(
+                            name = "FamilyFrost",
+                            inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
+                        )
                     val vehicle =
                         VehicleRepositoryI().create(
                             companyId = company.id,
@@ -89,7 +95,11 @@ class ProximityNotificationRepositoryRealDatabaseTest {
             val repository = ProximityNotificationRepositoryI()
             val (savedLocationId, vehicleId) =
                 tx.transactional {
-                    val company = CompanyRepositoryI().create(name = "FamilyFrost", inviteCode = "prox-roundtrip-code")
+                    val company =
+                        CompanyRepositoryI().create(
+                            name = "FamilyFrost",
+                            inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
+                        )
                     val vehicle =
                         VehicleRepositoryI().create(
                             companyId = company.id,

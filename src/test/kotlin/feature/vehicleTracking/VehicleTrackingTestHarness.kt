@@ -1,8 +1,10 @@
 package com.mozgobolt.feature.vehicleTracking
 
 import com.mozgobolt.core.database.TransactionalRunner
+import com.mozgobolt.core.domain.security.SecureTokenGenerator
 import com.mozgobolt.core.withRealDatabase
 import com.mozgobolt.feature.company.data.repository.CompanyRepositoryI
+import com.mozgobolt.feature.company.domain.model.CompanyConstraints
 import com.mozgobolt.feature.vehicle.data.repository.VehicleRepositoryI
 import com.mozgobolt.feature.vehicleAssignment.data.repository.VehicleAssignmentRepositoryI
 import com.mozgobolt.feature.vehicleTracking.data.database.VehicleLocationsTable
@@ -23,7 +25,7 @@ data class VehicleTrackingTestHarness(
             val company =
                 CompanyRepositoryI().create(
                     name = "Retention Test Co",
-                    inviteCode = "seed-${Instant.now().toEpochMilli()}",
+                    inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
                 )
             VehicleRepositoryI()
                 .create(companyId = company.id, label = "Retention Truck", licensePlate = "RETAIN-1")!!

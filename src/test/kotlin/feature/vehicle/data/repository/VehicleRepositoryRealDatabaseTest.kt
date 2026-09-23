@@ -1,8 +1,10 @@
 package com.mozgobolt.feature.vehicle.data.repository
 
+import com.mozgobolt.core.domain.security.SecureTokenGenerator
 import com.mozgobolt.core.skipIfNoDocker
 import com.mozgobolt.core.withRealDatabase
 import com.mozgobolt.feature.company.data.repository.CompanyRepositoryI
+import com.mozgobolt.feature.company.domain.model.CompanyConstraints
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlin.test.Test
@@ -27,7 +29,11 @@ class VehicleRepositoryRealDatabaseTest {
             val vehicleRepository = VehicleRepositoryI()
             val companyId =
                 tx.transactional {
-                    CompanyRepositoryI().create(name = "FamilyFrost", inviteCode = "race-plate-code").id
+                    CompanyRepositoryI()
+                        .create(
+                            name = "FamilyFrost",
+                            inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
+                        ).id
                 }
 
             val results =
@@ -64,8 +70,16 @@ class VehicleRepositoryRealDatabaseTest {
             val (companyOneId, companyTwoId) =
                 tx.transactional {
                     val companyRepository = CompanyRepositoryI()
-                    val one = companyRepository.create(name = "Company One", inviteCode = "code-one")
-                    val two = companyRepository.create(name = "Company Two", inviteCode = "code-two")
+                    val one =
+                        companyRepository.create(
+                            name = "Company One",
+                            inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
+                        )
+                    val two =
+                        companyRepository.create(
+                            name = "Company Two",
+                            inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
+                        )
                     one.id to two.id
                 }
 
@@ -87,7 +101,11 @@ class VehicleRepositoryRealDatabaseTest {
             val vehicleRepository = VehicleRepositoryI()
             val companyId =
                 tx.transactional {
-                    CompanyRepositoryI().create(name = "FamilyFrost", inviteCode = "archive-test-code").id
+                    CompanyRepositoryI()
+                        .create(
+                            name = "FamilyFrost",
+                            inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
+                        ).id
                 }
             val vehicleId =
                 tx.transactional { vehicleRepository.create(companyId, "Truck", "ARCHIVE-PLATE")!!.id }
@@ -110,7 +128,11 @@ class VehicleRepositoryRealDatabaseTest {
             val vehicleRepository = VehicleRepositoryI()
             val companyId =
                 tx.transactional {
-                    CompanyRepositoryI().create(name = "FamilyFrost", inviteCode = "re-archive-test-code").id
+                    CompanyRepositoryI()
+                        .create(
+                            name = "FamilyFrost",
+                            inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
+                        ).id
                 }
             val vehicleId =
                 tx.transactional { vehicleRepository.create(companyId, "Truck", "RE-ARCHIVE-PLATE")!!.id }
