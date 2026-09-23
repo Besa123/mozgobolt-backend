@@ -2,9 +2,11 @@ package com.mozgobolt.feature.vehiclePing
 
 import com.mozgobolt.core.data.push.FakePushNotificationSender
 import com.mozgobolt.core.database.TransactionalRunner
+import com.mozgobolt.core.domain.security.SecureTokenGenerator
 import com.mozgobolt.core.withRealDatabase
 import com.mozgobolt.feature.company.data.repository.CompanyMembershipRepositoryI
 import com.mozgobolt.feature.company.data.repository.CompanyRepositoryI
+import com.mozgobolt.feature.company.domain.model.CompanyConstraints
 import com.mozgobolt.feature.company.domain.model.CompanyRole
 import com.mozgobolt.feature.deviceInstallation.data.repository.DeviceInstallationRepositoryI
 import com.mozgobolt.feature.deviceInstallation.service.DeviceInstallationServiceI
@@ -18,7 +20,6 @@ import com.mozgobolt.feature.vehiclePing.service.PING_LOCATION_RESOLUTION
 import com.mozgobolt.feature.vehiclePing.service.VehiclePingServiceI
 import com.mozgobolt.feature.vehicleTracking.NoOpVehicleLocationHub
 import com.mozgobolt.feature.vehicleTracking.service.H3CellIndexer
-import java.time.Instant
 
 data class VehiclePingTestHarness(
     val service: VehiclePingServiceI,
@@ -47,7 +48,10 @@ data class VehiclePingTestHarness(
                 )
 
             val company =
-                companyRepository.create(name = "Ping Co", inviteCode = "seed-${Instant.now().toEpochMilli()}")
+                companyRepository.create(
+                    name = "Ping Co",
+                    inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
+                )
             membershipRepository.addIfAbsent(company.id, 2, CompanyRole.MEMBER)
             val vehicle =
                 vehicleRepository.create(companyId = company.id, label = "Ping Truck", licensePlate = "PING-1")!!
