@@ -24,7 +24,7 @@ sentry-gradle-plugin = "6.22.0"
 h3 = "4.5.0"
 libphonenumber = "8.13.55"
 firebase-admin = "9.10.0"
-lettuce = "6.5.5.RELEASE"
+lettuce = "7.7.0.RELEASE"
 kotlinx-coroutines-reactive = "1.11.0"
 
 [libraries]
