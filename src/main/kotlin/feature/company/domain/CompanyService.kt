@@ -3,7 +3,8 @@ package com.mozgobolt.feature.company.domain
 import com.mozgobolt.core.domain.AppResult
 import com.mozgobolt.feature.company.domain.model.Company
 import com.mozgobolt.feature.company.domain.model.CompanyError
-import com.mozgobolt.feature.company.domain.model.CompanyMembership
+import com.mozgobolt.feature.company.domain.model.CompanyMemberSummary
+import com.mozgobolt.feature.company.domain.model.CompanyMembershipSummary
 
 interface CompanyService {
     suspend fun createCompany(
@@ -38,7 +39,9 @@ interface CompanyService {
     suspend fun listMembers(
         userId: Int,
         companyId: Int,
-    ): AppResult<List<CompanyMembership>, CompanyError>
+    ): AppResult<List<CompanyMemberSummary>, CompanyError>
+
+    suspend fun listCompaniesForUser(userId: Int): AppResult<List<CompanyMembershipSummary>, CompanyError>
 
     suspend fun promoteMember(
         adminUserId: Int,

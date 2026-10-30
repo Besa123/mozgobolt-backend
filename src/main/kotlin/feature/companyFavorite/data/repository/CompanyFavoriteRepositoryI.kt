@@ -7,7 +7,9 @@ import com.mozgobolt.feature.companyFavorite.domain.CompanyFavoriteRepository
 import com.mozgobolt.feature.companyFavorite.domain.model.CompanyFavorite
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insertIgnore
+import org.jetbrains.exposed.v1.jdbc.select
 import java.time.Instant
 
 class CompanyFavoriteRepositoryI : CompanyFavoriteRepository {
@@ -32,11 +34,10 @@ class CompanyFavoriteRepositoryI : CompanyFavoriteRepository {
     override suspend fun remove(
         userId: Int,
         companyId: Int,
-    ): Boolean {
-        val matches = find(userId, companyId) ?: return false
-        CompanyFavoriteEntity[matches.id].delete()
-        return true
-    }
+    ): Boolean =
+        CompanyFavoritesTable.deleteWhere {
+            (CompanyFavoritesTable.userId eq userId) and (CompanyFavoritesTable.companyId eq companyId)
+        } > 0
 
     override suspend fun findAllForUser(userId: Int): List<CompanyFavorite> =
         CompanyFavoriteEntity
@@ -44,9 +45,10 @@ class CompanyFavoriteRepositoryI : CompanyFavoriteRepository {
             .map { it.toCompanyFavorite() }
 
     override suspend fun findUserIdsFavoritingCompany(companyId: Int): List<Int> =
-        CompanyFavoriteEntity
-            .find { CompanyFavoritesTable.companyId eq companyId }
-            .map { it.userId }
+        CompanyFavoritesTable
+            .select(CompanyFavoritesTable.userId)
+            .where { CompanyFavoritesTable.companyId eq companyId }
+            .map { it[CompanyFavoritesTable.userId] }
 
     private suspend fun find(
         userId: Int,

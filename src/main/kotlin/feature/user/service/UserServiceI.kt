@@ -17,6 +17,7 @@ import com.mozgobolt.feature.user.domain.UserRepository
 import com.mozgobolt.feature.user.domain.UserService
 import com.mozgobolt.feature.user.domain.model.AuthResponse
 import com.mozgobolt.feature.user.domain.model.ContactInfoError
+import com.mozgobolt.feature.user.domain.model.CurrentUserProfile
 import com.mozgobolt.feature.user.domain.model.DriverContactInfo
 import com.mozgobolt.feature.user.domain.model.LockoutPolicy
 import com.mozgobolt.feature.user.domain.model.LoginError
@@ -131,6 +132,30 @@ class UserServiceI(
                     whatsappNumber = user.whatsappNumber.takeIf { user.whatsappVisible },
                     viberNumber = user.viberNumber.takeIf { user.viberVisible },
                     messengerUsername = user.messengerUsername.takeIf { user.messengerVisible },
+                )
+            }
+        }
+
+    override suspend fun findCurrentUser(userId: Int): CurrentUserProfile? =
+        tx.transactional {
+            userRepository.findUserById(userId)?.let { user ->
+                CurrentUserProfile(
+                    id = user.id,
+                    email = user.email,
+                    name = user.name,
+                    role = user.role,
+                    emailVerified = user.isEmailVerified,
+                    contactInfo =
+                        UserContactInfo(
+                            phoneNumber = user.phoneNumber,
+                            phoneNumberVisible = user.phoneNumberVisible,
+                            whatsappNumber = user.whatsappNumber,
+                            whatsappVisible = user.whatsappVisible,
+                            viberNumber = user.viberNumber,
+                            viberVisible = user.viberVisible,
+                            messengerUsername = user.messengerUsername,
+                            messengerVisible = user.messengerVisible,
+                        ),
                 )
             }
         }

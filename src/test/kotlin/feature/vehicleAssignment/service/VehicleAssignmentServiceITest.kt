@@ -9,6 +9,7 @@ import com.mozgobolt.feature.user.service.NoopTransactionalRunner
 import com.mozgobolt.feature.vehicle.domain.VehicleRepository
 import com.mozgobolt.feature.vehicle.domain.model.Vehicle
 import com.mozgobolt.feature.vehicleAssignment.domain.VehicleAssignmentRepository
+import com.mozgobolt.feature.vehicleAssignment.domain.model.ActiveVehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignmentError
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationHub
@@ -141,6 +142,8 @@ class VehicleAssignmentServiceITest {
 
         override suspend fun findAllForCompany(companyId: Int) = error("not exercised by this test")
 
+        override suspend fun findCompanySummariesForUser(userId: Int) = error("not exercised by this test")
+
         override suspend fun countAdmins(companyId: Int) = error("not exercised by this test")
 
         override suspend fun updateRole(
@@ -174,6 +177,9 @@ class VehicleAssignmentServiceITest {
 
         override suspend fun findActiveForVendor(vendorUserId: Int): VehicleAssignment? =
             assignments.find { it.vendorUserId == vendorUserId && it.isActive }
+
+        override suspend fun findActiveDetailsForVendor(vendorUserId: Int): ActiveVehicleAssignment? =
+            error("not exercised by this test")
 
         override suspend fun findActiveForVehicle(vehicleId: Int): VehicleAssignment? =
             assignments.find { it.vehicleId == vehicleId && it.isActive }
@@ -373,7 +379,7 @@ class VehicleAssignmentServiceITest {
             val vendorId = fx.seedVendor(companyId = 1)
             fx.vehicleRepository.seed(id = 10, companyId = 1)
             fx.vehicleRepository.seed(id = 20, companyId = 1)
-            fx.service.link(vendorId, 10).fold(onSuccess = { it }, onError = { fail("$it") })
+            val first = fx.service.link(vendorId, 10).fold(onSuccess = { it }, onError = { fail("$it") })
 
             val second = fx.service.link(vendorId, 20).fold(onSuccess = { it }, onError = { fail("$it") })
 
@@ -381,6 +387,21 @@ class VehicleAssignmentServiceITest {
             val stillActiveForVehicleTen = fx.assignmentRepository.findActiveForVehicle(10)
             assertNull(stillActiveForVehicleTen, "the old assignment must have been ended, not left dangling active")
             assertEquals(20, fx.service.findActiveForVendor(vendorId)?.vehicleId)
+            assertEquals(
+                2,
+                fx.syncService.recorded.count {
+                    it.entityType == SyncEntityType.VEHICLE_ASSIGNMENT && it.entityId == first.id
+                },
+                "sync must include the old assignment's transition to ended",
+            )
+            assertEquals(
+                1,
+                fx.syncService.recorded.count {
+                    it.entityType == SyncEntityType.VEHICLE_ASSIGNMENT && it.entityId == second.id
+                },
+                "sync must include the new active assignment",
+            )
+            assertEquals(listOf(10), fx.hub.markedOffline, "the previous vehicle must leave the live map")
         }
     }
 
@@ -437,6 +458,10 @@ class VehicleAssignmentServiceITest {
             result.fold(onSuccess = { fail("expected VEHICLE_ALREADY_ASSIGNED but got success") }, onError = {
                 assertEquals(VehicleAssignmentError.VEHICLE_ALREADY_ASSIGNED, it)
             })
+            assertTrue(
+                fx.hub.markedOffline.isEmpty(),
+                "the failed switch must not clear the previous vehicle from the live map",
+            )
         }
     }
 
@@ -463,6 +488,10 @@ class VehicleAssignmentServiceITest {
             result.fold(onSuccess = { fail("expected VEHICLE_ALREADY_ASSIGNED but got success") }, onError = {
                 assertEquals(VehicleAssignmentError.VEHICLE_ALREADY_ASSIGNED, it)
             })
+            assertTrue(
+                fx.hub.markedOffline.isEmpty(),
+                "a rolled-back failed vehicle switch must not clear the previous vehicle from the live map",
+            )
         }
     }
 

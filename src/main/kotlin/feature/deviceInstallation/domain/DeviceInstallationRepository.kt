@@ -18,8 +18,6 @@ interface DeviceInstallationRepository {
 
     suspend fun findAllForUser(userId: Int): List<DeviceInstallation>
 
-    suspend fun findByInstallationId(installationId: String): DeviceInstallation?
-
     /** `true` if a matching row owned by [userId] existed and was deleted. */
     suspend fun deleteForUser(
         userId: Int,

@@ -10,7 +10,8 @@ import com.mozgobolt.feature.company.domain.MembershipCheck
 import com.mozgobolt.feature.company.domain.model.Company
 import com.mozgobolt.feature.company.domain.model.CompanyConstraints
 import com.mozgobolt.feature.company.domain.model.CompanyError
-import com.mozgobolt.feature.company.domain.model.CompanyMembership
+import com.mozgobolt.feature.company.domain.model.CompanyMemberSummary
+import com.mozgobolt.feature.company.domain.model.CompanyMembershipSummary
 import com.mozgobolt.feature.company.domain.model.CompanyRole
 import com.mozgobolt.feature.company.domain.requireAdminMembership
 import com.mozgobolt.feature.sync.domain.SyncService
@@ -106,17 +107,27 @@ class CompanyServiceI(
         tx.transactional {
             requireAdmin(adminUserId, companyId)?.let { return@transactional it }
 
+            val memberUserIds = membershipRepository.findAllForCompany(companyId).map { it.userId }
+
             // Must happen before the delete below: once the DB cascades vehicles away, there's
             // nothing left to look up an active assignment's vehicle against, and any vehicle
             // that was actively being driven would otherwise stay stuck on the live map forever.
             vehicleAssignmentService.endAllActiveAssignmentsForCompany(companyId)
 
-            // The DB cascades vehicles, vehicle_assignments, vehicle_locations and
-            // company_memberships for us (see the V2 migration) — nothing else to clean up here.
+            // Flyway V1 cascades company memberships, vehicles, assignments, locations, favorites,
+            // and pings; nothing else needs relational cleanup here.
             if (!companyRepository.delete(companyId)) {
                 return@transactional AppResult.Error(CompanyError.COMPANY_NOT_FOUND)
             }
-            syncService.recordChange(adminUserId, SyncEntityType.COMPANY, companyId, SyncOperation.DELETE)
+            memberUserIds.forEach { memberUserId ->
+                syncService.recordChange(memberUserId, SyncEntityType.COMPANY, companyId, SyncOperation.DELETE)
+                syncService.recordChange(
+                    memberUserId,
+                    SyncEntityType.COMPANY_MEMBERSHIP,
+                    companyId,
+                    SyncOperation.DELETE,
+                )
+            }
 
             AppResult.Success(Unit)
         }
@@ -143,12 +154,17 @@ class CompanyServiceI(
     override suspend fun listMembers(
         userId: Int,
         companyId: Int,
-    ): AppResult<List<CompanyMembership>, CompanyError> =
+    ): AppResult<List<CompanyMemberSummary>, CompanyError> =
         tx.transactional {
             membershipRepository.find(companyId, userId)
                 ?: return@transactional AppResult.Error(CompanyError.NOT_A_MEMBER)
 
             AppResult.Success(membershipRepository.findAllForCompany(companyId))
+        }
+
+    override suspend fun listCompaniesForUser(userId: Int): AppResult<List<CompanyMembershipSummary>, CompanyError> =
+        tx.transactional {
+            AppResult.Success(membershipRepository.findCompanySummariesForUser(userId))
         }
 
     override suspend fun promoteMember(

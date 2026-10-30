@@ -17,6 +17,8 @@ import com.mozgobolt.feature.company.domain.model.CompanyError
 import com.mozgobolt.feature.company.routing.dto.request.CreateCompanyRequestDto
 import com.mozgobolt.feature.company.routing.dto.request.JoinCompanyRequestDto
 import com.mozgobolt.feature.company.routing.dto.request.RenameCompanyRequestDto
+import com.mozgobolt.feature.company.routing.dto.response.toMemberResponseDto
+import com.mozgobolt.feature.company.routing.dto.response.toMyCompanyResponseDto
 import com.mozgobolt.feature.company.routing.dto.response.toResponseDto
 import com.mozgobolt.feature.user.domain.model.UserRole
 import com.mozgobolt.feature.user.routing.requireRole
@@ -46,6 +48,18 @@ private fun Route.registerCompanyCrudRoutes(
     companyService: CompanyService,
     idempotencyStore: IdempotencyStore,
 ) {
+    get("/companies") {
+        if (!requireRole(UserRole.VENDOR)) return@get
+        val userId = call.currentUserIdOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
+
+        companyService.listCompaniesForUser(userId).fold(
+            onSuccess = { companies ->
+                call.respond(HttpStatusCode.OK, companies.map { it.toMyCompanyResponseDto() })
+            },
+            onError = { error -> call.respond(error.toHttpStatusCode(), ErrorResponse(error = error.name)) },
+        )
+    }
+
     validatedPost<CreateCompanyRequestDto>("/companies", BodyLimit.TINY, RequestTimeout.STANDARD) { request ->
         if (!requireRole(UserRole.VENDOR)) return@validatedPost
         val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
@@ -64,10 +78,12 @@ private fun Route.registerCompanyCrudRoutes(
         if (!requireRole(UserRole.VENDOR)) return@validatedPost
         val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
 
-        companyService.joinCompany(userId = userId, inviteCode = request.inviteCode).fold(
-            onSuccess = { company -> call.respond(HttpStatusCode.OK, company.toResponseDto()) },
-            onError = { error -> call.respond(error.toHttpStatusCode(), ErrorResponse(error = error.name)) },
-        )
+        idempotent(idempotencyStore, requestFingerprint = "join-company:$userId:${Json.encodeToString(request)}") {
+            companyService.joinCompany(userId = userId, inviteCode = request.inviteCode).fold(
+                onSuccess = { company -> idempotentResult(HttpStatusCode.OK, company.toMemberResponseDto()) },
+                onError = { error -> idempotentResult(error.toHttpStatusCode(), ErrorResponse(error = error.name)) },
+            )
+        }
     }
 
     validatedPatch<RenameCompanyRequestDto>("/companies/{id}", BodyLimit.TINY, RequestTimeout.STANDARD) { request ->

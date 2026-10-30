@@ -43,9 +43,6 @@ class FakeDeviceInstallationRepository : DeviceInstallationRepository {
     override suspend fun findAllForUser(userId: Int): List<DeviceInstallation> =
         installationsById.values.filter { it.userId == userId }
 
-    override suspend fun findByInstallationId(installationId: String): DeviceInstallation? =
-        installationsById.values.find { it.installationId == installationId }
-
     override suspend fun deleteForUser(
         userId: Int,
         installationId: String,

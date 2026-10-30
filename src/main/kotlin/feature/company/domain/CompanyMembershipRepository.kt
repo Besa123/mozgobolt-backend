@@ -1,6 +1,8 @@
 package com.mozgobolt.feature.company.domain
 
+import com.mozgobolt.feature.company.domain.model.CompanyMemberSummary
 import com.mozgobolt.feature.company.domain.model.CompanyMembership
+import com.mozgobolt.feature.company.domain.model.CompanyMembershipSummary
 import com.mozgobolt.feature.company.domain.model.CompanyRole
 
 interface CompanyMembershipRepository {
@@ -23,7 +25,9 @@ interface CompanyMembershipRepository {
         userId: Int,
     ): CompanyMembership?
 
-    suspend fun findAllForCompany(companyId: Int): List<CompanyMembership>
+    suspend fun findAllForCompany(companyId: Int): List<CompanyMemberSummary>
+
+    suspend fun findCompanySummariesForUser(userId: Int): List<CompanyMembershipSummary>
 
     suspend fun countAdmins(companyId: Int): Int
 

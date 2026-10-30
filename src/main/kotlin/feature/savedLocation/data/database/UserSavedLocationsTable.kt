@@ -1,6 +1,8 @@
 package com.mozgobolt.feature.savedLocation.data.database
 
 import com.mozgobolt.core.domain.validation.DISPLAY_NAME_MAX_LENGTH
+import com.mozgobolt.feature.user.data.database.UsersTable
+import org.jetbrains.exposed.v1.core.ReferenceOption
 import org.jetbrains.exposed.v1.core.dao.id.EntityID
 import org.jetbrains.exposed.v1.core.dao.id.IntIdTable
 import org.jetbrains.exposed.v1.dao.IntEntity
@@ -13,7 +15,13 @@ private const val RADIUS_PRECISION = 5
 private const val RADIUS_SCALE = 2
 
 data object UserSavedLocationsTable : IntIdTable("user_saved_locations") {
-    val userId = integer("user_id")
+    val userId =
+        integer("user_id")
+            .references(
+                UsersTable.id,
+                onDelete = ReferenceOption.CASCADE,
+                onUpdate = ReferenceOption.RESTRICT,
+            ).index()
     val label = varchar("label", DISPLAY_NAME_MAX_LENGTH)
     val latitude = decimal("latitude", LATITUDE_LONGITUDE_PRECISION, LATITUDE_LONGITUDE_SCALE)
     val longitude = decimal("longitude", LATITUDE_LONGITUDE_PRECISION, LATITUDE_LONGITUDE_SCALE)

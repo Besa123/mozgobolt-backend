@@ -3,6 +3,7 @@ package com.mozgobolt.feature.user.domain
 import com.mozgobolt.core.domain.AppResult
 import com.mozgobolt.feature.user.domain.model.AuthResponse
 import com.mozgobolt.feature.user.domain.model.ContactInfoError
+import com.mozgobolt.feature.user.domain.model.CurrentUserProfile
 import com.mozgobolt.feature.user.domain.model.DriverContactInfo
 import com.mozgobolt.feature.user.domain.model.LoginError
 import com.mozgobolt.feature.user.domain.model.PasswordResetError
@@ -25,6 +26,8 @@ interface UserService {
     ): AppResult<Unit, RegisterError>
 
     suspend fun findContactInfo(userId: Int): DriverContactInfo?
+
+    suspend fun findCurrentUser(userId: Int): CurrentUserProfile?
 
     /** Full-replace: the caller always sends every field's current desired state (see [UserContactInfo]). */
     suspend fun updateContactInfo(

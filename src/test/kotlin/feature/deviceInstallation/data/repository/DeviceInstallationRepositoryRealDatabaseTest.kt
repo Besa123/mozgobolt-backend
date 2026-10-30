@@ -12,7 +12,7 @@ import kotlin.test.assertEquals
 /**
  * Proves the real `UNIQUE(user_id, installation_id)` index on `device_installations` actually
  * fires under genuine Postgres concurrency, backing [DeviceInstallationRepositoryI.register]'s
- * insertIgnore-then-update behavior — exactly the class of bug invisible to fakes, only caught by
+ * upsert behavior — exactly the class of bug invisible to fakes, only caught by
  * a real DB.
  */
 class DeviceInstallationRepositoryRealDatabaseTest {
@@ -34,6 +34,31 @@ class DeviceInstallationRepositoryRealDatabaseTest {
 
             val allInstallations = tx.transactional { repository.findAllForUser(1) }
             assertEquals(1, allInstallations.size, "only one row must actually exist, regardless of which call won")
+        }
+    }
+
+    @Test
+    fun `registering an existing installation updates mutable fields and preserves its creation time`() {
+        skipIfNoDocker()
+
+        withRealDatabase { _, tx ->
+            val repository = DeviceInstallationRepositoryI()
+            val createdAt = Instant.parse("2026-01-01T10:00:00Z")
+            val updatedAt = createdAt.plusSeconds(60)
+
+            val created =
+                tx.transactional {
+                    repository.register(1, "device-a", DevicePlatform.ANDROID, createdAt)
+                }
+            val refreshed =
+                tx.transactional {
+                    repository.register(1, "device-a", DevicePlatform.IOS, updatedAt)
+                }
+
+            assertEquals(created.id, refreshed.id)
+            assertEquals(createdAt, refreshed.createdAt)
+            assertEquals(updatedAt, refreshed.updatedAt)
+            assertEquals(DevicePlatform.IOS, refreshed.platform)
         }
     }
 

@@ -1,12 +1,25 @@
 package com.mozgobolt.feature.sync.service
 
 import com.mozgobolt.core.skipIfNoDocker
+import com.mozgobolt.feature.sync.SyncTestHarness
+import com.mozgobolt.feature.sync.data.repository.SYNC_USER_LOCK_NAMESPACE
 import com.mozgobolt.feature.sync.domain.model.SyncEntityType
 import com.mozgobolt.feature.sync.domain.model.SyncOperation
 import com.mozgobolt.feature.sync.withRealSyncDatabase
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
+import org.jetbrains.exposed.v1.core.IntegerColumnType
+import org.jetbrains.exposed.v1.core.statements.StatementType
+import org.jetbrains.exposed.v1.jdbc.transactions.TransactionManager
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 class SyncServiceTest {
     @Test
@@ -44,6 +57,62 @@ class SyncServiceTest {
     }
 
     @Test
+    fun `same-user event writes wait for earlier transaction before allocating ids`() {
+        skipIfNoDocker()
+
+        withRealSyncDatabase { harness ->
+            coroutineScope {
+                val firstEventId = CompletableDeferred<Long>()
+                val allowFirstCommit = CompletableDeferred<Unit>()
+                val secondAttemptStarted = CompletableDeferred<Unit>()
+
+                val first =
+                    async(Dispatchers.IO) {
+                        harness.tx.transactional {
+                            val event =
+                                harness.repository.record(
+                                    userId = 1,
+                                    entityType = SyncEntityType.COMPANY,
+                                    entityId = 1,
+                                    operation = SyncOperation.UPSERT,
+                                )
+                            firstEventId.complete(event.id)
+                            allowFirstCommit.await()
+                        }
+                    }
+
+                val firstId = firstEventId.await()
+                val second =
+                    async(Dispatchers.IO) {
+                        secondAttemptStarted.complete(Unit)
+                        harness.service.recordChange(
+                            userId = 1,
+                            entityType = SyncEntityType.COMPANY,
+                            entityId = 2,
+                            operation = SyncOperation.UPSERT,
+                        )
+                    }
+
+                try {
+                    secondAttemptStarted.await()
+                    harness.awaitWaitingForUserSyncLock(userId = 1)
+                    val notYetCommitted = harness.service.changesSince(userId = 1, cursor = firstId - 1, limit = 10)
+                    assertTrue(notYetCommitted.events.isEmpty())
+                } finally {
+                    allowFirstCommit.complete(Unit)
+                }
+
+                first.await()
+                second.await()
+
+                val page = harness.service.changesSince(userId = 1, cursor = firstId - 1, limit = 10)
+                assertEquals(listOf(1, 2), page.events.map { it.entityId })
+                assertEquals(page.events.last().id, page.nextCursor)
+            }
+        }
+    }
+
+    @Test
     fun `changesSince never returns another user's events`() {
         skipIfNoDocker()
 
@@ -55,6 +124,42 @@ class SyncServiceTest {
 
             assertEquals(1, page.events.size)
             assertEquals(1, page.events.first().userId)
+        }
+    }
+
+    private suspend fun SyncTestHarness.awaitWaitingForUserSyncLock(userId: Int) {
+        withTimeout(5.seconds) {
+            while (!tx.transactional { isWaitingForUserSyncLock(userId) }) {
+                delay(10.milliseconds)
+            }
+        }
+    }
+
+    private suspend fun SyncTestHarness.isWaitingForUserSyncLock(userId: Int): Boolean {
+        val integerColumnType = IntegerColumnType()
+        return tx.transactional {
+            TransactionManager.current().exec(
+                stmt =
+                    """
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM pg_locks
+                        WHERE locktype = 'advisory'
+                          AND classid = ?::oid
+                          AND objid = ?::oid
+                          AND objsubid = 2
+                          AND NOT granted
+                    )
+                    """.trimIndent(),
+                args =
+                    listOf(
+                        integerColumnType to SYNC_USER_LOCK_NAMESPACE,
+                        integerColumnType to userId,
+                    ),
+                explicitStatementType = StatementType.SELECT,
+            ) { resultSet ->
+                resultSet.next() && resultSet.getBoolean(1)
+            } ?: false
         }
     }
 

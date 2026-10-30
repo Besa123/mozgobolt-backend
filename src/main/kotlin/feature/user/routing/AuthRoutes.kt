@@ -33,6 +33,7 @@ import com.mozgobolt.feature.user.routing.dto.request.toDomain
 import com.mozgobolt.feature.user.routing.dto.response.MessageResponseDto
 import com.mozgobolt.feature.user.routing.dto.response.PasswordResetValidateResponseDto
 import com.mozgobolt.feature.user.routing.dto.response.SignInResponseDto
+import com.mozgobolt.feature.user.routing.dto.response.toCurrentUserResponseDto
 import com.mozgobolt.feature.user.routing.dto.response.toResponseDto
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
@@ -244,6 +245,20 @@ private fun Route.authProtectedRoutes(userService: UserService) {
         }
 
         route("/auth") {
+            get("/me") {
+                val userId =
+                    call.currentUserIdOrNull()
+                        ?: return@get call.respond(HttpStatusCode.Unauthorized)
+                val currentUser =
+                    userService.findCurrentUser(userId)
+                        ?: return@get call.respond(
+                            HttpStatusCode.NotFound,
+                            ErrorResponse(error = "USER_NOT_FOUND"),
+                        )
+
+                call.respond(HttpStatusCode.OK, currentUser.toCurrentUserResponseDto())
+            }
+
             validatedPost<LogoutRequestDto>("/logout", BodyLimit.SMALL, RequestTimeout.FAST) { request ->
                 val userId =
                     call.currentUserIdOrNull()

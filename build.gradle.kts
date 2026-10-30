@@ -88,6 +88,15 @@ tasks.jacocoTestReport {
     }
 }
 
+tasks.register<JavaExec>("generateExposedMigrationPreview") {
+    group = "database"
+    description = "Generate a reviewed Exposed migration candidate from a disposable local PostgreSQL database."
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("com.mozgobolt.core.database.GenerateExposedMigrationPreviewKt")
+    args(providers.gradleProperty("migrationPreviewScriptName").get())
+}
+
 dependencies {
     implementation(ktorLibs.server.core)
     implementation(ktorLibs.server.netty)

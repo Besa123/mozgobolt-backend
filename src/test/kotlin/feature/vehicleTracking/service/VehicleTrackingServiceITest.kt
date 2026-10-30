@@ -5,6 +5,7 @@ import com.mozgobolt.feature.proximityNotification.domain.ProximityAlertService
 import com.mozgobolt.feature.vehicle.domain.VehicleRepository
 import com.mozgobolt.feature.vehicle.domain.model.Vehicle
 import com.mozgobolt.feature.vehicleAssignment.domain.VehicleAssignmentService
+import com.mozgobolt.feature.vehicleAssignment.domain.model.ActiveVehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignmentError
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationBuffer
@@ -328,6 +329,9 @@ private class FakeVehicleAssignmentService(
     override suspend fun endAllActiveAssignmentsForCompany(companyId: Int) = error("not exercised by this test")
 
     override suspend fun findActiveForVendor(vendorUserId: Int): VehicleAssignment? = activeAssignment
+
+    override suspend fun findActiveDetailsForVendor(vendorUserId: Int): ActiveVehicleAssignment? =
+        error("not exercised by this test")
 
     override suspend fun findActiveForVehicle(vehicleId: Int): VehicleAssignment? = error("not exercised by this test")
 }

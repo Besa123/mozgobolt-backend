@@ -3,7 +3,9 @@ package com.mozgobolt.feature.company.service
 import com.mozgobolt.feature.company.domain.CompanyMembershipRepository
 import com.mozgobolt.feature.company.domain.CompanyRepository
 import com.mozgobolt.feature.company.domain.model.Company
+import com.mozgobolt.feature.company.domain.model.CompanyMemberSummary
 import com.mozgobolt.feature.company.domain.model.CompanyMembership
+import com.mozgobolt.feature.company.domain.model.CompanyMembershipSummary
 import com.mozgobolt.feature.company.domain.model.CompanyRole
 import com.mozgobolt.feature.sync.routing.FakeSyncService
 import com.mozgobolt.feature.user.service.NoopTransactionalRunner
@@ -63,7 +65,9 @@ internal class FakeCompanyRepository : CompanyRepository {
     override suspend fun delete(companyId: Int): Boolean = companiesById.remove(companyId) != null
 }
 
-internal class FakeCompanyMembershipRepository : CompanyMembershipRepository {
+internal class FakeCompanyMembershipRepository(
+    private val companyRepository: FakeCompanyRepository = FakeCompanyRepository(),
+) : CompanyMembershipRepository {
     private val memberships = mutableListOf<CompanyMembership>()
     private var nextId = 1
     var rejectNextAdd = false
@@ -95,8 +99,30 @@ internal class FakeCompanyMembershipRepository : CompanyMembershipRepository {
         userId: Int,
     ): CompanyMembership? = memberships.find { it.companyId == companyId && it.userId == userId }
 
-    override suspend fun findAllForCompany(companyId: Int): List<CompanyMembership> =
-        memberships.filter { it.companyId == companyId }
+    override suspend fun findAllForCompany(companyId: Int): List<CompanyMemberSummary> =
+        memberships
+            .filter { it.companyId == companyId }
+            .map { membership ->
+                CompanyMemberSummary(
+                    userId = membership.userId,
+                    name = "Test User ${membership.userId}",
+                    role = membership.role,
+                )
+            }
+
+    override suspend fun findCompanySummariesForUser(userId: Int): List<CompanyMembershipSummary> =
+        memberships
+            .filter { it.userId == userId }
+            .sortedWith(compareBy<CompanyMembership> { it.joinedAt }.thenBy { it.id })
+            .mapNotNull { membership ->
+                companyRepository.findById(membership.companyId)?.let { company ->
+                    CompanyMembershipSummary(
+                        companyId = company.id,
+                        companyName = company.name,
+                        membershipRole = membership.role,
+                    )
+                }
+            }
 
     override suspend fun countAdmins(companyId: Int): Int =
         memberships.count { it.companyId == companyId && it.role == CompanyRole.ADMIN }
@@ -188,6 +214,8 @@ internal class FakeVehicleAssignmentRepository : VehicleAssignmentRepository {
     override suspend fun findActiveForVendor(vendorUserId: Int): VehicleAssignment? =
         assignments.find { it.vendorUserId == vendorUserId && it.isActive }
 
+    override suspend fun findActiveDetailsForVendor(vendorUserId: Int) = error("not exercised by this test")
+
     override suspend fun findActiveForVehicle(vehicleId: Int): VehicleAssignment? =
         assignments.find { it.vehicleId == vehicleId && it.isActive }
 
@@ -238,7 +266,7 @@ internal class SpyVehicleLocationHub : VehicleLocationHub {
 
 internal class CompanyServiceFixture {
     val companyRepository = FakeCompanyRepository()
-    val membershipRepository = FakeCompanyMembershipRepository()
+    val membershipRepository = FakeCompanyMembershipRepository(companyRepository)
     val vehicleRepository = FakeVehicleRepository()
     val assignmentRepository = FakeVehicleAssignmentRepository()
     val locationHub = SpyVehicleLocationHub()

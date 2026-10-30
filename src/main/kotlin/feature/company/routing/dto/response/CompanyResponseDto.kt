@@ -7,7 +7,7 @@ import kotlinx.serialization.Serializable
 data class CompanyResponseDto(
     val id: Int,
     val name: String,
-    val inviteCode: String,
+    val inviteCode: String? = null,
 )
 
 fun Company.toResponseDto() =
@@ -15,4 +15,10 @@ fun Company.toResponseDto() =
         id = id,
         name = name,
         inviteCode = inviteCode,
+    )
+
+fun Company.toMemberResponseDto() =
+    CompanyResponseDto(
+        id = id,
+        name = name,
     )

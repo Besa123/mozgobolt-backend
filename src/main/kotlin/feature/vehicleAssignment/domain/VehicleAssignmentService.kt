@@ -1,6 +1,7 @@
 package com.mozgobolt.feature.vehicleAssignment.domain
 
 import com.mozgobolt.core.domain.AppResult
+import com.mozgobolt.feature.vehicleAssignment.domain.model.ActiveVehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignmentError
 
@@ -47,6 +48,8 @@ interface VehicleAssignmentService {
     suspend fun endAllActiveAssignmentsForCompany(companyId: Int)
 
     suspend fun findActiveForVendor(vendorUserId: Int): VehicleAssignment?
+
+    suspend fun findActiveDetailsForVendor(vendorUserId: Int): ActiveVehicleAssignment?
 
     suspend fun findActiveForVehicle(vehicleId: Int): VehicleAssignment?
 }

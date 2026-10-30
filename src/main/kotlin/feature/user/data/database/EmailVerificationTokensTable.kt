@@ -13,6 +13,7 @@ object EmailVerificationTokensTable : IntIdTable("email_verification_tokens") {
             name = "user_id",
             refColumn = UsersTable.id,
             onDelete = ReferenceOption.CASCADE,
+            onUpdate = ReferenceOption.RESTRICT,
         ).index()
     val token = varchar("token", 64).uniqueIndex()
     val expiresAt = timestamp("expires_at")

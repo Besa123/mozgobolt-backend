@@ -2,6 +2,8 @@ package com.mozgobolt.feature.company.service
 
 import com.mozgobolt.feature.company.domain.model.CompanyError
 import com.mozgobolt.feature.company.domain.model.CompanyRole
+import com.mozgobolt.feature.sync.domain.model.SyncEntityType
+import com.mozgobolt.feature.sync.domain.model.SyncOperation
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -69,6 +71,35 @@ class CompanyServiceAdminActionsTest {
 
             result.fold(onSuccess = {}, onError = { fail("expected success but got $it") })
             assertNull(fx.companyRepository.findById(created.id))
+        }
+    }
+
+    @Test
+    fun `company deletion sync tombstones reach every current member`() {
+        runBlocking {
+            val fx = CompanyServiceFixture()
+            val created = fx.service.createCompany(1, "FamilyFrost").fold(onSuccess = { it }, onError = { fail("$it") })
+            fx.service.joinCompany(2, created.inviteCode).fold(onSuccess = {}, onError = { fail("$it") })
+            fx.syncService.recorded.clear()
+
+            val result = fx.service.deleteCompany(adminUserId = 1, companyId = created.id)
+
+            result.fold(onSuccess = {}, onError = { fail("expected success but got $it") })
+            val deleteEvents = fx.syncService.recorded.filter { it.operation == SyncOperation.DELETE }
+            assertEquals(
+                setOf(1, 2),
+                deleteEvents
+                    .filter { it.entityType == SyncEntityType.COMPANY }
+                    .map { it.userId }
+                    .toSet(),
+            )
+            assertEquals(
+                setOf(1, 2),
+                deleteEvents
+                    .filter { it.entityType == SyncEntityType.COMPANY_MEMBERSHIP }
+                    .map { it.userId }
+                    .toSet(),
+            )
         }
     }
 

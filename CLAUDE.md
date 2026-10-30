@@ -4,6 +4,7 @@ Idiomatic modern Kotlin, not Java-style. Clean Architecture, SOLID, DRY, YAGNI.
 
 ## Patterns
 
+- For Exposed persistence work, load `.github/skills/exposed/SKILL.md` and its task-relevant references before implementing.
 - Single `User` table with a `role` (`BUYER`/`VENDOR`) — no parallel auth system per role. A vendor's first
   registration creates a `Company` (invite-code join for others); a vendor links/delinks himself to a `Vehicle` for a
   shift, and GPS telemetry is always tied to the vehicle's currently active `VehicleAssignment`, never directly to a

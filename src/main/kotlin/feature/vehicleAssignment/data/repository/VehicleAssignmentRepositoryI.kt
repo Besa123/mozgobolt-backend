@@ -1,14 +1,17 @@
 package com.mozgobolt.feature.vehicleAssignment.data.repository
 
+import com.mozgobolt.feature.vehicle.data.database.VehiclesTable
 import com.mozgobolt.feature.vehicleAssignment.data.database.VehicleAssignmentEntity
 import com.mozgobolt.feature.vehicleAssignment.data.database.VehicleAssignmentsTable
 import com.mozgobolt.feature.vehicleAssignment.data.mapper.toVehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.VehicleAssignmentRepository
+import com.mozgobolt.feature.vehicleAssignment.domain.model.ActiveVehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignment
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.isNull
 import org.jetbrains.exposed.v1.jdbc.insertIgnore
+import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.update
 import java.time.Instant
 
@@ -20,6 +23,28 @@ class VehicleAssignmentRepositoryI : VehicleAssignmentRepository {
                     VehicleAssignmentsTable.endedAt.isNull()
             }.firstOrNull()
             ?.toVehicleAssignment()
+
+    override suspend fun findActiveDetailsForVendor(vendorUserId: Int): ActiveVehicleAssignment? =
+        (VehicleAssignmentsTable innerJoin VehiclesTable)
+            .select(
+                VehicleAssignmentsTable.id,
+                VehicleAssignmentsTable.vehicleId,
+                VehiclesTable.companyId,
+                VehiclesTable.label,
+                VehiclesTable.licensePlate,
+            ).where {
+                (VehicleAssignmentsTable.vendorUserId eq vendorUserId) and
+                    VehicleAssignmentsTable.endedAt.isNull()
+            }.limit(1)
+            .map { row ->
+                ActiveVehicleAssignment(
+                    id = row[VehicleAssignmentsTable.id].value,
+                    vehicleId = row[VehicleAssignmentsTable.vehicleId],
+                    companyId = row[VehiclesTable.companyId],
+                    vehicleLabel = row[VehiclesTable.label],
+                    licensePlate = row[VehiclesTable.licensePlate],
+                )
+            }.firstOrNull()
 
     override suspend fun findActiveForVehicle(vehicleId: Int): VehicleAssignment? =
         VehicleAssignmentEntity

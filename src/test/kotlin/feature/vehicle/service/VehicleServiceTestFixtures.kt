@@ -14,6 +14,7 @@ import com.mozgobolt.feature.user.service.NoopTransactionalRunner
 import com.mozgobolt.feature.vehicle.domain.VehicleRepository
 import com.mozgobolt.feature.vehicle.domain.model.Vehicle
 import com.mozgobolt.feature.vehicleAssignment.domain.VehicleAssignmentService
+import com.mozgobolt.feature.vehicleAssignment.domain.model.ActiveVehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignmentError
 import java.time.Instant
@@ -106,6 +107,8 @@ internal class FakeCompanyMembershipRepository : CompanyMembershipRepository {
 
     override suspend fun findAllForCompany(companyId: Int) = error("not exercised by this test")
 
+    override suspend fun findCompanySummariesForUser(userId: Int) = error("not exercised by this test")
+
     override suspend fun countAdmins(companyId: Int) = error("not exercised by this test")
 
     override suspend fun updateRole(
@@ -165,6 +168,9 @@ internal class FakeVehicleAssignmentService(
     override suspend fun endAllActiveAssignmentsForCompany(companyId: Int) = error("not exercised by this test")
 
     override suspend fun findActiveForVendor(vendorUserId: Int): VehicleAssignment? =
+        error("not exercised by this test")
+
+    override suspend fun findActiveDetailsForVendor(vendorUserId: Int): ActiveVehicleAssignment? =
         error("not exercised by this test")
 
     override suspend fun findActiveForVehicle(vehicleId: Int): VehicleAssignment? = error("not exercised by this test")

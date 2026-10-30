@@ -8,20 +8,24 @@ import com.mozgobolt.feature.vehiclePing.domain.model.VehiclePing
 import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.jdbc.select
 import java.time.Instant
 
 class VehiclePingRepositoryI : VehiclePingRepository {
     override suspend fun mostRecentSentAt(
         vehicleId: Int,
         buyerUserId: Int,
-    ): Instant? =
-        VehiclePingEntity
-            .find {
+    ): Instant? {
+        val sentAt = VehiclePingsTable.sentAt
+        return VehiclePingsTable
+            .select(sentAt)
+            .where {
                 (VehiclePingsTable.vehicleId eq vehicleId) and (VehiclePingsTable.buyerUserId eq buyerUserId)
-            }.orderBy(VehiclePingsTable.sentAt to SortOrder.DESC)
+            }.orderBy(sentAt to SortOrder.DESC)
             .limit(1)
             .firstOrNull()
-            ?.sentAt
+            ?.get(sentAt)
+    }
 
     override suspend fun create(
         vehicleId: Int,

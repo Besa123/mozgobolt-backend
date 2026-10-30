@@ -11,6 +11,7 @@ import com.mozgobolt.feature.sync.domain.model.SyncOperation
 import com.mozgobolt.feature.vehicle.domain.VehicleRepository
 import com.mozgobolt.feature.vehicleAssignment.domain.VehicleAssignmentRepository
 import com.mozgobolt.feature.vehicleAssignment.domain.VehicleAssignmentService
+import com.mozgobolt.feature.vehicleAssignment.domain.model.ActiveVehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignmentError
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationHub
@@ -40,63 +41,80 @@ class VehicleAssignmentServiceI(
     override suspend fun link(
         vendorUserId: Int,
         vehicleId: Int,
-    ): AppResult<VehicleAssignment, VehicleAssignmentError> =
-        try {
-            tx.transactional {
-                val vehicle =
-                    vehicleRepository.findById(vehicleId)
-                        ?: return@transactional AppResult.Error(VehicleAssignmentError.VEHICLE_NOT_FOUND)
+    ): AppResult<VehicleAssignment, VehicleAssignmentError> {
+        val outcome: Pair<AppResult<VehicleAssignment, VehicleAssignmentError>, Int?> =
+            try {
+                tx.transactional {
+                    val vehicle =
+                        vehicleRepository.findById(vehicleId)
+                            ?: return@transactional (AppResult.Error(VehicleAssignmentError.VEHICLE_NOT_FOUND) to null)
 
-                if (vehicle.archivedAt != null) {
-                    return@transactional AppResult.Error(VehicleAssignmentError.VEHICLE_ARCHIVED)
-                }
+                    if (vehicle.archivedAt != null) {
+                        return@transactional (AppResult.Error(VehicleAssignmentError.VEHICLE_ARCHIVED) to null)
+                    }
 
-                val isMember = membershipRepository.find(vehicle.companyId, vendorUserId) != null
-                if (!isMember) return@transactional AppResult.Error(VehicleAssignmentError.FORBIDDEN)
+                    val isMember = membershipRepository.find(vehicle.companyId, vendorUserId) != null
+                    if (!isMember) return@transactional (AppResult.Error(VehicleAssignmentError.FORBIDDEN) to null)
 
-                val activeOnVehicle = vehicleAssignmentRepository.findActiveForVehicle(vehicleId)
-                if (activeOnVehicle != null && activeOnVehicle.vendorUserId != vendorUserId) {
-                    return@transactional AppResult.Error(VehicleAssignmentError.VEHICLE_ALREADY_ASSIGNED)
-                }
-                if (activeOnVehicle != null) return@transactional AppResult.Success(activeOnVehicle)
+                    val activeOnVehicle = vehicleAssignmentRepository.findActiveForVehicle(vehicleId)
+                    if (activeOnVehicle != null && activeOnVehicle.vendorUserId != vendorUserId) {
+                        return@transactional (AppResult.Error(VehicleAssignmentError.VEHICLE_ALREADY_ASSIGNED) to null)
+                    }
+                    if (activeOnVehicle != null) {
+                        return@transactional (AppResult.Success(activeOnVehicle) to null)
+                    }
 
-                vehicleAssignmentRepository.findActiveForVendor(vendorUserId)?.let {
-                    vehicleAssignmentRepository.endAssignment(it.id, Instant.now())
-                }
+                    val previousAssignment = vehicleAssignmentRepository.findActiveForVendor(vendorUserId)
+                    previousAssignment?.let {
+                        vehicleAssignmentRepository.endAssignment(it.id, Instant.now())
+                    }
 
-                // A concurrent link() for this same vehicle (or vendor) between the checks above and
-                // this insert loses here, at the DB's partial unique indexes, not before — the checks
-                // above are for the common case's clean error message; this is the actual guard.
-                val created =
-                    vehicleAssignmentRepository.startAssignment(vehicleId, vendorUserId, Instant.now())
-                        ?: run {
-                            // Lost the race — but if the winner turns out to be this same vendor (a
-                            // double-submitted request racing itself, the one case the checks above
-                            // couldn't have caught either), that's still a success, not an error.
-                            // Nothing new was created by *this* call, so no sync event for it either
-                            // — the winning call already recorded its own.
-                            val winner = vehicleAssignmentRepository.findActiveForVehicle(vehicleId)
-                            if (winner != null && winner.vendorUserId == vendorUserId) {
-                                return@transactional AppResult.Success(winner)
+                    // A concurrent link() for this same vehicle (or vendor) between the checks above and
+                    // this insert loses here, at the DB's partial unique indexes, not before — the checks
+                    // above are for the common case's clean error message; this is the actual guard.
+                    val created =
+                        vehicleAssignmentRepository.startAssignment(vehicleId, vendorUserId, Instant.now())
+                            ?: run {
+                                // Lost the race — but if the winner turns out to be this same vendor (a
+                                // double-submitted request racing itself, the one case the checks above
+                                // couldn't have caught either), that's still a success, not an error.
+                                // Nothing new was created by *this* call, so no sync event for it either
+                                // — the winning call already recorded its own.
+                                val winner = vehicleAssignmentRepository.findActiveForVehicle(vehicleId)
+                                if (winner != null && winner.vendorUserId == vendorUserId) {
+                                    return@transactional (AppResult.Success(winner) to null)
+                                }
+                                // Someone else won: throw (see LostAssignmentRaceException's kdoc) so
+                                // this transaction rolls back instead of committing the endAssignment
+                                // above — otherwise the vendor's previous session would be permanently
+                                // lost even though this call reports failure.
+                                throw LostAssignmentRaceException()
                             }
-                            // Someone else won: throw (see LostAssignmentRaceException's kdoc) so
-                            // this transaction rolls back instead of committing the endAssignment
-                            // above — otherwise the vendor's previous session would be permanently
-                            // lost even though this call reports failure.
-                            throw LostAssignmentRaceException()
-                        }
-                syncService.recordChange(
-                    vendorUserId,
-                    SyncEntityType.VEHICLE_ASSIGNMENT,
-                    created.id,
-                    SyncOperation.UPSERT,
-                )
+                    previousAssignment?.let {
+                        syncService.recordChange(
+                            vendorUserId,
+                            SyncEntityType.VEHICLE_ASSIGNMENT,
+                            it.id,
+                            SyncOperation.UPSERT,
+                        )
+                    }
+                    syncService.recordChange(
+                        vendorUserId,
+                        SyncEntityType.VEHICLE_ASSIGNMENT,
+                        created.id,
+                        SyncOperation.UPSERT,
+                    )
 
-                AppResult.Success(created)
+                    AppResult.Success(created) to previousAssignment?.vehicleId
+                }
+            } catch (_: LostAssignmentRaceException) {
+                AppResult.Error(VehicleAssignmentError.VEHICLE_ALREADY_ASSIGNED) to null
             }
-        } catch (_: LostAssignmentRaceException) {
-            AppResult.Error(VehicleAssignmentError.VEHICLE_ALREADY_ASSIGNED)
-        }
+
+        val (result, previousVehicleId) = outcome
+        if (result is AppResult.Success) previousVehicleId?.let(hub::markOffline)
+        return result
+    }
 
     override suspend fun unlink(
         vendorUserId: Int,
@@ -186,6 +204,9 @@ class VehicleAssignmentServiceI(
 
     override suspend fun findActiveForVendor(vendorUserId: Int): VehicleAssignment? =
         tx.transactional { vehicleAssignmentRepository.findActiveForVendor(vendorUserId) }
+
+    override suspend fun findActiveDetailsForVendor(vendorUserId: Int): ActiveVehicleAssignment? =
+        tx.transactional { vehicleAssignmentRepository.findActiveDetailsForVendor(vendorUserId) }
 
     override suspend fun findActiveForVehicle(vehicleId: Int): VehicleAssignment? =
         tx.transactional { vehicleAssignmentRepository.findActiveForVehicle(vehicleId) }

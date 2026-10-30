@@ -2,6 +2,7 @@ package com.mozgobolt.feature.vehicleAssignment.service
 
 import com.mozgobolt.core.domain.AppResult
 import com.mozgobolt.core.skipIfNoDocker
+import com.mozgobolt.feature.vehicleAssignment.domain.model.ActiveVehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignmentError
 import com.mozgobolt.feature.vehicleAssignment.withRealVehicleAssignmentDatabase
 import kotlinx.coroutines.async
@@ -21,6 +22,41 @@ import kotlin.test.fail
  * class of bug CLAUDE.md calls out: invisible to unit-test fakes, only caught by a real DB.
  */
 class VehicleAssignmentServiceRealDatabaseTest {
+    @Test
+    fun `current assignment read returns active vehicle details and null after the shift ends`() {
+        skipIfNoDocker()
+
+        withRealVehicleAssignmentDatabase { harness ->
+            val vehicleId = harness.seedSharedCompanyWithOneVehicle()
+            val companyId =
+                harness.tx.transactional {
+                    requireNotNull(harness.vehicleRepository.findById(vehicleId)).companyId
+                }
+
+            assertNull(harness.service.findActiveDetailsForVendor(1))
+
+            val created =
+                harness.service.link(vendorUserId = 1, vehicleId = vehicleId).fold(
+                    onSuccess = { it },
+                    onError = { error("setup failed: $it") },
+                )
+            assertEquals(
+                ActiveVehicleAssignment(
+                    id = created.id,
+                    vehicleId = vehicleId,
+                    companyId = companyId,
+                    vehicleLabel = "Shared Truck",
+                    licensePlate = "SHARED-1",
+                ),
+                harness.service.findActiveDetailsForVendor(1),
+            )
+            assertNull(harness.service.findActiveDetailsForVendor(2), "another vendor must not see this assignment")
+
+            harness.service.unlink(vendorUserId = 1, vehicleId = vehicleId)
+            assertNull(harness.service.findActiveDetailsForVendor(1))
+        }
+    }
+
     @Test
     fun `two concurrent link requests for the same vehicle by different vendors only ever produce one winner`() {
         skipIfNoDocker()

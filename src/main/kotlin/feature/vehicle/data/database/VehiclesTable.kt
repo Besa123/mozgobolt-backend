@@ -1,7 +1,9 @@
 package com.mozgobolt.feature.vehicle.data.database
 
 import com.mozgobolt.core.domain.validation.DISPLAY_NAME_MAX_LENGTH
+import com.mozgobolt.feature.company.data.database.CompaniesTable
 import com.mozgobolt.feature.vehicle.domain.model.VehicleConstraints
+import org.jetbrains.exposed.v1.core.ReferenceOption
 import org.jetbrains.exposed.v1.core.dao.id.EntityID
 import org.jetbrains.exposed.v1.core.dao.id.IntIdTable
 import org.jetbrains.exposed.v1.dao.IntEntity
@@ -9,12 +11,22 @@ import org.jetbrains.exposed.v1.dao.IntEntityClass
 import org.jetbrains.exposed.v1.javatime.timestamp
 
 data object VehiclesTable : IntIdTable("vehicles") {
-    val companyId = integer("company_id")
+    val companyId =
+        integer("company_id")
+            .references(
+                CompaniesTable.id,
+                onDelete = ReferenceOption.CASCADE,
+                onUpdate = ReferenceOption.RESTRICT,
+            )
     val label = varchar("label", DISPLAY_NAME_MAX_LENGTH)
     val licensePlate = varchar("license_plate", VehicleConstraints.LICENSE_PLATE_MAX_LENGTH)
     val pictureUrl = text("picture_url").nullable()
     val createdAt = timestamp("created_at")
     val archivedAt = timestamp("archived_at").nullable()
+
+    init {
+        uniqueIndex(companyId, licensePlate)
+    }
 }
 
 class VehicleEntity(

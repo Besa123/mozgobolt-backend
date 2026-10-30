@@ -9,15 +9,28 @@ import com.mozgobolt.feature.user.domain.model.UserRole
 import com.mozgobolt.feature.user.routing.requireRole
 import com.mozgobolt.feature.vehicleAssignment.domain.VehicleAssignmentService
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignmentError
+import com.mozgobolt.feature.vehicleAssignment.routing.dto.response.CurrentVendorAssignmentResponseDto
 import com.mozgobolt.feature.vehicleAssignment.routing.dto.response.toResponseDto
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.get
 
 private const val INVALID_VEHICLE_ID = "INVALID_VEHICLE_ID"
 
 fun Route.vehicleAssignmentRoutes(vehicleAssignmentService: VehicleAssignmentService) {
     protectedApi {
+        get("/vehicles/assignments/me") {
+            if (!requireRole(UserRole.VENDOR)) return@get
+            val userId = call.currentUserIdOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
+
+            val activeAssignment = vehicleAssignmentService.findActiveDetailsForVendor(userId)
+            call.respond(
+                HttpStatusCode.OK,
+                CurrentVendorAssignmentResponseDto(activeAssignment = activeAssignment?.toResponseDto()),
+            )
+        }
+
         limitedPost("/vehicles/{id}/link", timeout = RequestTimeout.STANDARD) {
             if (!requireRole(UserRole.VENDOR)) return@limitedPost
             val userId = call.currentUserIdOrNull() ?: return@limitedPost call.respond(HttpStatusCode.Unauthorized)

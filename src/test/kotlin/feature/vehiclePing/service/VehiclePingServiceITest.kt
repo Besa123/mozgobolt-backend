@@ -11,6 +11,7 @@ import com.mozgobolt.feature.user.service.NoopTransactionalRunner
 import com.mozgobolt.feature.vehicle.domain.VehicleRepository
 import com.mozgobolt.feature.vehicle.domain.model.Vehicle
 import com.mozgobolt.feature.vehicleAssignment.domain.VehicleAssignmentService
+import com.mozgobolt.feature.vehicleAssignment.domain.model.ActiveVehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignment
 import com.mozgobolt.feature.vehiclePing.domain.VehiclePingHub
 import com.mozgobolt.feature.vehiclePing.domain.VehiclePingRepository
@@ -122,6 +123,9 @@ class VehiclePingServiceITest {
         override suspend fun endAllActiveAssignmentsForCompany(companyId: Int) = error("not exercised by this test")
 
         override suspend fun findActiveForVendor(vendorUserId: Int) = error("not exercised by this test")
+
+        override suspend fun findActiveDetailsForVendor(vendorUserId: Int): ActiveVehicleAssignment? =
+            error("not exercised by this test")
 
         override suspend fun findActiveForVehicle(vehicleId: Int): VehicleAssignment? = activeByVehicleId[vehicleId]
     }

@@ -4,6 +4,7 @@ import com.mozgobolt.core.domain.AppResult
 import com.mozgobolt.feature.user.domain.UserService
 import com.mozgobolt.feature.user.domain.model.AuthResponse
 import com.mozgobolt.feature.user.domain.model.ContactInfoError
+import com.mozgobolt.feature.user.domain.model.CurrentUserProfile
 import com.mozgobolt.feature.user.domain.model.DriverContactInfo
 import com.mozgobolt.feature.user.domain.model.LoginError
 import com.mozgobolt.feature.user.domain.model.PasswordResetError
@@ -33,6 +34,9 @@ class FakeUserService : UserService {
 
     var findContactInfoResult: DriverContactInfo? = null
     val findContactInfoCalls = mutableListOf<Int>()
+
+    var findCurrentUserResult: CurrentUserProfile? = null
+    val findCurrentUserCalls = mutableListOf<Int>()
 
     data class UpdateContactInfoCall(
         val userId: Int,
@@ -111,6 +115,11 @@ class FakeUserService : UserService {
     override suspend fun findContactInfo(userId: Int): DriverContactInfo? {
         findContactInfoCalls += userId
         return findContactInfoResult
+    }
+
+    override suspend fun findCurrentUser(userId: Int): CurrentUserProfile? {
+        findCurrentUserCalls += userId
+        return findCurrentUserResult
     }
 
     override suspend fun updateContactInfo(

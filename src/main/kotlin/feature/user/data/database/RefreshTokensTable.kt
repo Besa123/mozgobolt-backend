@@ -13,8 +13,9 @@ object RefreshTokensTable : IntIdTable("refresh_tokens") {
             name = "user_id",
             refColumn = UsersTable.id,
             onDelete = ReferenceOption.CASCADE,
+            onUpdate = ReferenceOption.RESTRICT,
         ).index()
-    val token = varchar("token", 64)
+    val token = varchar("token", 64).uniqueIndex()
     val familyId = varchar("family_id", 36).index()
     val isRevoked = bool("is_revoked").default(false)
     val createdAt = timestamp("created_at")

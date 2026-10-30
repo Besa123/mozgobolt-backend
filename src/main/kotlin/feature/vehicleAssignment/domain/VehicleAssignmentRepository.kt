@@ -1,10 +1,13 @@
 package com.mozgobolt.feature.vehicleAssignment.domain
 
+import com.mozgobolt.feature.vehicleAssignment.domain.model.ActiveVehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignment
 import java.time.Instant
 
 interface VehicleAssignmentRepository {
     suspend fun findActiveForVendor(vendorUserId: Int): VehicleAssignment?
+
+    suspend fun findActiveDetailsForVendor(vendorUserId: Int): ActiveVehicleAssignment?
 
     suspend fun findActiveForVehicle(vehicleId: Int): VehicleAssignment?
 

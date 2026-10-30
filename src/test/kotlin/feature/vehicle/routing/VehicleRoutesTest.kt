@@ -12,6 +12,7 @@ import com.mozgobolt.feature.vehicle.domain.VehicleService
 import com.mozgobolt.feature.vehicle.domain.model.Vehicle
 import com.mozgobolt.feature.vehicle.domain.model.VehicleError
 import com.mozgobolt.feature.vehicleAssignment.domain.VehicleAssignmentService
+import com.mozgobolt.feature.vehicleAssignment.domain.model.ActiveVehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignmentError
 import io.ktor.client.request.bearerAuth
@@ -129,6 +130,8 @@ class VehicleRoutesTest {
         override suspend fun endAllActiveAssignmentsForCompany(companyId: Int) = error("not exercised by this test")
 
         override suspend fun findActiveForVendor(vendorUserId: Int): VehicleAssignment? = null
+
+        override suspend fun findActiveDetailsForVendor(vendorUserId: Int): ActiveVehicleAssignment? = null
 
         override suspend fun findActiveForVehicle(vehicleId: Int): VehicleAssignment? = null
     }

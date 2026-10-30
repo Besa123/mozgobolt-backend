@@ -22,8 +22,8 @@ decisions (refresh-token rotation, results-over-exceptions, etc.).
 
 | Area          | Description                                                                                                        |
 |---------------|--------------------------------------------------------------------------------------------------------------------|
-| Auth          | Register (buyer/vendor role), login, refresh (rotating), logout, logout-all, email verification/resend, password reset |
-| Vendors       | Companies (invite-code join), vehicles, vehicle link/delink (`vehicle_assignments`)                                |
+| Auth          | Register (buyer/vendor role), login, current-account profile, refresh (rotating), logout, logout-all, email verification/resend, password reset |
+| Vendors       | Companies (create/join/list memberships), vehicles, vehicle link/delink (`vehicle_assignments`)                   |
 | Tracking      | Batched GPS telemetry ingestion, live SSE feed for buyers, in-memory fast path + durable slow-path history          |
 | Rate limiting | Global 150 req/min baseline + tiered named limits (`AUTH_LIMIT`, `API_LIMIT`, `UPLOAD_LIMIT`)                      |
 | Security      | CORS, CSP/HSTS/security headers, password peppering (password4j), account lockout policy                           |
@@ -39,6 +39,23 @@ cp .env.example .env      # fill in DB credentials, JWT secret, password pepper,
 
 The server listens on `http://localhost:8080` (`PORT` env var to override). Leaving `RESEND_API_KEY` blank falls back to
 a logging-only email service for local dev.
+
+## Exposed migration preview
+
+`V1__init_schema.sql` is generated from the Exposed table declarations. For future changes, set
+`EXPOSED_MIGRATION_PREVIEW_JDBC_URL`, `EXPOSED_MIGRATION_PREVIEW_USER`, and `EXPOSED_MIGRATION_PREVIEW_PASSWORD` to a
+local PostgreSQL database whose name ends in `_migration_preview`; its `public` schema must be empty. The helper
+applies the committed Flyway history to that disposable database, then compares it with the Exposed table registry in
+`GenerateExposedMigrationPreview.kt`.
+
+```bash
+./gradlew generateExposedMigrationPreview -PmigrationPreviewScriptName=V2__describe_change
+```
+
+Add any new table object to that registry, then give the task a new Flyway script name. Candidate SQL is written to
+`build/exposed-migration-preview/`; the helper refuses to overwrite a preview and never applies it. Review the
+generated SQL before promoting it to `src/main/resources/db/migration`, especially destructive statements, column
+renames/type changes, data backfills, and partial-index predicate changes that Exposed cannot reliably detect.
 
 ## API
 

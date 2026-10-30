@@ -7,6 +7,7 @@ import com.mozgobolt.feature.proximityNotification.domain.ProximityNotificationR
 import com.mozgobolt.feature.proximityNotification.domain.model.ProximityNotificationRecord
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.jdbc.update
 import java.time.Instant
 
 /**
@@ -56,7 +57,15 @@ class ProximityNotificationRepositoryI : ProximityNotificationRepository {
         savedLocationId: Int,
         vehicleId: Int,
     ) {
-        findEntity(buyerUserId, savedLocationId, vehicleId)?.currentlyInside = false
+        ProximityNotificationsTable.update(
+            where = {
+                (ProximityNotificationsTable.buyerUserId eq buyerUserId) and
+                    (ProximityNotificationsTable.savedLocationId eq savedLocationId) and
+                    (ProximityNotificationsTable.vehicleId eq vehicleId)
+            },
+        ) {
+            it[ProximityNotificationsTable.currentlyInside] = false
+        }
     }
 
     private suspend fun findEntity(

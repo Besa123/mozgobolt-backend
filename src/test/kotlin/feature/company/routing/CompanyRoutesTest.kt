@@ -9,21 +9,46 @@ import com.mozgobolt.core.testAccessTokenFor
 import com.mozgobolt.feature.company.domain.CompanyService
 import com.mozgobolt.feature.company.domain.model.Company
 import com.mozgobolt.feature.company.domain.model.CompanyError
-import com.mozgobolt.feature.company.domain.model.CompanyMembership
+import com.mozgobolt.feature.company.domain.model.CompanyMemberSummary
+import com.mozgobolt.feature.company.domain.model.CompanyMembershipSummary
+import com.mozgobolt.feature.company.domain.model.CompanyRole
+import com.mozgobolt.feature.company.routing.dto.response.CompanyMembershipResponseDto
+import com.mozgobolt.feature.company.routing.dto.response.CompanyResponseDto
+import com.mozgobolt.feature.company.routing.dto.response.MyCompanyResponseDto
 import com.mozgobolt.feature.user.routing.postJson
 import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
+import kotlinx.serialization.json.Json
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class CompanyRoutesTest {
     private class FakeCompanyService : CompanyService {
+        var listCompaniesForUserResult: AppResult<List<CompanyMembershipSummary>, CompanyError> =
+            AppResult.Success(emptyList())
+        val listCompaniesForUserCalls = mutableListOf<Int>()
+
+        var listMembersResult: AppResult<List<CompanyMemberSummary>, CompanyError> =
+            AppResult.Success(emptyList())
+        var joinCompanyCallCount = 0
+            private set
+        var joinCompanyResult: AppResult<Company, CompanyError> =
+            AppResult.Success(
+                Company(
+                    id = 1,
+                    name = "FamilyFrost",
+                    inviteCode = "secret123",
+                    createdAt = Instant.now(),
+                ),
+            )
+
         var createCompanyCallCount = 0
             private set
         var createCompanyResult: AppResult<Company, CompanyError> =
@@ -59,7 +84,10 @@ class CompanyRoutesTest {
         override suspend fun joinCompany(
             userId: Int,
             inviteCode: String,
-        ): AppResult<Company, CompanyError> = error("not exercised by this test")
+        ): AppResult<Company, CompanyError> {
+            joinCompanyCallCount++
+            return joinCompanyResult
+        }
 
         override suspend fun renameCompany(
             adminUserId: Int,
@@ -83,7 +111,14 @@ class CompanyRoutesTest {
         override suspend fun listMembers(
             userId: Int,
             companyId: Int,
-        ): AppResult<List<CompanyMembership>, CompanyError> = error("not exercised by this test")
+        ): AppResult<List<CompanyMemberSummary>, CompanyError> = listMembersResult
+
+        override suspend fun listCompaniesForUser(
+            userId: Int,
+        ): AppResult<List<CompanyMembershipSummary>, CompanyError> {
+            listCompaniesForUserCalls += userId
+            return listCompaniesForUserResult
+        }
 
         override suspend fun promoteMember(
             adminUserId: Int,
@@ -108,6 +143,150 @@ class CompanyRoutesTest {
             companyId: Int,
         ): AppResult<Unit, CompanyError> = error("not exercised by this test")
     }
+
+    @Test
+    fun `joining a company replays the result and never returns its invite code to a member`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeCompanyService()
+            val idempotencyStore = FakeIdempotencyStore()
+            application {
+                installTestModules()
+                routing { apiV1 { companyRoutes(service, idempotencyStore) } }
+            }
+            val token = testAccessTokenFor(userId = 42, role = "VENDOR")
+            val body = """{"inviteCode":"join-code"}"""
+
+            val first =
+                postJson("/api/v1/companies/join", body) {
+                    bearerAuth(token)
+                    header("Idempotency-Key", "join-key-1")
+                }
+            val replay =
+                postJson("/api/v1/companies/join", body) {
+                    bearerAuth(token)
+                    header("Idempotency-Key", "join-key-1")
+                }
+
+            assertEquals(HttpStatusCode.OK, first.status)
+            assertEquals(HttpStatusCode.OK, replay.status)
+            assertEquals("true", replay.headers["X-Idempotency-Replayed"])
+            assertEquals(1, service.joinCompanyCallCount)
+            assertEquals(null, Json.decodeFromString<CompanyResponseDto>(first.bodyAsText()).inviteCode)
+            assertEquals(null, Json.decodeFromString<CompanyResponseDto>(replay.bodyAsText()).inviteCode)
+            assertEquals(false, first.bodyAsText().contains("secret123"))
+        }
+
+    @Test
+    fun `company member list includes each member's name and role`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeCompanyService()
+            service.listMembersResult =
+                AppResult.Success(
+                    listOf(
+                        CompanyMemberSummary(userId = 10, name = "Alex Vendor", role = CompanyRole.ADMIN),
+                        CompanyMemberSummary(userId = 11, name = "Sam Vendor", role = CompanyRole.MEMBER),
+                    ),
+                )
+            application {
+                installTestModules()
+                routing { apiV1 { companyRoutes(service, FakeIdempotencyStore()) } }
+            }
+
+            val response =
+                client.get("/api/v1/companies/5/members") {
+                    bearerAuth(testAccessTokenFor(userId = 42, role = "VENDOR"))
+                }
+
+            assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals(
+                listOf(
+                    CompanyMembershipResponseDto(10, "Alex Vendor", "ADMIN"),
+                    CompanyMembershipResponseDto(11, "Sam Vendor", "MEMBER"),
+                ),
+                Json.decodeFromString<List<CompanyMembershipResponseDto>>(response.bodyAsText()),
+            )
+        }
+
+    @Test
+    fun `listing companies returns the caller's memberships without invite codes`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeCompanyService()
+            service.listCompaniesForUserResult =
+                AppResult.Success(
+                    listOf(
+                        CompanyMembershipSummary(
+                            companyId = 3,
+                            companyName = "First Company",
+                            membershipRole = CompanyRole.ADMIN,
+                        ),
+                        CompanyMembershipSummary(
+                            companyId = 8,
+                            companyName = "Second Company",
+                            membershipRole = CompanyRole.MEMBER,
+                        ),
+                    ),
+                )
+            application {
+                installTestModules()
+                routing { apiV1 { companyRoutes(service, FakeIdempotencyStore()) } }
+            }
+
+            val response =
+                client.get("/api/v1/companies") {
+                    bearerAuth(testAccessTokenFor(userId = 42, role = "VENDOR"))
+                }
+
+            assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals(
+                listOf(
+                    MyCompanyResponseDto(3, "First Company", "ADMIN"),
+                    MyCompanyResponseDto(8, "Second Company", "MEMBER"),
+                ),
+                Json.decodeFromString<List<MyCompanyResponseDto>>(response.bodyAsText()),
+            )
+            assertEquals(listOf(42), service.listCompaniesForUserCalls)
+        }
+
+    @Test
+    fun `listing companies for a vendor with no memberships returns an empty array`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeCompanyService()
+            application {
+                installTestModules()
+                routing { apiV1 { companyRoutes(service, FakeIdempotencyStore()) } }
+            }
+
+            val response =
+                client.get("/api/v1/companies") {
+                    bearerAuth(testAccessTokenFor(userId = 42, role = "VENDOR"))
+                }
+
+            assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals(emptyList(), Json.decodeFromString<List<MyCompanyResponseDto>>(response.bodyAsText()))
+        }
+
+    @Test
+    fun `listing companies is vendor-only`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeCompanyService()
+            application {
+                installTestModules()
+                routing { apiV1 { companyRoutes(service, FakeIdempotencyStore()) } }
+            }
+
+            val response =
+                client.get("/api/v1/companies") {
+                    bearerAuth(testAccessTokenFor(userId = 42, role = "BUYER"))
+                }
+
+            assertEquals(HttpStatusCode.Forbidden, response.status)
+            assertEquals(emptyList(), service.listCompaniesForUserCalls)
+        }
 
     @Test
     fun `creating a company twice with the same idempotency key does not call the service twice`() =

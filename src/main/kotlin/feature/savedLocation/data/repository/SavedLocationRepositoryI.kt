@@ -7,6 +7,7 @@ import com.mozgobolt.feature.savedLocation.domain.SavedLocationRepository
 import com.mozgobolt.feature.savedLocation.domain.model.UserSavedLocation
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.inList
+import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -31,10 +32,7 @@ class SavedLocationRepositoryI : SavedLocationRepository {
     }
 
     override suspend fun findById(id: Int): UserSavedLocation? =
-        UserSavedLocationEntity
-            .find { UserSavedLocationsTable.id eq id }
-            .firstOrNull()
-            ?.toUserSavedLocation()
+        UserSavedLocationEntity.findById(id)?.toUserSavedLocation()
 
     override suspend fun findAllForUser(userId: Int): List<UserSavedLocation> =
         UserSavedLocationEntity
@@ -42,7 +40,7 @@ class SavedLocationRepositoryI : SavedLocationRepository {
             .map { it.toUserSavedLocation() }
 
     override suspend fun delete(id: Int) {
-        UserSavedLocationEntity.findById(id)?.delete()
+        UserSavedLocationsTable.deleteWhere { UserSavedLocationsTable.id eq id }
     }
 
     override suspend fun findAllForUsers(userIds: Collection<Int>): List<UserSavedLocation> {

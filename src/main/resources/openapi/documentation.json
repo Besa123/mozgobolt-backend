@@ -85,7 +85,9 @@
             "type": "string"
           },
           "inviteCode": {
-            "type": "string"
+            "type": "string",
+            "nullable": true,
+            "description": "Null for a joined company member; returned to company admins on company mutation responses."
           }
         }
       },
@@ -95,6 +97,9 @@
           "userId": {
             "type": "integer"
           },
+          "name": {
+            "type": "string"
+          },
           "role": {
             "type": "string",
             "enum": [
@@ -103,6 +108,50 @@
             ]
           }
         }
+      },
+      "ActiveVehicleAssignment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "vehicleId": {
+            "type": "integer"
+          },
+          "companyId": {
+            "type": "integer"
+          },
+          "vehicleLabel": {
+            "type": "string"
+          },
+          "licensePlate": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "vehicleId",
+          "companyId",
+          "vehicleLabel",
+          "licensePlate"
+        ]
+      },
+      "CurrentVendorAssignment": {
+        "type": "object",
+        "properties": {
+          "activeAssignment": {
+            "type": "object",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActiveVehicleAssignment"
+              }
+            ]
+          }
+        },
+        "required": [
+          "activeAssignment"
+        ]
       },
       "CompanyFavorite": {
         "type": "object",
@@ -535,6 +584,81 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "summary": "Get the current authenticated user",
+        "description": "Returns the authenticated user's account profile, email-verification status, and contact values with visibility flags nested under contactInfo. The id is serialized as a string to match the mobile client contract. Rate limit: 60/min.",
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "getCurrentUser",
+        "responses": {
+          "200": {
+            "description": "Current account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "BUYER",
+                        "VENDOR"
+                      ]
+                    },
+                    "emailVerified": {
+                      "type": "boolean"
+                    },
+                    "contactInfo": {
+                      "$ref": "#/components/schemas/ContactInfo"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "email",
+                    "name",
+                    "role",
+                    "emailVerified",
+                    "contactInfo"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "404": {
+            "description": "The authenticated user no longer exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "USER_NOT_FOUND"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/v1/auth/refresh": {
@@ -1059,6 +1183,83 @@
       }
     },
     "/api/v1/companies": {
+      "get": {
+        "summary": "List my companies",
+        "description": "Vendor-only. Returns the authenticated user's company memberships ordered by join time, oldest first, and each membership role. Invite codes are not included. Rate limit: 60/min.",
+        "tags": [
+          "Companies"
+        ],
+        "operationId": "listMyCompanies",
+        "responses": {
+          "200": {
+            "description": "Company memberships, or an empty array when the vendor has no memberships",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "integer"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "membershipRole": {
+                        "type": "string",
+                        "enum": [
+                          "ADMIN",
+                          "MEMBER"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "membershipRole"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "403": {
+            "description": "Caller must have the VENDOR account role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "FORBIDDEN"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "A membership references a company that no longer exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "COMPANY_NOT_FOUND"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
       "post": {
         "summary": "Create a company",
         "description": "Vendor-only. The creator becomes the company's first ADMIN. Idempotent by (caller, request body).",
@@ -1125,11 +1326,24 @@
     "/api/v1/companies/join": {
       "post": {
         "summary": "Join a company via invite code",
-        "description": "Vendor-only. Adds the caller as a MEMBER. A vendor can belong to multiple companies at once.",
+        "description": "Vendor-only. Adds the caller as a MEMBER. A vendor can belong to multiple companies at once. The response redacts inviteCode. An optional Idempotency-Key replays the original response after a retry.",
         "tags": [
           "Companies"
         ],
         "operationId": "joinCompany",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Optional. Reuse the same key and payload when retrying the same join after an uncertain network result.",
+            "schema": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -1150,7 +1364,7 @@
         },
         "responses": {
           "200": {
-            "description": "Joined",
+            "description": "Joined. inviteCode is null because the caller is a standard member.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1160,7 +1374,7 @@
             }
           },
           "400": {
-            "description": "Invalid invite code",
+            "description": "Invalid invite code, invalid request body, or invalid Idempotency-Key",
             "content": {
               "application/json": {
                 "schema": {
@@ -1176,7 +1390,33 @@
             "description": "Missing or invalid access token"
           },
           "403": {
-            "description": "Caller's role is not permitted, or not an admin of this company"
+            "description": "Caller must have the VENDOR account role"
+          },
+          "409": {
+            "description": "Already a member, or another request using this key is still in progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "ALREADY_MEMBER"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The Idempotency-Key was already used with a different payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1371,7 +1611,7 @@
     "/api/v1/companies/{id}/members": {
       "get": {
         "summary": "List a company's members",
-        "description": "Any member of the company. Returns each member's user id and role.",
+        "description": "Vendor-only. Any member of the company may list each member's user id, display name, and company role. Email addresses are not returned.",
         "tags": [
           "Companies"
         ],
@@ -1405,17 +1645,14 @@
             "description": "Missing or invalid access token"
           },
           "403": {
-            "description": "Caller's role is not permitted, or not an admin of this company"
-          },
-          "404": {
-            "description": "Company not found",
+            "description": "Caller must have the VENDOR account role and belong to this company",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "error": "COMPANY_NOT_FOUND"
+                  "error": "NOT_A_MEMBER"
                 }
               }
             }
@@ -2268,6 +2505,67 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/vehicles/assignments/me": {
+      "get": {
+        "summary": "Read my active vehicle assignment",
+        "description": "Vendor-only. Returns the authenticated vendor's current assignment with vehicle and company details. activeAssignment is null when the vendor is not currently linked. Rate limit: 60/min.",
+        "tags": [
+          "Vehicle Assignments"
+        ],
+        "operationId": "getMyActiveVehicleAssignment",
+        "responses": {
+          "200": {
+            "description": "Current assignment or an explicit null assignment state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentVendorAssignment"
+                },
+                "examples": {
+                  "linked": {
+                    "value": {
+                      "activeAssignment": {
+                        "id": 17,
+                        "vehicleId": 8,
+                        "companyId": 3,
+                        "vehicleLabel": "Bakery Van",
+                        "licensePlate": "ABC-123"
+                      }
+                    }
+                  },
+                  "notLinked": {
+                    "value": {
+                      "activeAssignment": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "403": {
+            "description": "Caller must have the VENDOR account role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "FORBIDDEN"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/v1/vehicles/{id}": {

@@ -8,7 +8,8 @@ import com.mozgobolt.core.installTestModules
 import com.mozgobolt.feature.company.domain.CompanyService
 import com.mozgobolt.feature.company.domain.model.Company
 import com.mozgobolt.feature.company.domain.model.CompanyError
-import com.mozgobolt.feature.company.domain.model.CompanyMembership
+import com.mozgobolt.feature.company.domain.model.CompanyMemberSummary
+import com.mozgobolt.feature.company.domain.model.CompanyMembershipSummary
 import com.mozgobolt.feature.companyFavorite.domain.CompanyFavoriteService
 import com.mozgobolt.feature.companyFavorite.domain.model.CompanyFavorite
 import com.mozgobolt.feature.companyFavorite.domain.model.CompanyFavoriteError
@@ -29,6 +30,7 @@ import com.mozgobolt.feature.vehicle.domain.VehicleService
 import com.mozgobolt.feature.vehicle.domain.model.Vehicle
 import com.mozgobolt.feature.vehicle.domain.model.VehicleError
 import com.mozgobolt.feature.vehicleAssignment.domain.VehicleAssignmentService
+import com.mozgobolt.feature.vehicleAssignment.domain.model.ActiveVehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignmentError
 import com.mozgobolt.feature.vehiclePing.domain.VehiclePingHub
@@ -89,6 +91,9 @@ class RoutingWiringTest {
             val protectedGetPaths =
                 listOf(
                     "/api/v1/sync",
+                    "/api/v1/auth/me",
+                    "/api/v1/companies",
+                    "/api/v1/companies",
                     "/api/v1/companies/1/vehicles",
                     "/api/v1/vehicles/1",
                     "/api/v1/vehicles/1/picture",
@@ -176,7 +181,10 @@ private class FakeCompanyService : CompanyService {
     override suspend fun listMembers(
         userId: Int,
         companyId: Int,
-    ): AppResult<List<CompanyMembership>, CompanyError> = AppResult.Error(CompanyError.NOT_A_MEMBER)
+    ): AppResult<List<CompanyMemberSummary>, CompanyError> = AppResult.Error(CompanyError.NOT_A_MEMBER)
+
+    override suspend fun listCompaniesForUser(userId: Int): AppResult<List<CompanyMembershipSummary>, CompanyError> =
+        AppResult.Success(emptyList())
 
     override suspend fun promoteMember(
         adminUserId: Int,
@@ -308,6 +316,8 @@ private class FakeVehicleAssignmentService : VehicleAssignmentService {
     override suspend fun endAllActiveAssignmentsForCompany(companyId: Int) = Unit
 
     override suspend fun findActiveForVendor(vendorUserId: Int): VehicleAssignment? = null
+
+    override suspend fun findActiveDetailsForVendor(vendorUserId: Int): ActiveVehicleAssignment? = null
 
     override suspend fun findActiveForVehicle(vehicleId: Int): VehicleAssignment? = null
 }

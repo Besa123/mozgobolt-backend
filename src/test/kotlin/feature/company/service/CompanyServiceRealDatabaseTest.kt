@@ -3,6 +3,8 @@ package com.mozgobolt.feature.company.service
 import com.mozgobolt.core.domain.AppResult
 import com.mozgobolt.core.skipIfNoDocker
 import com.mozgobolt.feature.company.domain.model.CompanyError
+import com.mozgobolt.feature.company.domain.model.CompanyMemberSummary
+import com.mozgobolt.feature.company.domain.model.CompanyMembershipSummary
 import com.mozgobolt.feature.company.domain.model.CompanyRole
 import com.mozgobolt.feature.company.withRealCompanyDatabase
 import kotlinx.coroutines.async
@@ -10,6 +12,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 /**
  * The unit tests in [CompanyServiceITest] prove the *service* correctly reacts to
@@ -21,6 +24,116 @@ import kotlin.test.assertNotNull
  * class of bug).
  */
 class CompanyServiceRealDatabaseTest {
+    @Test
+    fun `company member list includes each member's display name and role`() {
+        skipIfNoDocker()
+
+        withRealCompanyDatabase { harness ->
+            val company =
+                harness.service.createCompany(creatorUserId = 1, name = "FamilyFrost").fold(
+                    onSuccess = { it },
+                    onError = { error("setup failed: $it") },
+                )
+            harness.service.joinCompany(userId = 2, inviteCode = company.inviteCode).fold(
+                onSuccess = {},
+                onError = { error("setup failed: $it") },
+            )
+
+            val members =
+                harness.service.listMembers(userId = 1, companyId = company.id).fold(
+                    onSuccess = { it },
+                    onError = { error("member listing failed: $it") },
+                )
+
+            assertEquals(
+                listOf(
+                    CompanyMemberSummary(1, "Test User One", CompanyRole.ADMIN),
+                    CompanyMemberSummary(2, "Test User Two", CompanyRole.MEMBER),
+                ),
+                members,
+            )
+        }
+    }
+
+    @Test
+    fun `deleting a company cascades its memberships but preserves other memberships for the same user`() {
+        skipIfNoDocker()
+
+        withRealCompanyDatabase { harness ->
+            val companyToDelete =
+                harness.service.createCompany(creatorUserId = 1, name = "Deleted Company").fold(
+                    onSuccess = { it },
+                    onError = { error("setup failed: $it") },
+                )
+            val survivingCompany =
+                harness.service.createCompany(creatorUserId = 2, name = "Surviving Company").fold(
+                    onSuccess = { it },
+                    onError = { error("setup failed: $it") },
+                )
+            harness.service.joinCompany(userId = 1, inviteCode = survivingCompany.inviteCode).fold(
+                onSuccess = {},
+                onError = { error("setup failed: $it") },
+            )
+
+            harness.service.deleteCompany(adminUserId = 1, companyId = companyToDelete.id).fold(
+                onSuccess = {},
+                onError = { error("delete failed: $it") },
+            )
+
+            assertNull(harness.tx.transactional { harness.membershipRepository.find(companyToDelete.id, 1) })
+            assertNotNull(harness.tx.transactional { harness.membershipRepository.find(survivingCompany.id, 1) })
+            assertEquals(
+                listOf(
+                    CompanyMembershipSummary(
+                        companyId = survivingCompany.id,
+                        companyName = "Surviving Company",
+                        membershipRole = CompanyRole.MEMBER,
+                    ),
+                ),
+                harness.service.listCompaniesForUser(1).fold(
+                    onSuccess = { it },
+                    onError = { error("company listing failed: $it") },
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `listing companies reads the user's memberships and roles from the database`() {
+        skipIfNoDocker()
+
+        withRealCompanyDatabase { harness ->
+            val adminCompany =
+                harness.service.createCompany(creatorUserId = 1, name = "Admin Company").fold(
+                    onSuccess = { it },
+                    onError = { error("setup failed: $it") },
+                )
+            val memberCompany =
+                harness.service.createCompany(creatorUserId = 2, name = "Member Company").fold(
+                    onSuccess = { it },
+                    onError = { error("setup failed: $it") },
+                )
+            harness.service.joinCompany(userId = 1, inviteCode = memberCompany.inviteCode).fold(
+                onSuccess = {},
+                onError = { error("setup failed: $it") },
+            )
+
+            val companies =
+                harness.service.listCompaniesForUser(1).fold(
+                    onSuccess = { it },
+                    onError = { error("company listing failed: $it") },
+                )
+
+            assertEquals(
+                listOf(
+                    CompanyMembershipSummary(adminCompany.id, "Admin Company", CompanyRole.ADMIN),
+                    CompanyMembershipSummary(memberCompany.id, "Member Company", CompanyRole.MEMBER),
+                ),
+                companies,
+            )
+        }
+    }
+
     @Test
     fun `two concurrent joins with the same invite code for the same user only ever produce one winner`() {
         skipIfNoDocker()

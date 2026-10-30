@@ -6,6 +6,7 @@ import com.mozgobolt.feature.company.data.mapper.toCompany
 import com.mozgobolt.feature.company.domain.CompanyRepository
 import com.mozgobolt.feature.company.domain.model.Company
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import java.time.Instant
 
 class CompanyRepositoryI : CompanyRepository {
@@ -28,11 +29,7 @@ class CompanyRepositoryI : CompanyRepository {
             .firstOrNull()
             ?.toCompany()
 
-    override suspend fun findById(companyId: Int): Company? =
-        CompanyEntity
-            .find { CompaniesTable.id eq companyId }
-            .firstOrNull()
-            ?.toCompany()
+    override suspend fun findById(companyId: Int): Company? = CompanyEntity.findById(companyId)?.toCompany()
 
     override suspend fun rename(
         companyId: Int,
@@ -52,9 +49,6 @@ class CompanyRepositoryI : CompanyRepository {
         return entity.toCompany()
     }
 
-    override suspend fun delete(companyId: Int): Boolean {
-        val entity = CompanyEntity.findById(companyId) ?: return false
-        entity.delete()
-        return true
-    }
+    override suspend fun delete(companyId: Int): Boolean =
+        CompaniesTable.deleteWhere { CompaniesTable.id eq companyId } > 0
 }

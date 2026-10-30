@@ -32,12 +32,7 @@ class UserRepositoryI(
     override suspend fun findUser(email: String): User? =
         UserEntity.find { UsersTable.email eq email }.firstOrNull()?.toUser()
 
-    override suspend fun findUserById(userId: Int): User? =
-        UserEntity
-            .find {
-                UsersTable.id eq userId
-            }.firstOrNull()
-            ?.toUser()
+    override suspend fun findUserById(userId: Int): User? = UserEntity.findById(userId)?.toUser()
 
     override suspend fun createUser(
         email: String,

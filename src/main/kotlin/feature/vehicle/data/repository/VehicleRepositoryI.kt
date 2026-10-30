@@ -35,11 +35,7 @@ class VehicleRepositoryI : VehicleRepository {
         return insertedCount.takeIf { it > 0 }?.let { findByCompanyAndPlate(companyId, licensePlate) }
     }
 
-    override suspend fun findById(vehicleId: Int): Vehicle? =
-        VehicleEntity
-            .find { VehiclesTable.id eq vehicleId }
-            .firstOrNull()
-            ?.toVehicle()
+    override suspend fun findById(vehicleId: Int): Vehicle? = VehicleEntity.findById(vehicleId)?.toVehicle()
 
     override suspend fun findAllByCompany(companyId: Int): List<Vehicle> =
         VehicleEntity
