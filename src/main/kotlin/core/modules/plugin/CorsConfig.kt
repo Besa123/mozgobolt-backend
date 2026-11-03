@@ -33,6 +33,7 @@ fun Application.configureCors() {
         allowHeader(HttpHeaders.ContentType)
         allowHeader(HttpHeaders.Accept)
         allowHeader(DEVICE_ID_HEADER)
+        allowHeader(HttpHeaders.XRequestId)
 
         exposeHeader(HttpHeaders.XRequestId)
 

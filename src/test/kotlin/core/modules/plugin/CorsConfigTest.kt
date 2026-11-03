@@ -109,7 +109,7 @@ class CorsConfigTest {
         }
 
     @Test
-    fun `a preflight requesting the device-id header from an allowed origin is not rejected`() =
+    fun `a preflight requesting device-id and request-id headers from an allowed origin is not rejected`() =
         testApplication {
             environment {
                 config =
@@ -124,7 +124,10 @@ class CorsConfigTest {
                 client.options("/cors-test") {
                     header(HttpHeaders.Origin, "https://allowed.example.com")
                     header(HttpHeaders.AccessControlRequestMethod, HttpMethod.Get.value)
-                    header(HttpHeaders.AccessControlRequestHeaders, DEVICE_ID_HEADER)
+                    header(
+                        HttpHeaders.AccessControlRequestHeaders,
+                        "$DEVICE_ID_HEADER, ${HttpHeaders.XRequestId}",
+                    )
                 }
 
             assertEquals(HttpStatusCode.OK, response.status)
