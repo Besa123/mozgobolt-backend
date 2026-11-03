@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleTracking
 
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationHub
@@ -30,13 +34,9 @@ class NoOpVehicleLocationHub : VehicleLocationHub {
         radiusKm: Double,
     ): Flow<VehicleLiveEvent> = emptyFlow()
 
-    override fun subscribeAll(): Flow<VehicleLiveEvent> = emptyFlow()
-
     override fun snapshotNear(
         latitude: Double,
         longitude: Double,
         radiusKm: Double,
     ): List<VehicleLocationUpdate> = emptyList()
-
-    override fun snapshotAll(): List<VehicleLocationUpdate> = emptyList()
 }

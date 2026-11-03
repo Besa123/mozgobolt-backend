@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.modules.plugin
 
 import com.mozgobolt.core.routing.dto.response.ErrorResponse
@@ -33,25 +37,33 @@ fun exemptFromRequestTimeout(path: String) {
 }
 
 fun Application.configureRequestTimeout() {
+    configureRequestTimeout(GLOBAL_SAFETY_NET)
+}
+
+internal fun Application.configureRequestTimeout(globalSafetyNet: Duration) {
     intercept(ApplicationCallPipeline.Plugins) {
         if (call.request.path() in longLivedConnectionPaths) {
             proceed()
-            return@intercept
-        }
-
-        try {
-            withTimeout(GLOBAL_SAFETY_NET) {
-                proceed()
+        } else {
+            try {
+                withTimeout(globalSafetyNet) {
+                    proceed()
+                }
+            } catch (e: TimeoutCancellationException) {
+                val request = call.request
+                val method = request.local.method.value
+                val path = request.path()
+                logger.error {
+                    "Request exceeded safety net: $method $path"
+                }
+                call.respond(
+                    HttpStatusCode.GatewayTimeout,
+                    ErrorResponse(
+                        error = "REQUEST_TIMEOUT",
+                        message = "Request exceeded the global safety net timeout",
+                    ),
+                )
             }
-        } catch (e: TimeoutCancellationException) {
-            logger.error { "Request exceeded safety net: ${call.request.local.method.value} ${call.request.local.uri}" }
-            call.respond(
-                HttpStatusCode.GatewayTimeout,
-                ErrorResponse(
-                    error = "REQUEST_TIMEOUT",
-                    message = "Request exceeded the global safety net timeout",
-                ),
-            )
         }
     }
 }

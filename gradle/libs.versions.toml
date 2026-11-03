@@ -1,30 +1,34 @@
 [versions]
-kotlin = "2.4.20"
-logback = "1.6.4"
-exposed = "1.6.0"
-postgresql = "42.7.13"
+kotlin = "2.4.21"
+logback = "1.6.6"
+exposed = "1.6.1"
+postgresql = "42.7.14"
 hikariCP = "7.1.0"
 dotenv = "6.5.1"
 password4j = "1.8.4"
-flyway = "13.8.0"
-kotlin-logging = "8.0.4"
+flyway = "13.12.1"
+ktlint-cli = "1.8.0"
+kotlin-logging = "8.0.6"
 logstash-logback-encoder = "9.0"
 janino = "3.1.12"
-resend = "4.26.0"
+konsist = "0.18.1"
+resend = "4.30.0"
 resilience4j = "2.4.0"
+kotlin-security-scanner = "0.3.0"
 ktlint-plugin = "14.2.0"
 detekt = "1.23.8"
+kover = "0.9.11"
 testcontainers = "2.0.5"
 thumbnailator = "0.4.21"
 clamav-client = "2.1.2"
-aws-sdk = "2.55.1"
+aws-sdk = "2.57.11"
 s3mock-testcontainers = "5.2.3"
-sentry = "8.57.0"
-sentry-gradle-plugin = "6.23.0"
-h3 = "4.5.0"
-libphonenumber = "9.0.40"
-firebase-admin = "9.10.0"
-lettuce = "7.8.0.RELEASE"
+sentry = "8.63.0"
+sentry-gradle-plugin = "6.26.0"
+h3 = "4.5.1"
+libphonenumber = "9.0.43"
+firebase-admin = "9.11.0"
+lettuce = "7.9.0.RELEASE"
 kotlinx-coroutines-reactive = "1.11.0"
 
 [libraries]
@@ -32,6 +36,7 @@ logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "lo
 kotlin-logging = { module = "io.github.oshai:kotlin-logging-jvm", version.ref = "kotlin-logging" }
 logstash-logback-encoder = { module = "net.logstash.logback:logstash-logback-encoder", version.ref = "logstash-logback-encoder" }
 janino = { module = "org.codehaus.janino:janino", version.ref = "janino" }
+konsist = { module = "com.lemonappdev:konsist", version.ref = "konsist" }
 exposed-core = { module = "org.jetbrains.exposed:exposed-core", version.ref = "exposed" }
 exposed-jdbc = { module = "org.jetbrains.exposed:exposed-jdbc", version.ref = "exposed" }
 exposed-dao = { module = "org.jetbrains.exposed:exposed-dao", version.ref = "exposed" }
@@ -48,6 +53,9 @@ resend = { module = "com.resend:resend-java", version.ref = "resend" }
 resilience4j-kotlin = { module = "io.github.resilience4j:resilience4j-kotlin", version.ref = "resilience4j" }
 resilience4j-retry = { module = "io.github.resilience4j:resilience4j-retry", version.ref = "resilience4j" }
 resilience4j-circuitbreaker = { module = "io.github.resilience4j:resilience4j-circuitbreaker", version.ref = "resilience4j" }
+resilience4j-bulkhead = { module = "io.github.resilience4j:resilience4j-bulkhead", version.ref = "resilience4j" }
+resilience4j-timelimiter = { module = "io.github.resilience4j:resilience4j-timelimiter", version.ref = "resilience4j" }
+kotlin-security-scanner-core = { module = "io.github.jasminguberinic:scanner-core", version.ref = "kotlin-security-scanner" }
 testcontainers-core = { module = "org.testcontainers:testcontainers", version.ref = "testcontainers" }
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
 thumbnailator = { module = "net.coobird:thumbnailator", version.ref = "thumbnailator" }
@@ -68,4 +76,5 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint-plugin" }
 detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
+kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
 sentry-gradle = { id = "io.sentry.jvm.gradle", version.ref = "sentry-gradle-plugin" }

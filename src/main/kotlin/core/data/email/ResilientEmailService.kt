@@ -1,45 +1,31 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.email
 
 import com.mozgobolt.core.domain.email.EmailService
-import com.mozgobolt.core.modules.plugin.ResiliencePolicy
-import com.mozgobolt.core.modules.plugin.ResilienceRegistry
-import com.mozgobolt.core.modules.plugin.withEmailResilience
-import com.mozgobolt.core.utility.functions.runSuspendCatching
-import io.github.oshai.kotlinlogging.KotlinLogging
-import io.github.resilience4j.circuitbreaker.CallNotPermittedException
-
-private val logger = KotlinLogging.logger {}
+import com.mozgobolt.core.resilience.ResiliencePolicy
 
 class ResilientEmailService(
     private val delegate: EmailService,
-    private val resilience: ResiliencePolicy = ResilienceRegistry.email,
+    private val resilience: ResiliencePolicy,
 ) : EmailService {
     override suspend fun sendVerificationEmail(
         to: String,
         token: String,
-    ) = runSuspendCatching {
-        withEmailResilience(resilience) {
+    ) {
+        resilience.execute {
             delegate.sendVerificationEmail(to, token)
         }
-    }.onFailure { logDeliveryFailure(it, to) }.getOrThrow()
+    }
 
     override suspend fun sendPasswordResetEmail(
         to: String,
         token: String,
-    ) = runSuspendCatching {
-        withEmailResilience(resilience) {
-            delegate.sendPasswordResetEmail(to, token)
-        }
-    }.onFailure { logDeliveryFailure(it, to) }.getOrThrow()
-
-    private fun logDeliveryFailure(
-        throwable: Throwable,
-        to: String,
     ) {
-        if (throwable is CallNotPermittedException) {
-            logger.warn(throwable) { "Email delivery skipped for $to — circuit open" }
-        } else {
-            logger.error(throwable) { "Email delivery failed for $to after retries and circuit-breaker" }
+        resilience.execute {
+            delegate.sendPasswordResetEmail(to, token)
         }
     }
 }

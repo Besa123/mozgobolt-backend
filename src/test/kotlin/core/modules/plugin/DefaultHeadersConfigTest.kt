@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.modules.plugin
 
 import io.ktor.client.request.get
@@ -23,7 +27,7 @@ class DefaultHeadersConfigTest {
             assertEquals("nosniff", response.headers["X-Content-Type-Options"])
             assertEquals("DENY", response.headers["X-Frame-Options"])
             assertEquals("0", response.headers["X-XSS-Protection"])
-            assertEquals("strict-origin-when-cross-origin", response.headers["Referrer-Policy"])
+            assertEquals("no-referrer", response.headers["Referrer-Policy"])
             assertEquals("max-age=63072000; includeSubDomains; preload", response.headers["Strict-Transport-Security"])
             assertEquals(
                 "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",

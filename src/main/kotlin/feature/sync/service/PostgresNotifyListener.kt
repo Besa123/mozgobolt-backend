@@ -1,21 +1,26 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.sync.service
 
+import com.mozgobolt.core.utility.ApplicationBackgroundScope
 import com.mozgobolt.core.utility.functions.runSuspendCatching
 import com.mozgobolt.feature.sync.data.repository.SYNC_NOTIFY_CHANNEL
 import com.mozgobolt.feature.sync.domain.SyncEventHub
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.github.resilience4j.core.IntervalFunction
-import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.retryWhen
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
 import org.postgresql.PGConnection
 import java.sql.Connection
@@ -34,6 +39,7 @@ class PostgresNotifyListener(
     private val dbUser: String,
     private val dbPassword: String,
     private val syncEventHub: SyncEventHub,
+    private val backgroundScope: ApplicationBackgroundScope,
     private val openConnection: () -> Connection = { DriverManager.getConnection(dbUrl, dbUser, dbPassword) },
     private val reconnectIntervalFunction: IntervalFunction =
         IntervalFunction.ofExponentialRandomBackoff(
@@ -41,32 +47,34 @@ class PostgresNotifyListener(
             RECONNECT_BACKOFF_MULTIPLIER,
             MAX_RECONNECT_DELAY.inWholeMilliseconds,
         ),
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private var consecutiveFailures = 0
 
-    private val exceptionHandler =
-        CoroutineExceptionHandler { _, failure ->
-            logger.error(failure) { "PostgresNotifyListener terminated unexpectedly and will not restart" }
-        }
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + exceptionHandler)
     private var job: Job? = null
 
+    @Synchronized
     fun start() {
+        if (job?.isActive == true) return
+
         job =
-            connect()
-                .retryWhen { failure, _ ->
-                    consecutiveFailures++
-                    val backoff = reconnectIntervalFunction.apply(consecutiveFailures).milliseconds
-                    logger.warn(failure) {
-                        "Postgres NOTIFY listener lost its connection " +
-                            "(attempt $consecutiveFailures); retrying in $backoff"
+            backgroundScope.launch(CoroutineName("postgres-notify-listener")) {
+                val retryingNotifications =
+                    connect().retryWhen { failure, _ ->
+                        consecutiveFailures++
+                        val backoff = reconnectIntervalFunction.apply(consecutiveFailures).milliseconds
+                        logger.warn(failure) {
+                            "Postgres NOTIFY listener lost its connection " +
+                                "(attempt $consecutiveFailures); retrying in $backoff"
+                        }
+                        delay(backoff)
+                        true
                     }
-                    delay(backoff)
-                    true
-                }.onEach { payload -> handle(payload) }
-                .launchIn(scope)
+                retryingNotifications.onEach { payload -> handle(payload) }.collect()
+            }
     }
 
+    @Synchronized
     fun stop() {
         job?.cancel()
         job = null
@@ -83,7 +91,7 @@ class PostgresNotifyListener(
                 val pgConnection = connection.unwrap(PGConnection::class.java)
                 while (true) {
                     val notifications =
-                        runInterruptible(Dispatchers.IO) { pgConnection.getNotifications(POLL_TIMEOUT_MILLIS) }
+                        runInterruptible(ioDispatcher) { pgConnection.getNotifications(POLL_TIMEOUT_MILLIS) }
                     notifications?.forEach { emit(it.parameter) }
                 }
             } finally {
@@ -99,7 +107,7 @@ class PostgresNotifyListener(
             val originDeviceId = parts.getOrNull(2)?.takeIf { it.isNotEmpty() }
 
             if (userId == null || eventId == null) {
-                logger.warn { "Postgres NOTIFY payload didn't parse as 'userId:eventId[:deviceId]': $payload" }
+                logger.warn { "Postgres NOTIFY payload could not be parsed as userId:eventId[:deviceId]" }
                 return
             }
 
@@ -107,7 +115,7 @@ class PostgresNotifyListener(
         } catch (
             @Suppress("TooGenericExceptionCaught") e: Exception,
         ) {
-            logger.error(e) { "Failed to handle Postgres NOTIFY payload: $payload" }
+            logger.error(e) { "Failed to handle Postgres NOTIFY payload" }
         }
     }
 }

@@ -1,6 +1,12 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.idempotency
 
 import com.mozgobolt.core.routing.dto.response.ErrorResponse
+import com.mozgobolt.core.utility.functions.runSuspendCatching
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
@@ -10,17 +16,18 @@ import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.RoutingContext
 import kotlinx.serialization.json.Json
-import java.security.MessageDigest
-import java.time.Instant
 
 const val IDEMPOTENCY_KEY_HEADER = "Idempotency-Key"
 private const val MAX_KEY_LENGTH = 64
-private const val LOCK_TIMEOUT_SECONDS = 300L
 private val KEY_PATTERN = Regex("^[a-zA-Z0-9\\-_]+$")
+private val logger = KotlinLogging.logger {}
 
 data class IdempotentResult(
     val statusCode: HttpStatusCode,
     val body: String,
+    val afterCommitBestEffort: (suspend () -> Unit)? = null,
+    /** Set false for retryable failures that performed no business mutation. */
+    val shouldCacheResponse: Boolean = true,
 )
 
 suspend fun RoutingContext.idempotent(
@@ -31,24 +38,33 @@ suspend fun RoutingContext.idempotent(
     val key =
         call.extractIdempotencyKey() ?: run {
             val result = handler()
+            result.runAfterCommitBestEffort()
             call.respondText(result.body, ContentType.Application.Json, result.statusCode)
             return
         }
 
-    val fingerprintHash = hashFingerprint(requestFingerprint)
+    if (key.length > MAX_KEY_LENGTH || !key.matches(KEY_PATTERN)) {
+        call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = "INVALID_IDEMPOTENCY_KEY"))
+        return
+    }
 
-    when (val state = lookupKey(store, key, fingerprintHash)) {
-        is KeyState.Completed -> {
-            call.response.header("X-Idempotency-Replayed", "true")
-            call.respondText(state.body, ContentType.Application.Json, state.statusCode)
+    val fingerprintHash = store.hashFingerprint(requestFingerprint)
+    when (val execution = store.execute(key, fingerprintHash) { handler() }) {
+        is IdempotencyExecution.Completed -> {
+            if (execution.wasReplayed) call.response.header("X-Idempotency-Replayed", "true")
+            execution.result.runAfterCommitBestEffort()
+            call.respondText(
+                execution.result.body,
+                ContentType.Application.Json,
+                execution.result.statusCode,
+            )
         }
 
-        is KeyState.Rejected -> {
-            call.respond(state.statusCode, ErrorResponse(error = state.error))
-        }
-
-        is KeyState.Available -> {
-            executeWithLock(store, key, fingerprintHash, handler)
+        is IdempotencyExecution.Rejected -> {
+            call.respond(
+                HttpStatusCode.fromValue(execution.statusCode),
+                ErrorResponse(error = execution.error),
+            )
         }
     }
 }
@@ -56,91 +72,29 @@ suspend fun RoutingContext.idempotent(
 inline fun <reified T> idempotentResult(
     statusCode: HttpStatusCode,
     body: T,
-): IdempotentResult = IdempotentResult(statusCode, Json.encodeToString(body))
-
-private sealed interface KeyState {
-    data class Completed(
-        val statusCode: HttpStatusCode,
-        val body: String,
-    ) : KeyState
-
-    data class Rejected(
-        val statusCode: HttpStatusCode,
-        val error: String,
-    ) : KeyState
-
-    data object Available : KeyState
-}
+    noinline afterCommitBestEffort: (suspend () -> Unit)? = null,
+    shouldCacheResponse: Boolean = true,
+): IdempotentResult =
+    IdempotentResult(
+        statusCode = statusCode,
+        body = Json.encodeToString(body),
+        afterCommitBestEffort = afterCommitBestEffort,
+        shouldCacheResponse = shouldCacheResponse,
+    )
 
 private fun ApplicationCall.extractIdempotencyKey(): String? {
     val key = request.header(IDEMPOTENCY_KEY_HEADER)
     return key?.takeIf { it.isNotBlank() }
 }
 
-private suspend fun lookupKey(
-    store: IdempotencyStore,
-    key: String,
-    fingerprintHash: String,
-): KeyState {
-    if (key.length > MAX_KEY_LENGTH || !key.matches(KEY_PATTERN)) {
-        return KeyState.Rejected(HttpStatusCode.BadRequest, "INVALID_IDEMPOTENCY_KEY")
+@Suppress("RedundantSuspendModifier") // The callback is suspend and invoked inside the inline Result wrapper.
+private suspend fun IdempotentResult.runAfterCommitBestEffort() {
+    afterCommitBestEffort?.let { action ->
+        runSuspendCatching { action() }
+            .onFailure { failure ->
+                logger.error {
+                    "Idempotent post-commit action failed (${failure.javaClass.simpleName})"
+                }
+            }
     }
-
-    val existing = store.find(key) ?: return KeyState.Available
-
-    if (existing.requestFingerprint.isNotEmpty() && existing.requestFingerprint != fingerprintHash) {
-        return KeyState.Rejected(HttpStatusCode.UnprocessableEntity, "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD")
-    }
-
-    val statusCode =
-        existing.statusCode
-            ?: return handleLockedKey(store, key, existing.createdAt)
-
-    return KeyState.Completed(
-        statusCode = HttpStatusCode.fromValue(statusCode),
-        body = existing.responseBody,
-    )
-}
-
-private suspend fun handleLockedKey(
-    store: IdempotencyStore,
-    key: String,
-    createdAt: Instant,
-): KeyState {
-    val isZombie = createdAt.isBefore(Instant.now().minusSeconds(LOCK_TIMEOUT_SECONDS))
-
-    if (!isZombie) {
-        return KeyState.Rejected(HttpStatusCode.Conflict, "REQUEST_IN_PROGRESS")
-    }
-
-    store.deleteStaleLock(key)
-    return KeyState.Available
-}
-
-private suspend fun RoutingContext.executeWithLock(
-    store: IdempotencyStore,
-    key: String,
-    fingerprintHash: String,
-    handler: suspend RoutingContext.() -> IdempotentResult,
-) {
-    val inserted = store.acquireLock(key, fingerprintHash)
-
-    if (!inserted) {
-        call.respond(HttpStatusCode.Conflict, ErrorResponse(error = "REQUEST_IN_PROGRESS"))
-        return
-    }
-
-    val result = handler()
-
-    store.complete(key, result.statusCode.value, result.body)
-
-    call.respondText(result.body, ContentType.Application.Json, result.statusCode)
-}
-
-private fun hashFingerprint(fingerprint: String): String {
-    if (fingerprint.isEmpty()) return ""
-    return MessageDigest
-        .getInstance("SHA-256")
-        .digest(fingerprint.toByteArray())
-        .toHexString()
 }

@@ -1,8 +1,17 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.sync.service
 
+import com.mozgobolt.core.domain.security.SecureTokenGenerator
 import com.mozgobolt.core.skipIfNoDocker
+import com.mozgobolt.core.utility.functions.runSuspendCatching
+import com.mozgobolt.feature.company.data.repository.CompanyRepositoryI
+import com.mozgobolt.feature.company.domain.model.CompanyConstraints
 import com.mozgobolt.feature.sync.SyncTestHarness
 import com.mozgobolt.feature.sync.data.repository.SYNC_USER_LOCK_NAMESPACE
+import com.mozgobolt.feature.sync.domain.model.SyncChange
 import com.mozgobolt.feature.sync.domain.model.SyncEntityType
 import com.mozgobolt.feature.sync.domain.model.SyncOperation
 import com.mozgobolt.feature.sync.withRealSyncDatabase
@@ -15,8 +24,11 @@ import kotlinx.coroutines.withTimeout
 import org.jetbrains.exposed.v1.core.IntegerColumnType
 import org.jetbrains.exposed.v1.core.statements.StatementType
 import org.jetbrains.exposed.v1.jdbc.transactions.TransactionManager
+import java.sql.SQLException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -37,6 +49,90 @@ class SyncServiceTest {
             assertEquals(42, event.entityId)
             assertEquals(SyncOperation.UPSERT, event.operation)
             assertEquals(page.nextCursor, event.id)
+        }
+    }
+
+    @Test
+    fun `recordChanges acquires recipient locks in order and preserves same-user input order`() {
+        skipIfNoDocker()
+
+        withRealSyncDatabase { harness ->
+            harness.service.recordChanges(
+                listOf(
+                    SyncChange(2, SyncEntityType.VEHICLE, 20, SyncOperation.UPSERT),
+                    SyncChange(1, SyncEntityType.COMPANY, 10, SyncOperation.UPSERT),
+                    SyncChange(2, SyncEntityType.VEHICLE, 21, SyncOperation.DELETE),
+                    SyncChange(1, SyncEntityType.COMPANY, 11, SyncOperation.DELETE),
+                ),
+            )
+
+            val userOne = harness.service.changesSince(userId = 1, cursor = 0, limit = null)
+            val userTwo = harness.service.changesSince(userId = 2, cursor = 0, limit = null)
+
+            assertEquals(listOf(10, 11), userOne.events.map { it.entityId })
+            assertEquals(listOf(20, 21), userTwo.events.map { it.entityId })
+            assertTrue(userOne.events.last().id < userTwo.events.first().id)
+        }
+    }
+
+    @Test
+    fun `recordChanges rolls back all recipients when one event cannot be persisted`() {
+        skipIfNoDocker()
+
+        withRealSyncDatabase { harness ->
+            assertFailsWith<SQLException> {
+                harness.service.recordChanges(
+                    listOf(
+                        SyncChange(1, SyncEntityType.VEHICLE, 10, SyncOperation.UPSERT),
+                        SyncChange(Int.MAX_VALUE, SyncEntityType.VEHICLE, 20, SyncOperation.UPSERT),
+                    ),
+                )
+            }
+
+            val userOneEvents =
+                harness.service
+                    .changesSince(userId = 1, cursor = 0, limit = null)
+                    .events
+            assertTrue(userOneEvents.isEmpty())
+        }
+    }
+
+    @Test
+    fun `concurrent batches with opposite recipient input order complete without deadlock`() {
+        skipIfNoDocker()
+
+        withRealSyncDatabase { harness ->
+            coroutineScope {
+                val first =
+                    async(Dispatchers.IO) {
+                        harness.service.recordChanges(
+                            listOf(
+                                SyncChange(1, SyncEntityType.VEHICLE, 101, SyncOperation.UPSERT),
+                                SyncChange(2, SyncEntityType.VEHICLE, 201, SyncOperation.UPSERT),
+                            ),
+                        )
+                    }
+                val second =
+                    async(Dispatchers.IO) {
+                        harness.service.recordChanges(
+                            listOf(
+                                SyncChange(2, SyncEntityType.VEHICLE, 202, SyncOperation.UPSERT),
+                                SyncChange(1, SyncEntityType.VEHICLE, 102, SyncOperation.UPSERT),
+                            ),
+                        )
+                    }
+
+                withTimeout(5_000) {
+                    first.await()
+                    second.await()
+                }
+            }
+
+            val userOneEvents = harness.service.changesSince(userId = 1, cursor = 0, limit = null).events
+            val userTwoEvents = harness.service.changesSince(userId = 2, cursor = 0, limit = null).events
+            val events = (userOneEvents + userTwoEvents).associateBy { it.entityId }
+            assertTrue(events.getValue(101).id < events.getValue(201).id)
+            assertTrue(events.getValue(102).id < events.getValue(202).id)
         }
     }
 
@@ -113,6 +209,98 @@ class SyncServiceTest {
     }
 
     @Test
+    fun `a rolled back event is invisible and releases its per-user lock`() {
+        skipIfNoDocker()
+
+        withRealSyncDatabase { harness ->
+            coroutineScope {
+                val firstEventId = CompletableDeferred<Long>()
+                val allowRollback = CompletableDeferred<Unit>()
+                val secondAttemptStarted = CompletableDeferred<Unit>()
+
+                val first =
+                    async(Dispatchers.IO) {
+                        runSuspendCatching {
+                            harness.tx.transactional {
+                                val event =
+                                    harness.repository.record(
+                                        userId = 1,
+                                        entityType = SyncEntityType.COMPANY,
+                                        entityId = 1,
+                                        operation = SyncOperation.UPSERT,
+                                    )
+                                firstEventId.complete(event.id)
+                                allowRollback.await()
+                                error("force the first event transaction to roll back")
+                            }
+                        }
+                    }
+
+                val failedEventId = withTimeout(5.seconds) { firstEventId.await() }
+                val second =
+                    async(Dispatchers.IO) {
+                        secondAttemptStarted.complete(Unit)
+                        harness.service.recordChange(
+                            userId = 1,
+                            entityType = SyncEntityType.COMPANY,
+                            entityId = 2,
+                            operation = SyncOperation.UPSERT,
+                        )
+                    }
+
+                try {
+                    withTimeout(5.seconds) { secondAttemptStarted.await() }
+                    harness.awaitWaitingForUserSyncLock(userId = 1)
+                    allowRollback.complete(Unit)
+
+                    assertTrue(withTimeout(5.seconds) { first.await() }.isFailure)
+                    second.await()
+
+                    val page = harness.service.changesSince(userId = 1, cursor = 0, limit = 10)
+                    assertEquals(listOf(2), page.events.map { it.entityId })
+                    assertTrue(page.events.single().id > failedEventId, "rolled-back sequence values may leave gaps")
+                    assertEquals(page.events.single().id, page.nextCursor)
+                } finally {
+                    allowRollback.complete(Unit)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `a business mutation and its sync event roll back together`() {
+        skipIfNoDocker()
+
+        withRealSyncDatabase { harness ->
+            val companyRepository = CompanyRepositoryI()
+            var companyId: Int? = null
+
+            assertFailsWith<IllegalStateException> {
+                harness.tx.transactional {
+                    val company =
+                        companyRepository.create(
+                            name = "Sync rollback",
+                            inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
+                        )
+                    companyId = company.id
+                    harness.service.recordChange(
+                        userId = 1,
+                        entityType = SyncEntityType.COMPANY,
+                        entityId = company.id,
+                        operation = SyncOperation.UPSERT,
+                    )
+                    error("force the caller's transaction to roll back")
+                }
+            }
+
+            val persistedCompany = harness.tx.transactional { companyRepository.findById(checkNotNull(companyId)) }
+            assertNull(persistedCompany)
+            val remainingEvents = harness.service.changesSince(userId = 1, cursor = 0, limit = 10).events
+            assertTrue(remainingEvents.isEmpty())
+        }
+    }
+
+    @Test
     fun `changesSince never returns another user's events`() {
         skipIfNoDocker()
 
@@ -135,33 +323,33 @@ class SyncServiceTest {
         }
     }
 
-    private suspend fun SyncTestHarness.isWaitingForUserSyncLock(userId: Int): Boolean {
-        val integerColumnType = IntegerColumnType()
-        return tx.transactional {
-            TransactionManager.current().exec(
-                stmt =
-                    """
-                    SELECT EXISTS (
-                        SELECT 1
-                        FROM pg_locks
-                        WHERE locktype = 'advisory'
-                          AND classid = ?::oid
-                          AND objid = ?::oid
-                          AND objsubid = 2
-                          AND NOT granted
-                    )
-                    """.trimIndent(),
-                args =
-                    listOf(
-                        integerColumnType to SYNC_USER_LOCK_NAMESPACE,
-                        integerColumnType to userId,
-                    ),
-                explicitStatementType = StatementType.SELECT,
-            ) { resultSet ->
-                resultSet.next() && resultSet.getBoolean(1)
-            } ?: false
+    private suspend fun SyncTestHarness.isWaitingForUserSyncLock(userId: Int): Boolean =
+        tx.transactional {
+            val isWaiting =
+                TransactionManager.current().exec(
+                    stmt =
+                        """
+                            |SELECT EXISTS (
+                            |    SELECT 1
+                            |    FROM pg_locks
+                            |    WHERE locktype = 'advisory'
+                            |      AND classid = ?::oid
+                            |      AND objid = ?::oid
+                            |      AND objsubid = 2
+                            |      AND NOT granted
+                            |)
+                        """.trimMargin(),
+                    args =
+                        listOf(
+                            IntegerColumnType() to SYNC_USER_LOCK_NAMESPACE,
+                            IntegerColumnType() to userId,
+                        ),
+                    explicitStatementType = StatementType.SELECT,
+                ) { resultSet ->
+                    resultSet.next() && resultSet.getBoolean(1)
+                }
+            isWaiting == true
         }
-    }
 
     @Test
     fun `changesSince with no new events returns the same cursor back`() {
@@ -222,17 +410,33 @@ class SyncServiceTest {
     }
 
     @Test
-    fun `a within-range limit is respected as an ordinary page size`() {
+    fun `cursor pages stay ordered across interleaved global event ids`() {
         skipIfNoDocker()
 
         withRealSyncDatabase { harness ->
-            repeat(5) {
-                harness.service.recordChange(1, SyncEntityType.VEHICLE, it, SyncOperation.UPSERT)
-            }
+            harness.service.recordChange(1, SyncEntityType.VEHICLE, 10, SyncOperation.UPSERT)
+            harness.service.recordChange(2, SyncEntityType.VEHICLE, 90, SyncOperation.UPSERT)
+            harness.service.recordChange(1, SyncEntityType.VEHICLE, 11, SyncOperation.UPSERT)
+            harness.service.recordChange(2, SyncEntityType.VEHICLE, 91, SyncOperation.UPSERT)
+            harness.service.recordChange(1, SyncEntityType.VEHICLE, 12, SyncOperation.UPSERT)
+            harness.service.recordChange(1, SyncEntityType.VEHICLE, 13, SyncOperation.UPSERT)
+            harness.service.recordChange(1, SyncEntityType.VEHICLE, 14, SyncOperation.UPSERT)
 
-            val page = harness.service.changesSince(userId = 1, cursor = 0, limit = 2)
+            val first = harness.service.changesSince(userId = 1, cursor = 0, limit = 2)
+            assertEquals(listOf(10, 11), first.events.map { it.entityId })
+            assertEquals(first.events.last().id, first.nextCursor)
 
-            assertEquals(2, page.events.size)
+            val second = harness.service.changesSince(userId = 1, cursor = first.nextCursor, limit = 2)
+            assertEquals(listOf(12, 13), second.events.map { it.entityId })
+            assertEquals(second.events.last().id, second.nextCursor)
+
+            val final = harness.service.changesSince(userId = 1, cursor = second.nextCursor, limit = 2)
+            assertEquals(listOf(14), final.events.map { it.entityId })
+            assertEquals(final.events.last().id, final.nextCursor)
+
+            val caughtUp = harness.service.changesSince(userId = 1, cursor = final.nextCursor, limit = 2)
+            assertTrue(caughtUp.events.isEmpty())
+            assertEquals(final.nextCursor, caughtUp.nextCursor)
         }
     }
 

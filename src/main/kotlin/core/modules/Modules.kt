@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.modules
 
 import com.mozgobolt.core.modules.plugin.configureCallId
@@ -21,6 +25,7 @@ import io.ktor.server.application.install
 import io.ktor.server.plugins.autohead.AutoHeadResponse
 import io.ktor.server.resources.Resources
 
+/** Installs the core Ktor plugins used by the application. */
 fun Application.configureModules() {
     configureSentry()
     install(Resources)

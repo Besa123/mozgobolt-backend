@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.routing.dto.response
 
 import kotlinx.serialization.Serializable

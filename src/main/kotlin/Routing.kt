@@ -1,6 +1,12 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt
 
 import com.mozgobolt.core.data.idempotency.IdempotencyStore
+import com.mozgobolt.core.domain.security.AccessTokenSessionValidator
+import com.mozgobolt.core.modules.plugin.installGlobalRequestBodyLimit
 import com.mozgobolt.core.routing.apiV1
 import com.mozgobolt.feature.company.domain.CompanyService
 import com.mozgobolt.feature.company.routing.companyRoutes
@@ -15,6 +21,7 @@ import com.mozgobolt.feature.sync.domain.SyncEventHub
 import com.mozgobolt.feature.sync.domain.SyncService
 import com.mozgobolt.feature.sync.routing.syncRoutes
 import com.mozgobolt.feature.user.domain.UserService
+import com.mozgobolt.feature.user.domain.UserSessionService
 import com.mozgobolt.feature.user.routing.authRoutes
 import com.mozgobolt.feature.vehicle.domain.VehicleService
 import com.mozgobolt.feature.vehicle.routing.vehicleRoutes
@@ -31,8 +38,10 @@ import io.ktor.server.plugins.di.dependencies
 import io.ktor.server.routing.routing
 import javax.sql.DataSource
 
+/** Resolves feature services and registers the application's HTTP routes. */
 fun Application.configureRouting() {
     val userService: UserService by dependencies
+    val userSessionService: UserSessionService by dependencies
     val syncService: SyncService by dependencies
     val syncEventHub: SyncEventHub by dependencies
     val companyService: CompanyService by dependencies
@@ -46,21 +55,33 @@ fun Application.configureRouting() {
     val vehiclePingHub: VehiclePingHub by dependencies
     val deviceInstallationService: DeviceInstallationService by dependencies
     val idempotencyStore: IdempotencyStore by dependencies
+    val accessTokenSessionValidator: AccessTokenSessionValidator by dependencies
     val dataSource: DataSource by dependencies
 
     routing {
+        installGlobalRequestBodyLimit()
         infrastructureRoutes(dataSource)
 
         apiV1 {
-            authRoutes(userService, idempotencyStore)
-            syncRoutes(syncService, syncEventHub)
+            authRoutes(userService, userSessionService, idempotencyStore)
+            syncRoutes(syncService, syncEventHub, accessTokenSessionValidator)
             companyRoutes(companyService, idempotencyStore)
             companyFavoriteRoutes(companyFavoriteService)
             savedLocationRoutes(savedLocationService, idempotencyStore)
-            vehicleRoutes(vehicleService, vehicleAssignmentService, userService, idempotencyStore)
+            vehicleRoutes(
+                vehicleService = vehicleService,
+                vehicleAssignmentService = vehicleAssignmentService,
+                userService = userService,
+                idempotencyStore = idempotencyStore,
+            )
             vehicleAssignmentRoutes(vehicleAssignmentService)
-            vehicleTrackingRoutes(vehicleTrackingService, vehicleLocationHub)
-            vehiclePingRoutes(vehiclePingService, vehiclePingHub)
+            vehicleTrackingRoutes(vehicleTrackingService, vehicleLocationHub, accessTokenSessionValidator)
+            vehiclePingRoutes(
+                vehiclePingService = vehiclePingService,
+                hub = vehiclePingHub,
+                idempotencyStore = idempotencyStore,
+                accessTokenSessionValidator = accessTokenSessionValidator,
+            )
             deviceInstallationRoutes(deviceInstallationService)
         }
     }

@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt
 
 import com.mozgobolt.core.configureTestEnvironment
@@ -25,7 +29,9 @@ import com.mozgobolt.feature.sync.domain.SyncService
 import com.mozgobolt.feature.sync.domain.model.SyncHint
 import com.mozgobolt.feature.sync.routing.FakeSyncService
 import com.mozgobolt.feature.user.domain.UserService
+import com.mozgobolt.feature.user.domain.UserSessionService
 import com.mozgobolt.feature.user.routing.FakeUserService
+import com.mozgobolt.feature.user.routing.FakeUserSessionService
 import com.mozgobolt.feature.vehicle.domain.VehicleService
 import com.mozgobolt.feature.vehicle.domain.model.Vehicle
 import com.mozgobolt.feature.vehicle.domain.model.VehicleError
@@ -36,7 +42,7 @@ import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignmentErr
 import com.mozgobolt.feature.vehiclePing.domain.VehiclePingHub
 import com.mozgobolt.feature.vehiclePing.domain.VehiclePingService
 import com.mozgobolt.feature.vehiclePing.domain.model.PingError
-import com.mozgobolt.feature.vehiclePing.domain.model.VehiclePing
+import com.mozgobolt.feature.vehiclePing.domain.model.VehiclePingOutcome
 import com.mozgobolt.feature.vehiclePing.service.InMemoryVehiclePingHub
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationHub
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleTrackingService
@@ -70,6 +76,7 @@ class RoutingWiringTest {
                 installTestModules()
                 dependencies {
                     provide<UserService> { FakeUserService() }
+                    provide<UserSessionService> { FakeUserSessionService() }
                     provide<SyncService> { FakeSyncService() }
                     provide<SyncEventHub> { FakeSyncEventHub() }
                     provide<CompanyService> { FakeCompanyService() }
@@ -178,6 +185,11 @@ private class FakeCompanyService : CompanyService {
         companyId: Int,
     ): AppResult<Company, CompanyError> = AppResult.Error(CompanyError.NOT_ADMIN)
 
+    override suspend fun getCurrentInviteCode(
+        adminUserId: Int,
+        companyId: Int,
+    ): AppResult<String, CompanyError> = AppResult.Error(CompanyError.NOT_ADMIN)
+
     override suspend fun listMembers(
         userId: Int,
         companyId: Int,
@@ -265,6 +277,7 @@ private class FakeVehicleService : VehicleService {
         vehicleId: Int,
         licensePlate: String,
         pictureUrl: String?,
+        clearPictureUrl: Boolean,
     ): AppResult<Vehicle, VehicleError> = AppResult.Error(VehicleError.NOT_A_MEMBER)
 
     override suspend fun listCompanyVehicles(
@@ -311,9 +324,13 @@ private class FakeVehicleAssignmentService : VehicleAssignmentService {
     override suspend fun endActiveAssignmentForVendorInCompany(
         vendorUserId: Int,
         companyId: Int,
-    ) = Unit
+    ) = null
 
-    override suspend fun endAllActiveAssignmentsForCompany(companyId: Int) = Unit
+    override suspend fun endAllActiveAssignmentsForCompany(companyId: Int) = emptyList<VehicleAssignment>()
+
+    override suspend fun findAllForCompany(companyId: Int) = emptyList<VehicleAssignment>()
+
+    override fun notifyEndedAssignments(assignments: List<VehicleAssignment>) = Unit
 
     override suspend fun findActiveForVendor(vendorUserId: Int): VehicleAssignment? = null
 
@@ -335,7 +352,9 @@ private class FakeVehiclePingService : VehiclePingService {
         vehicleId: Int,
         latitude: Double,
         longitude: Double,
-    ): AppResult<VehiclePing, PingError> = AppResult.Error(PingError.VEHICLE_NOT_FOUND)
+    ): AppResult<VehiclePingOutcome, PingError> = AppResult.Error(PingError.VEHICLE_NOT_FOUND)
+
+    override suspend fun dispatchPing(outcome: VehiclePingOutcome) = Unit
 }
 
 private class FakeDeviceInstallationService : DeviceInstallationService {

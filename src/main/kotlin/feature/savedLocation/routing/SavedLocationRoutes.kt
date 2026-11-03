@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.savedLocation.routing
 
 import com.mozgobolt.core.data.idempotency.IdempotencyStore

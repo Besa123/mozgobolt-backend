@@ -1,9 +1,15 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.routing
 
 import com.mozgobolt.core.configureTestEnvironment
 import com.mozgobolt.core.domain.AppResult
 import com.mozgobolt.feature.user.domain.model.VerifyEmailError
 import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication
 import kotlin.test.Test
@@ -20,6 +26,24 @@ class VerifyEmailRouteTest {
             val response = client.get("${AuthPaths.VERIFY_EMAIL}?token=some-token")
 
             assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals("some-token", userService.lastVerifyEmailToken)
+        }
+
+    @Test
+    fun `a browser verification link redirects without retaining its token in the URL`() =
+        testApplication {
+            configureTestEnvironment()
+            val userService = FakeUserService()
+            application { installAuthRoutesTestApp(userService) }
+            val noRedirectClient = createClient { followRedirects = false }
+
+            val response =
+                noRedirectClient.get("${AuthPaths.VERIFY_EMAIL}?token=some-token") {
+                    header(HttpHeaders.Accept, "text/html")
+                }
+
+            assertEquals(HttpStatusCode.Found, response.status)
+            assertEquals("/", response.headers[HttpHeaders.Location])
             assertEquals("some-token", userService.lastVerifyEmailToken)
         }
 

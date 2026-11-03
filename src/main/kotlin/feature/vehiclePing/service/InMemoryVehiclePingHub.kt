@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehiclePing.service
 
 import com.mozgobolt.feature.vehiclePing.domain.VehiclePingHub

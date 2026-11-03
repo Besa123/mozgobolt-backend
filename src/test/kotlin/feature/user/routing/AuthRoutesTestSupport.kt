@@ -1,10 +1,17 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.routing
 
 import com.mozgobolt.core.data.idempotency.FakeIdempotencyStore
 import com.mozgobolt.core.data.idempotency.IdempotencyStore
+import com.mozgobolt.core.domain.AppResult
 import com.mozgobolt.core.installTestModules
 import com.mozgobolt.core.routing.apiV1
 import com.mozgobolt.core.routing.dto.response.ErrorResponse
+import com.mozgobolt.feature.user.domain.UserSessionService
+import com.mozgobolt.feature.user.domain.model.AccountDeletionError
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
@@ -21,12 +28,49 @@ import kotlinx.serialization.json.Json
 fun Application.installAuthRoutesTestApp(
     userService: FakeUserService = FakeUserService(),
     idempotencyStore: IdempotencyStore = FakeIdempotencyStore(),
+    userSessionService: FakeUserSessionService = FakeUserSessionService(),
 ) {
     installTestModules()
     routing {
         apiV1 {
-            authRoutes(userService, idempotencyStore)
+            authRoutes(userService, userSessionService, idempotencyStore)
         }
+    }
+}
+
+class FakeUserSessionService : UserSessionService {
+    data class LogoutCall(
+        val userId: Int,
+        val familyId: String,
+    )
+
+    data class DeleteAccountCall(
+        val userId: Int,
+        val currentPassword: String,
+    )
+
+    val logoutUserCalls = mutableListOf<LogoutCall>()
+    val logoutAllSessionsCalls = mutableListOf<Int>()
+    val deleteAccountCalls = mutableListOf<DeleteAccountCall>()
+    var deleteAccountResult: AppResult<Unit, AccountDeletionError> = AppResult.Success(Unit)
+
+    override suspend fun logoutUser(
+        userId: Int,
+        familyId: String,
+    ) {
+        logoutUserCalls += LogoutCall(userId, familyId)
+    }
+
+    override suspend fun logoutAllSessions(userId: Int) {
+        logoutAllSessionsCalls += userId
+    }
+
+    override suspend fun deleteAccount(
+        userId: Int,
+        currentPassword: String,
+    ): AppResult<Unit, AccountDeletionError> {
+        deleteAccountCalls += DeleteAccountCall(userId, currentPassword)
+        return deleteAccountResult
     }
 }
 

@@ -1,15 +1,16 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.sync.service
 
 import com.mozgobolt.feature.sync.domain.SyncService
+import com.mozgobolt.feature.sync.domain.model.SyncChange
 import com.mozgobolt.feature.sync.domain.model.SyncEntityType
 import com.mozgobolt.feature.sync.domain.model.SyncOperation
 import com.mozgobolt.feature.sync.domain.model.SyncPage
 
-/**
- * Shared across product/storageLocation/pantryEntry's fake-repository unit tests: none of those
- * services' own behavior depends on sync at all — `recordChange` is a side effect they trigger,
- * never read back — so a no-op stand-in is all any of them need.
- */
+/** No-op sync collaborator for tests that do not exercise sync persistence. */
 class NoOpSyncService : SyncService {
     override suspend fun recordChange(
         userId: Int,
@@ -18,6 +19,8 @@ class NoOpSyncService : SyncService {
         operation: SyncOperation,
         originDeviceId: String?,
     ) = Unit
+
+    override suspend fun recordChanges(changes: List<SyncChange>) = Unit
 
     override suspend fun changesSince(
         userId: Int,

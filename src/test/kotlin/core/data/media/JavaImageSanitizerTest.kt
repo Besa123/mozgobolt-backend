@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.media
 
 import com.mozgobolt.core.domain.AppResult
@@ -6,6 +10,7 @@ import com.mozgobolt.core.modules.AppConfig
 import kotlinx.coroutines.runBlocking
 import java.awt.Color
 import java.awt.image.BufferedImage
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import javax.imageio.ImageIO
 import kotlin.test.Test
@@ -19,7 +24,6 @@ class JavaImageSanitizerTest {
         maxImagePixelCount: Long = 40_000_000,
     ) = AppConfig.Media(
         localStorageDirectory = "unused",
-        maxImagesPerEntry = 3,
         maxImageDimensionPixels = maxImageDimensionPixels,
         maxImagePixelCount = maxImagePixelCount,
         jpegQuality = 0.85f,
@@ -148,10 +152,22 @@ class JavaImageSanitizerTest {
     fun `a transparent PNG is flattened onto an opaque background without error`() {
         runBlocking {
             val sanitizer = JavaImageSanitizer(config())
+            val image = BufferedImage(30, 30, BufferedImage.TYPE_INT_ARGB)
+            val graphics = image.createGraphics()
+            graphics.color = Color.RED
+            graphics.fillRect(0, 0, 15, 30)
+            graphics.dispose()
+            val input = ByteArrayOutputStream()
+            ImageIO.write(image, "png", input)
 
-            val result = sanitizer.sanitize(encodedImage("png", 30, 30, type = BufferedImage.TYPE_INT_ARGB))
+            val result = sanitizer.sanitize(input.toByteArray())
 
-            assertTrue(result is AppResult.Success)
+            val sanitized = (result as? AppResult.Success)?.data ?: fail("expected success but got $result")
+            val decoded = ImageIO.read(ByteArrayInputStream(sanitized.bytes))
+            val whitePixel = Color(decoded.getRGB(25, 15))
+            assertTrue(whitePixel.red > 240)
+            assertTrue(whitePixel.green > 240)
+            assertTrue(whitePixel.blue > 240)
         }
     }
 }

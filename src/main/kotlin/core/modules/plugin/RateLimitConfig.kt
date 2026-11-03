@@ -1,3 +1,10 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+// Rate-limit identifiers are public configuration keys, not secrets.
+@file:Suppress("HardcodedCredentials")
+
 package com.mozgobolt.core.modules.plugin
 
 import com.mozgobolt.core.domain.security.AuthConstants
@@ -28,13 +35,10 @@ fun Application.configureRateLimit() {
             rateLimiter(limit = 60, refillPeriod = 60.seconds)
 
             requestKey { call ->
-                val principal = call.principal<JWTPrincipal>()
                 val userId =
-                    principal
-                        ?.payload
-                        ?.getClaim(AuthConstants.CLAIM_USER_ID)
-                        ?.asInt()
-                        ?.toString()
+                    call.principal<JWTPrincipal>()?.run {
+                        payload.getClaim(AuthConstants.CLAIM_USER_ID).asInt()?.toString()
+                    }
                 userId ?: call.request.origin.remoteHost
             }
         }

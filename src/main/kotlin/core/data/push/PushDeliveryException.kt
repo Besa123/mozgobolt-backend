@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.push
 
 sealed class PushDeliveryException(
@@ -12,9 +16,8 @@ class TransientPushDeliveryException(
     cause: Throwable? = null,
 ) : PushDeliveryException(message, cause)
 
-/** FCM reported the target installation as unregistered/invalid (`UNREGISTERED`/
- * `SENDER_ID_MISMATCH`) — retrying is pointless, and the caller should delete this installation
- * id rather than keep sending to it. */
+/** FCM confirmed the target installation is no longer registered (`UNREGISTERED`) — retrying is
+ * pointless, and the caller should delete this installation id rather than keep sending to it. */
 class InvalidPushTargetException(
     message: String,
     cause: Throwable? = null,

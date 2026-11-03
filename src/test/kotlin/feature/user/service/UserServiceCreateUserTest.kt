@@ -1,5 +1,11 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.service
 
+import com.mozgobolt.core.domain.AppResult
+import com.mozgobolt.core.domain.security.PasswordBreachCheckError
 import com.mozgobolt.feature.user.domain.model.RegisterError
 import com.mozgobolt.feature.user.domain.model.UserRole
 import kotlinx.coroutines.CancellationException
@@ -9,6 +15,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlin.test.fail
 
 class UserServiceCreateUserTest {
@@ -19,7 +26,7 @@ class UserServiceCreateUserTest {
 
             val result =
                 harness.service.createUser(
-                    password = "Str0ngPass",
+                    password = "Str0ngPassphrase1",
                     email = "New.User@Example.com",
                     name = "New User",
                     role = UserRole.BUYER,
@@ -27,9 +34,10 @@ class UserServiceCreateUserTest {
 
             result.fold(onSuccess = {}, onError = { fail("expected success but got $it") })
             val user = assertNotNull(harness.repository.findUser("new.user@example.com"))
-            val (recipient, token) = harness.emailService.sentTokens.single()
-            assertEquals(user.email, recipient)
-            assertNotNull(harness.repository.findVerificationToken(harness.tokenManager.hashTokenForStorage(token)))
+            val queued = harness.emailOutbox.verificationEmails.single()
+            assertEquals(user.id, queued.userId)
+            assertEquals(queued.tokenHash, harness.tokenManager.hashTokenForStorage(queued.rawToken))
+            assertNotNull(harness.repository.findVerificationToken(queued.tokenHash))
         }
     }
 
@@ -51,13 +59,55 @@ class UserServiceCreateUserTest {
     }
 
     @Test
+    fun `registration rejects a breached password before creating an account`() {
+        runBlocking {
+            val harness = newHarness()
+            val password = "Str0ngPassphrase1"
+            harness.passwordValidator.breachCheckResult = AppResult.Success(true)
+
+            val result =
+                harness.service.createUser(
+                    password = password,
+                    email = "breached@example.com",
+                    name = "User",
+                    role = UserRole.BUYER,
+                )
+
+            assertError(RegisterError.WEAK_PASSWORD, result)
+            assertNull(harness.repository.findUser("breached@example.com"))
+            assertEquals(listOf(password), harness.passwordValidator.checkedPasswords)
+        }
+    }
+
+    @Test
+    fun `registration fails closed when the breached password service is unavailable`() {
+        runBlocking {
+            val harness = newHarness()
+            harness.passwordValidator.breachCheckResult =
+                AppResult.Error(PasswordBreachCheckError.UNAVAILABLE)
+
+            val result =
+                harness.service.createUser(
+                    password = "Str0ngPassphrase1",
+                    email = "check-unavailable@example.com",
+                    name = "User",
+                    role = UserRole.BUYER,
+                )
+
+            assertError(RegisterError.PASSWORD_CHECK_UNAVAILABLE, result)
+            assertNull(harness.repository.findUser("check-unavailable@example.com"))
+            assertTrue(harness.emailOutbox.verificationEmails.isEmpty())
+        }
+    }
+
+    @Test
     fun `registering with an invalid email is rejected`() {
         runBlocking {
             val harness = newHarness()
 
             val result =
                 harness.service.createUser(
-                    password = "Str0ngPass",
+                    password = "Str0ngPassphrase1",
                     email = "not-an-email",
                     name = "User",
                     role = UserRole.BUYER,
@@ -68,11 +118,32 @@ class UserServiceCreateUserTest {
     }
 
     @Test
+    fun `registering with an invalid display name is rejected by the use case`() {
+        runBlocking {
+            val invalidNames = listOf("", "a".repeat(101), " leading", "name<bad")
+
+            invalidNames.forEachIndexed { index, name ->
+                val harness = newHarness()
+                val result =
+                    harness.service.createUser(
+                        password = "Str0ngPassphrase1",
+                        email = "name-$index@example.com",
+                        name = name,
+                        role = UserRole.BUYER,
+                    )
+
+                assertError(RegisterError.INVALID_NAME, result)
+                assertNull(harness.repository.findUser("name-$index@example.com"))
+            }
+        }
+    }
+
+    @Test
     fun `registering the same email twice is rejected`() {
         runBlocking {
             val harness = newHarness()
             harness.service.createUser(
-                password = "Str0ngPass",
+                password = "Str0ngPassphrase1",
                 email = "user@example.com",
                 name = "User",
                 role = UserRole.BUYER,
@@ -80,7 +151,7 @@ class UserServiceCreateUserTest {
 
             val result =
                 harness.service.createUser(
-                    password = "Str0ngPass",
+                    password = "Str0ngPassphrase1",
                     email = "user@example.com",
                     name = "User",
                     role = UserRole.BUYER,
@@ -95,7 +166,7 @@ class UserServiceCreateUserTest {
         runBlocking {
             val harness = newHarness()
             harness.service.createUser(
-                password = "Str0ngPass",
+                password = "Str0ngPassphrase1",
                 email = "user@example.com",
                 name = "User",
                 role = UserRole.BUYER,
@@ -103,7 +174,7 @@ class UserServiceCreateUserTest {
 
             val result =
                 harness.service.createUser(
-                    password = "Str0ngPass",
+                    password = "Str0ngPassphrase1",
                     email = "  User@Example.COM  ",
                     name = "User Two",
                     role = UserRole.BUYER,
@@ -120,7 +191,7 @@ class UserServiceCreateUserTest {
 
             val result =
                 harness.service.createUser(
-                    password = "Str0ngPass",
+                    password = "Str0ngPassphrase1",
                     email = "user@example.com",
                     name = "User",
                     role = UserRole.VENDOR,
@@ -140,7 +211,7 @@ class UserServiceCreateUserTest {
 
             val result =
                 harness.service.createUser(
-                    password = "Str0ngPass",
+                    password = "Str0ngPassphrase1",
                     email = "user@example.com",
                     name = "User",
                     role = UserRole.VENDOR,
@@ -156,13 +227,63 @@ class UserServiceCreateUserTest {
     }
 
     @Test
+    fun `invalid WhatsApp and Viber numbers are rejected before user creation`() {
+        runBlocking {
+            val whatsappHarness = newHarness()
+            val whatsappResult =
+                whatsappHarness.service.createUser(
+                    password = "Str0ngPassphrase1",
+                    email = "whatsapp@example.com",
+                    name = "User",
+                    role = UserRole.VENDOR,
+                    whatsappNumber = "not-a-phone-number",
+                )
+
+            assertError(RegisterError.INVALID_PHONE_NUMBER, whatsappResult)
+            assertNull(whatsappHarness.repository.findUser("whatsapp@example.com"))
+
+            val viberHarness = newHarness()
+            val viberResult =
+                viberHarness.service.createUser(
+                    password = "Str0ngPassphrase1",
+                    email = "viber@example.com",
+                    name = "User",
+                    role = UserRole.VENDOR,
+                    viberNumber = "not-a-phone-number",
+                )
+
+            assertError(RegisterError.INVALID_PHONE_NUMBER, viberResult)
+            assertNull(viberHarness.repository.findUser("viber@example.com"))
+        }
+    }
+
+    @Test
+    fun `an invalid Messenger username is rejected before user creation`() {
+        runBlocking {
+            val harness = newHarness()
+
+            val result =
+                harness.service.createUser(
+                    password = "Str0ngPassphrase1",
+                    email = "messenger@example.com",
+                    name = "User",
+                    role = UserRole.VENDOR,
+                    messengerUsername = "driver name!",
+                )
+
+            assertError(RegisterError.INVALID_MESSENGER_USERNAME, result)
+            assertNull(harness.repository.findUser("messenger@example.com"))
+        }
+    }
+
+    @Test
     fun `omitting the phone number leaves it null`() {
         runBlocking {
             val harness = newHarness()
 
             val result =
                 harness.service.createUser(
-                    password = "Str0ngPass",
+                    password = "Str0ngPassphrase1",
                     email = "user@example.com",
                     name = "User",
                     role = UserRole.BUYER,
@@ -175,19 +296,51 @@ class UserServiceCreateUserTest {
     }
 
     @Test
-    fun `cancellation while sending the verification email propagates instead of being swallowed`() {
+    fun `cancellation while enqueuing the verification email propagates`() {
         runBlocking {
             val harness = newHarness()
-            harness.emailService.failureToThrow = CancellationException("client disconnected")
+            harness.emailOutbox.failureToThrow = CancellationException("client disconnected")
 
             assertFailsWith<CancellationException> {
                 harness.service.createUser(
-                    password = "Str0ngPass",
+                    password = "Str0ngPassphrase1",
                     email = "user@example.com",
                     name = "User",
                     role = UserRole.BUYER,
                 )
             }
+        }
+    }
+
+    @Test
+    fun `registration queues verification delivery without storing a raw token`() {
+        runBlocking {
+            val harness = newHarness()
+
+            val result =
+                harness.service.createUser(
+                    password = "Str0ngPassphrase1",
+                    email = "email-failure@example.com",
+                    name = "User",
+                    role = UserRole.BUYER,
+                )
+
+            result.fold(onSuccess = {}, onError = { fail("registration should remain successful: $it") })
+            val user = assertNotNull(harness.repository.findUser("email-failure@example.com"))
+            assertEquals(true, harness.repository.hasVerificationToken(user.id))
+            val queued = harness.emailOutbox.verificationEmails.single()
+            assertEquals(user.id, queued.userId)
+            assertEquals(queued.tokenHash, harness.tokenManager.hashTokenForStorage(queued.rawToken))
+
+            assertError(
+                RegisterError.ALREADY_EXISTS,
+                harness.service.createUser(
+                    password = "Str0ngPassphrase1",
+                    email = "email-failure@example.com",
+                    name = "User",
+                    role = UserRole.BUYER,
+                ),
+            )
         }
     }
 }

@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicle.di
 
 import com.mozgobolt.feature.vehicle.data.repository.VehicleRepositoryI

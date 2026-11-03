@@ -1,14 +1,16 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleTracking.service
 
 import com.mozgobolt.core.database.TransactionalRunner
+import com.mozgobolt.core.utility.ApplicationBackgroundScope
 import com.mozgobolt.core.utility.functions.runSuspendCatching
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationRepository
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -23,32 +25,31 @@ private val DEFAULT_PURGE_CHECK_INTERVAL = 24.hours
 
 // A completed driving session's location history is kept only long enough to be useful for
 // payroll/hours verification — the user's own stated reason for retaining it at all — not as
-// permanent analytics. A still-active session is never affected, no matter its age (see
-// VehicleLocationRepositoryI.purgeOlderThan): the 30-day clock starts when a session *ends*, not
-// when each point was recorded.
+// permanent analytics. The 30-day clock starts when a session ends, not when each point was
+// recorded. A separate stale-session reaper ends assignments after 12 hours without accepted
+// telemetry so an abandoned assignment cannot retain history indefinitely.
 internal val LOCATION_RETENTION_PERIOD = 30.days
 
 /**
- * Background purge for `vehicle_locations`, mirroring [VehicleLocationBatchWriter]'s own
- * scope/loop shape. Runs on a much coarser interval than the batch writer (a day, not seconds) —
+ * Background purge for `vehicle_locations`, mirroring [VehicleLocationBatchWriter]'s periodic loop.
+ * Runs on a much coarser interval than the batch writer (a day, not seconds) —
  * a 30-day retention window has no need for finer-grained checking.
  */
 class VehicleLocationRetentionPurger(
     private val repository: VehicleLocationRepository,
     private val tx: TransactionalRunner,
+    private val backgroundScope: ApplicationBackgroundScope,
     private val checkInterval: Duration = DEFAULT_PURGE_CHECK_INTERVAL,
     private val retentionPeriod: Duration = LOCATION_RETENTION_PERIOD,
 ) {
-    private val exceptionHandler =
-        CoroutineExceptionHandler { _, failure ->
-            logger.error(failure) { "VehicleLocationRetentionPurger terminated unexpectedly and will not restart" }
-        }
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + exceptionHandler)
     private var job: Job? = null
 
+    @Synchronized
     fun start() {
+        if (job?.isActive == true) return
+
         job =
-            scope.launch {
+            backgroundScope.launch(CoroutineName("vehicle-location-retention-purger")) {
                 while (isActive) {
                     delay(checkInterval)
                     // A single failed purge (a transient DB blip) must not permanently kill this
@@ -64,6 +65,7 @@ class VehicleLocationRetentionPurger(
             }
     }
 
+    @Synchronized
     fun stop() {
         job?.cancel()
         job = null

@@ -1,8 +1,16 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+@file:Suppress("PathTraversal")
+
 package com.mozgobolt.core.data.media
 
+import com.mozgobolt.core.domain.media.IMAGE_STORAGE_KEY_MAX_LENGTH
 import com.mozgobolt.core.domain.media.ImageStorage
 import com.mozgobolt.core.utility.functions.runSuspendCatching
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -15,10 +23,9 @@ import java.nio.file.StandardCopyOption
 
 private val logger = KotlinLogging.logger {}
 
-private val SAFE_KEY_PATTERN = Regex("^[a-zA-Z0-9_-]{1,128}$")
-
 class LocalDiskImageStorage(
     rootDirectory: String,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ImageStorage {
     private val root: Path = Path.of(rootDirectory).toAbsolutePath().normalize()
 
@@ -31,7 +38,8 @@ class LocalDiskImageStorage(
         bytes: ByteArray,
     ) {
         val target = resolveWithinRoot(key)
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
+            Files.createDirectories(target.parent)
             val tempFile = Files.createTempFile(root, "upload-", ".tmp")
             try {
                 Files.write(tempFile, bytes)
@@ -44,11 +52,11 @@ class LocalDiskImageStorage(
 
     override suspend fun read(key: String): ByteArray? {
         val target = resolveWithinRoot(key)
-        return withContext(Dispatchers.IO) {
+        return withContext(ioDispatcher) {
             try {
                 Files.readAllBytes(target)
             } catch (e: NoSuchFileException) {
-                logger.debug(e) { "No file for key=$key — treating as absent" }
+                logger.debug(e) { "No image for key=$key — treating as absent" }
                 null
             }
         }
@@ -63,20 +71,36 @@ class LocalDiskImageStorage(
         }
     }
 
+    @Suppress("RedundantSuspendModifier") // withContext suspends inside the inline Result wrapper.
     private suspend fun deleteOne(key: String) {
         runSuspendCatching {
-            withContext(Dispatchers.IO) {
+            withContext(ioDispatcher) {
                 Files.deleteIfExists(resolveWithinRoot(key))
             }
         }.onFailure { error ->
-            logger.warn(error) { "Failed to delete orphaned image file for key=$key — leaving it in place" }
+            logger.warn(error) { "Failed to remove orphaned image file for key=$key — leaving it in place" }
         }
     }
 
     private fun resolveWithinRoot(key: String): Path {
-        require(SAFE_KEY_PATTERN.matches(key)) { "Refusing to resolve an unsafe storage key" }
+        require(key.length <= IMAGE_STORAGE_KEY_MAX_LENGTH && key.isSafeStorageKey()) {
+            "Refusing to resolve an unsafe storage key"
+        }
         val resolved = root.resolve(key).normalize()
         check(resolved.startsWith(root)) { "Resolved storage path escaped the storage root" }
         return resolved
     }
+
+    private fun String.isSafeStorageKey(): Boolean =
+        isNotEmpty() &&
+            split('/').all { segment ->
+                segment.isNotEmpty() && segment.all(Char::isSafeStorageKeyCharacter)
+            }
 }
+
+private fun Char.isSafeStorageKeyCharacter(): Boolean =
+    this in 'a'..'z' ||
+        this in 'A'..'Z' ||
+        this in '0'..'9' ||
+        this == '_' ||
+        this == '-'

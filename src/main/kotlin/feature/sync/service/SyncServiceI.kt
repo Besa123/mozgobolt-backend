@@ -1,8 +1,13 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.sync.service
 
 import com.mozgobolt.core.database.TransactionalRunner
 import com.mozgobolt.feature.sync.domain.SyncRepository
 import com.mozgobolt.feature.sync.domain.SyncService
+import com.mozgobolt.feature.sync.domain.model.SyncChange
 import com.mozgobolt.feature.sync.domain.model.SyncEntityType
 import com.mozgobolt.feature.sync.domain.model.SyncOperation
 import com.mozgobolt.feature.sync.domain.model.SyncPage
@@ -21,8 +26,24 @@ class SyncServiceI(
         operation: SyncOperation,
         originDeviceId: String?,
     ) {
+        recordChanges(listOf(SyncChange(userId, entityType, entityId, operation, originDeviceId)))
+    }
+
+    override suspend fun recordChanges(changes: List<SyncChange>) {
+        if (changes.isEmpty()) return
+
         tx.transactional {
-            syncRepository.record(userId, entityType, entityId, operation, originDeviceId)
+            changes
+                .sortedBy(SyncChange::userId)
+                .forEach { change ->
+                    syncRepository.record(
+                        userId = change.userId,
+                        entityType = change.entityType,
+                        entityId = change.entityId,
+                        operation = change.operation,
+                        originDeviceId = change.originDeviceId,
+                    )
+                }
         }
     }
 

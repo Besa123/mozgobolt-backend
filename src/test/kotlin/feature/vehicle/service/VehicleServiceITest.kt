@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicle.service
 
 import com.mozgobolt.feature.company.domain.model.CompanyRole
@@ -45,9 +49,9 @@ class VehicleServiceITest {
                 )
 
             result.fold(
-                onSuccess = {
-                    assertEquals("Truck 1", it.label)
-                    assertEquals("ABC-123", it.licensePlate)
+                onSuccess = { vehicle ->
+                    assertEquals("Truck 1", vehicle.label)
+                    assertEquals("ABC-123", vehicle.licensePlate)
                 },
                 onError = { fail("$it") },
             )
@@ -359,10 +363,10 @@ class VehicleServiceITest {
             val result = fx.service.findVehicle(seeded.id)
 
             result.fold(
-                onSuccess = {
-                    assertEquals(seeded.id, it.id)
-                    assertEquals("PLATE-1", it.licensePlate)
-                    assertEquals("https://example.com/truck.png", it.pictureUrl)
+                onSuccess = { vehicle ->
+                    assertEquals(seeded.id, vehicle.id)
+                    assertEquals("PLATE-1", vehicle.licensePlate)
+                    assertEquals("https://example.com/truck.png", vehicle.pictureUrl)
                 },
                 onError = { fail("expected success but got $it") },
             )

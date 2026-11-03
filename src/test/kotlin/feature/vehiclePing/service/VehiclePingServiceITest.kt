@@ -1,11 +1,20 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehiclePing.service
 
 import com.mozgobolt.core.data.push.FakePushNotificationSender
 import com.mozgobolt.core.data.push.InvalidPushTargetException
 import com.mozgobolt.core.data.push.PermanentPushDeliveryException
+import com.mozgobolt.core.database.TransactionalRunner
+import com.mozgobolt.core.domain.AppResult
 import com.mozgobolt.core.domain.push.PUSH_DATA_KEY_LATITUDE
 import com.mozgobolt.core.domain.push.PUSH_DATA_KEY_LONGITUDE
+import com.mozgobolt.feature.deviceInstallation.domain.DeviceInstallationRepository
+import com.mozgobolt.feature.deviceInstallation.domain.DeviceInstallationService
 import com.mozgobolt.feature.deviceInstallation.domain.FakeDeviceInstallationRepository
+import com.mozgobolt.feature.deviceInstallation.domain.model.DeviceInstallation
 import com.mozgobolt.feature.deviceInstallation.service.DeviceInstallationServiceI
 import com.mozgobolt.feature.user.service.NoopTransactionalRunner
 import com.mozgobolt.feature.vehicle.domain.VehicleRepository
@@ -20,10 +29,16 @@ import com.mozgobolt.feature.vehiclePing.domain.model.VehiclePing
 import com.mozgobolt.feature.vehiclePing.domain.model.VehiclePingNotification
 import com.mozgobolt.feature.vehicleTracking.service.H3CellIndexer
 import kotlinx.coroutines.runBlocking
+import java.io.IOException
+import java.time.Clock
 import java.time.Instant
+import java.time.ZoneOffset
+import java.time.temporal.ChronoUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.test.fail
 import kotlin.time.toJavaDuration
@@ -36,6 +51,8 @@ private const val BUYER_LONGITUDE = 19.0402
 class VehiclePingServiceITest {
     private class FakeVehicleRepository : VehicleRepository {
         private val vehiclesById = mutableMapOf<Int, Vehicle>()
+        var findByIdForUpdateCallCount = 0
+            private set
 
         fun seed(id: Int): Vehicle {
             val vehicle =
@@ -51,6 +68,10 @@ class VehiclePingServiceITest {
             return vehicle
         }
 
+        fun seedArchived(id: Int) {
+            vehiclesById[id] = seed(id).copy(archivedAt = Instant.parse("2026-01-01T00:00:00Z"))
+        }
+
         override suspend fun create(
             companyId: Int,
             label: String,
@@ -59,6 +80,11 @@ class VehiclePingServiceITest {
         ) = error("not exercised by this test")
 
         override suspend fun findById(vehicleId: Int): Vehicle? = vehiclesById[vehicleId]
+
+        override suspend fun findByIdForUpdate(vehicleId: Int): Vehicle? {
+            findByIdForUpdateCallCount++
+            return findById(vehicleId)
+        }
 
         override suspend fun findAllByCompany(companyId: Int) = error("not exercised by this test")
 
@@ -71,6 +97,7 @@ class VehiclePingServiceITest {
             vehicleId: Int,
             licensePlate: String,
             pictureUrl: String?,
+            pictureStorageKey: String?,
         ) = error("not exercised by this test")
 
         override suspend fun archive(vehicleId: Int) = error("not exercised by this test")
@@ -78,6 +105,7 @@ class VehiclePingServiceITest {
         override suspend fun updatePictureUrl(
             vehicleId: Int,
             pictureUrl: String?,
+            pictureStorageKey: String?,
         ) = error("not exercised by this test")
     }
 
@@ -122,6 +150,10 @@ class VehiclePingServiceITest {
 
         override suspend fun endAllActiveAssignmentsForCompany(companyId: Int) = error("not exercised by this test")
 
+        override suspend fun findAllForCompany(companyId: Int) = error("not exercised by this test")
+
+        override fun notifyEndedAssignments(assignments: List<VehicleAssignment>) = Unit
+
         override suspend fun findActiveForVendor(vendorUserId: Int) = error("not exercised by this test")
 
         override suspend fun findActiveDetailsForVendor(vendorUserId: Int): ActiveVehicleAssignment? =
@@ -130,61 +162,57 @@ class VehiclePingServiceITest {
         override suspend fun findActiveForVehicle(vehicleId: Int): VehicleAssignment? = activeByVehicleId[vehicleId]
     }
 
-    /** In-memory but faithful to the real repository's contract, plus [simulateConcurrentReads]:
-     * when set, [mostRecentSentAt] always reports "nothing yet," regardless of what has actually
-     * been [create]d — simulating two requests whose reads both happened before either one's
-     * insert became visible to the other. This is exactly the accepted race documented in
-     * [VehiclePingServiceI]'s kdoc: the test below using this flag proves that race exists and
-     * behaves as documented, not that it has been eliminated. */
+    /** In-memory equivalent of the repository's cooldown query. Concurrency is verified against
+     * PostgreSQL in [VehiclePingServiceRealDatabaseTest]. */
     private class FakeVehiclePingRepository : VehiclePingRepository {
-        private val pings = mutableListOf<VehiclePing>()
-        private var nextId = 1L
-        var simulateConcurrentReads = false
+        private val pingsByBuyerAndVehicle = mutableMapOf<Pair<Int, Int>, VehiclePing>()
 
-        override suspend fun mostRecentSentAt(
+        override suspend fun lastSentAt(
             vehicleId: Int,
             buyerUserId: Int,
-        ): Instant? {
-            if (simulateConcurrentReads) return null
-            return pings
-                .filter { it.vehicleId == vehicleId && it.buyerUserId == buyerUserId }
-                .maxByOrNull { it.sentAt }
-                ?.sentAt
-        }
+        ): Instant? = pingsByBuyerAndVehicle[vehicleId to buyerUserId]?.sentAt
 
-        override suspend fun create(
+        override suspend fun recordLatest(
             vehicleId: Int,
             buyerUserId: Int,
             sentAt: Instant,
-        ): VehiclePing {
-            val ping = VehiclePing(id = nextId++, vehicleId = vehicleId, buyerUserId = buyerUserId, sentAt = sentAt)
-            pings += ping
-            return ping
-        }
+        ): VehiclePing =
+            VehiclePing(vehicleId = vehicleId, buyerUserId = buyerUserId, sentAt = sentAt).also {
+                pingsByBuyerAndVehicle[vehicleId to buyerUserId] = it
+            }
+
+        override suspend fun purgeOlderThan(cutoff: Instant): Int = error("not exercised by this test")
 
         fun seedPing(
             vehicleId: Int,
             buyerUserId: Int,
             sentAt: Instant,
         ) {
-            pings += VehiclePing(id = nextId++, vehicleId = vehicleId, buyerUserId = buyerUserId, sentAt = sentAt)
+            val ping = VehiclePing(vehicleId = vehicleId, buyerUserId = buyerUserId, sentAt = sentAt)
+            pingsByBuyerAndVehicle[vehicleId to buyerUserId] = ping
         }
     }
 
     private class FakeVehiclePingHub : VehiclePingHub {
         val publishedTo = mutableListOf<Pair<Int, VehiclePingNotification>>()
+        var publishFailure: Throwable? = null
 
         override fun publish(
             vendorUserId: Int,
             notification: VehiclePingNotification,
         ) {
+            publishFailure?.let { throw it }
             publishedTo += vendorUserId to notification
         }
 
         override fun subscribe(vendorUserId: Int) = error("not exercised by this test")
     }
 
-    private class Fixture {
+    private class Fixture(
+        tx: TransactionalRunner = NoopTransactionalRunner(),
+        clock: Clock = Clock.systemUTC(),
+        installationServiceOverride: DeviceInstallationService? = null,
+    ) {
         val vehicleRepository = FakeVehicleRepository()
         val assignmentService = FakeVehicleAssignmentService()
         val pingRepository = FakeVehiclePingRepository()
@@ -192,7 +220,8 @@ class VehiclePingServiceITest {
         val deviceInstallationRepository = FakeDeviceInstallationRepository()
         val pushSender = FakePushNotificationSender()
         val deviceInstallationService =
-            DeviceInstallationServiceI(deviceInstallationRepository, NoopTransactionalRunner(), pushSender)
+            installationServiceOverride
+                ?: DeviceInstallationServiceI(deviceInstallationRepository, NoopTransactionalRunner(), pushSender)
         val cellIndexer = H3CellIndexer(resolution = PING_LOCATION_RESOLUTION)
         val service =
             VehiclePingServiceI(
@@ -202,7 +231,8 @@ class VehiclePingServiceITest {
                 pingHub = hub,
                 deviceInstallationService = deviceInstallationService,
                 cellIndexer = cellIndexer,
-                tx = NoopTransactionalRunner(),
+                tx = tx,
+                clock = clock,
             )
 
         /** Every test that doesn't care about the coarsening itself pings from this fixed,
@@ -212,7 +242,16 @@ class VehiclePingServiceITest {
             vehicleId: Int,
             latitude: Double = BUYER_LATITUDE,
             longitude: Double = BUYER_LONGITUDE,
-        ) = service.ping(buyerUserId, vehicleId, latitude, longitude)
+        ): AppResult<VehiclePing, PingError> =
+            service
+                .ping(buyerUserId, vehicleId, latitude, longitude)
+                .fold(
+                    onSuccess = { outcome ->
+                        service.dispatchPing(outcome)
+                        AppResult.Success(outcome.ping)
+                    },
+                    onError = { AppResult.Error(it) },
+                )
     }
 
     @Test
@@ -361,19 +400,77 @@ class VehiclePingServiceITest {
     }
 
     @Test
-    fun `REGRESSION two concurrent pings that both read no prior ping both succeed (the accepted race)`() {
+    fun `a ping exactly at the cooldown cutoff is allowed`() {
+        runBlocking {
+            val now = Instant.now().plusSeconds(60).truncatedTo(ChronoUnit.MICROS)
+            val fx = Fixture(clock = Clock.fixed(now, ZoneOffset.UTC))
+            fx.vehicleRepository.seed(10)
+            fx.assignmentService.seedActive(vehicleId = 10, vendorUserId = 500)
+            fx.pingRepository.seedPing(
+                vehicleId = 10,
+                buyerUserId = 1,
+                sentAt = now.minus(PING_COOLDOWN.toJavaDuration()),
+            )
+
+            fx.ping(buyerUserId = 1, vehicleId = 10).fold(
+                onSuccess = {},
+                onError = { fail("the exact cooldown boundary should be allowed: $it") },
+            )
+        }
+    }
+
+    @Test
+    fun `exact geographic coordinate boundaries can be coarsened and pinged`() {
         runBlocking {
             val fx = Fixture()
             fx.vehicleRepository.seed(10)
             fx.assignmentService.seedActive(vehicleId = 10, vendorUserId = 500)
-            fx.pingRepository.simulateConcurrentReads = true
 
-            val first = fx.ping(buyerUserId = 1, vehicleId = 10)
-            val second = fx.ping(buyerUserId = 1, vehicleId = 10)
+            val result =
+                fx.ping(
+                    buyerUserId = 1,
+                    vehicleId = 10,
+                    latitude = 90.0,
+                    longitude = 180.0,
+                )
 
-            first.fold(onSuccess = {}, onError = { fail("expected success but got $it") })
-            second.fold(onSuccess = {}, onError = { fail("expected success but got $it") })
-            assertEquals(2, fx.hub.publishedTo.size, "this documents the accepted race, not a bug to fix")
+            result.fold(
+                onSuccess = {},
+                onError = { fail("valid coordinate boundaries should be accepted: $it") },
+            )
+            assertEquals(1, fx.hub.publishedTo.size)
+        }
+    }
+
+    @Test
+    fun `an archived vehicle is rejected even if a stale active assignment row exists`() {
+        runBlocking {
+            val fx = Fixture()
+            fx.vehicleRepository.seedArchived(10)
+            fx.assignmentService.seedActive(vehicleId = 10, vendorUserId = 500)
+
+            val result = fx.ping(buyerUserId = 1, vehicleId = 10)
+
+            result.fold(
+                onSuccess = { fail("an archived vehicle must not accept pings") },
+                onError = { assertEquals(PingError.VEHICLE_NOT_ACTIVE, it) },
+            )
+            assertTrue(fx.hub.publishedTo.isEmpty())
+        }
+    }
+
+    @Test
+    fun `a transaction commit failure never publishes a transient ping`() {
+        runBlocking {
+            val fx = Fixture(tx = CommitFailingTransactionalRunner())
+            fx.vehicleRepository.seed(10)
+            fx.assignmentService.seedActive(vehicleId = 10, vendorUserId = 500)
+
+            assertFailsWith<IllegalStateException> {
+                fx.ping(buyerUserId = 1, vehicleId = 10)
+            }
+
+            assertTrue(fx.hub.publishedTo.isEmpty())
         }
     }
 
@@ -395,6 +492,56 @@ class VehiclePingServiceITest {
                     .map { it.installationId }
                     .toSet(),
             )
+        }
+    }
+
+    @Test
+    fun `a post-commit device lookup failure is logged but does not fail the accepted ping`() {
+        runBlocking {
+            val failingRepository =
+                object : DeviceInstallationRepository by FakeDeviceInstallationRepository() {
+                    override suspend fun findAllForUser(userId: Int): List<DeviceInstallation> =
+                        throw IOException("simulated device installation lookup failure")
+                }
+            val installationService =
+                DeviceInstallationServiceI(
+                    failingRepository,
+                    NoopTransactionalRunner(),
+                    FakePushNotificationSender(),
+                )
+            val fx = Fixture(installationServiceOverride = installationService)
+            fx.vehicleRepository.seed(10)
+            fx.assignmentService.seedActive(vehicleId = 10, vendorUserId = 500)
+
+            val result = fx.ping(buyerUserId = 1, vehicleId = 10)
+
+            result.fold(onSuccess = {}, onError = { fail("the committed ping should remain accepted: $it") })
+            assertNotNull(fx.pingRepository.lastSentAt(vehicleId = 10, buyerUserId = 1))
+            assertEquals(1, fx.hub.publishedTo.size)
+        }
+    }
+
+    @Test
+    fun `a live-hub failure does not prevent push fallback or fail the accepted ping`() {
+        runBlocking {
+            val fx = Fixture()
+            fx.vehicleRepository.seed(10)
+            fx.assignmentService.seedActive(vehicleId = 10, vendorUserId = 500)
+            fx.deviceInstallationRepository.seed(userId = 500, installationId = "device-a")
+            fx.hub.publishFailure = IllegalStateException("simulated live hub failure")
+
+            val result = fx.ping(buyerUserId = 1, vehicleId = 10)
+
+            result.fold(onSuccess = {}, onError = { fail("the committed ping should remain accepted: $it") })
+            assertNotNull(fx.pingRepository.lastSentAt(vehicleId = 10, buyerUserId = 1))
+            assertEquals(1, fx.pushSender.sent.size, "push remains the fallback when the live hub fails")
+        }
+    }
+
+    private class CommitFailingTransactionalRunner : TransactionalRunner {
+        override suspend fun <T> transactional(block: suspend () -> T): T {
+            block()
+            error("synthetic commit failure")
         }
     }
 

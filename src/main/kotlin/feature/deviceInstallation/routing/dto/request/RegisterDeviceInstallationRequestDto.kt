@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.deviceInstallation.routing.dto.request
 
 import com.mozgobolt.core.domain.validation.ValidatedRequest
@@ -12,13 +16,14 @@ data class RegisterDeviceInstallationRequestDto(
 ) : ValidatedRequest {
     override fun validate() =
         buildList {
+            val supportedPlatforms = DevicePlatform.entries.joinToString { it.name }
             val maxLength = DeviceInstallationConstraints.INSTALLATION_ID_MAX_LENGTH
             if (installationId.isBlank()) add("Installation id is required")
             if (installationId.length > maxLength) {
                 add("Installation id must be $maxLength characters or less")
             }
             if (DevicePlatform.entries.none { it.name == platform }) {
-                add("Platform must be one of ${DevicePlatform.entries.joinToString { it.name }}")
+                add("Platform must be one of $supportedPlatforms")
             }
         }
 }

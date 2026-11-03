@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.companyFavorite.data.repository
 
 import com.mozgobolt.feature.companyFavorite.data.database.CompanyFavoriteEntity
@@ -50,7 +54,7 @@ class CompanyFavoriteRepositoryI : CompanyFavoriteRepository {
             .where { CompanyFavoritesTable.companyId eq companyId }
             .map { it[CompanyFavoritesTable.userId] }
 
-    private suspend fun find(
+    private fun find(
         userId: Int,
         companyId: Int,
     ): CompanyFavorite? =

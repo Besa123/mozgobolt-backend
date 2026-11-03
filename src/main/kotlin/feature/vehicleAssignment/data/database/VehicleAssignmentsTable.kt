@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleAssignment.data.database
 
 import com.mozgobolt.feature.user.data.database.UsersTable
@@ -28,8 +32,12 @@ data object VehicleAssignmentsTable : IntIdTable("vehicle_assignments") {
             ).index()
     val startedAt = timestamp("started_at")
     val endedAt = timestamp("ended_at").nullable()
+    val locationSharingConsentedAt = timestamp("location_sharing_consented_at").nullable()
+    val lastTelemetryAt = timestamp("last_telemetry_at").nullable()
 
     init {
+        uniqueIndex(id, vehicleId)
+        uniqueIndex(id, vendorUserId)
         uniqueIndex(
             vendorUserId,
             filterCondition = { endedAt.isNull() },
@@ -54,6 +62,8 @@ class VehicleAssignmentEntity(
     var vendorUserId by VehicleAssignmentsTable.vendorUserId
     var startedAt by VehicleAssignmentsTable.startedAt
     var endedAt by VehicleAssignmentsTable.endedAt
+    var locationSharingConsentedAt by VehicleAssignmentsTable.locationSharingConsentedAt
+    var lastTelemetryAt by VehicleAssignmentsTable.lastTelemetryAt
 
     companion object : IntEntityClass<VehicleAssignmentEntity>(VehicleAssignmentsTable)
 }

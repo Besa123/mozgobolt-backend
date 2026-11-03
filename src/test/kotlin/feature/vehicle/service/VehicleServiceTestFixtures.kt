@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicle.service
 
 import com.mozgobolt.core.domain.AppResult
@@ -7,6 +11,8 @@ import com.mozgobolt.core.domain.media.SanitizedImage
 import com.mozgobolt.core.domain.security.VirusScanResult
 import com.mozgobolt.core.domain.security.VirusScanner
 import com.mozgobolt.feature.company.domain.CompanyMembershipRepository
+import com.mozgobolt.feature.company.domain.CompanyRepository
+import com.mozgobolt.feature.company.domain.model.Company
 import com.mozgobolt.feature.company.domain.model.CompanyMembership
 import com.mozgobolt.feature.company.domain.model.CompanyRole
 import com.mozgobolt.feature.sync.routing.FakeSyncService
@@ -45,6 +51,8 @@ internal class FakeVehicleRepository : VehicleRepository {
 
     override suspend fun findById(vehicleId: Int): Vehicle? = vehiclesById[vehicleId]
 
+    override suspend fun findByIdForUpdate(vehicleId: Int): Vehicle? = findById(vehicleId)
+
     override suspend fun findAllByCompany(companyId: Int): List<Vehicle> =
         vehiclesById.values.filter { it.companyId == companyId && it.archivedAt == null }
 
@@ -57,9 +65,15 @@ internal class FakeVehicleRepository : VehicleRepository {
         vehicleId: Int,
         licensePlate: String,
         pictureUrl: String?,
+        pictureStorageKey: String?,
     ): Vehicle? {
         val existing = vehiclesById[vehicleId] ?: return null
-        val updated = existing.copy(licensePlate = licensePlate, pictureUrl = pictureUrl)
+        val updated =
+            existing.copy(
+                licensePlate = licensePlate,
+                pictureUrl = pictureUrl,
+                pictureStorageKey = pictureStorageKey,
+            )
         vehiclesById[vehicleId] = updated
         return updated
     }
@@ -74,9 +88,10 @@ internal class FakeVehicleRepository : VehicleRepository {
     override suspend fun updatePictureUrl(
         vehicleId: Int,
         pictureUrl: String?,
+        pictureStorageKey: String?,
     ): Vehicle? {
         val existing = vehiclesById[vehicleId] ?: return null
-        val updated = existing.copy(pictureUrl = pictureUrl)
+        val updated = existing.copy(pictureUrl = pictureUrl, pictureStorageKey = pictureStorageKey)
         vehiclesById[vehicleId] = updated
         return updated
     }
@@ -123,23 +138,32 @@ internal class FakeCompanyMembershipRepository : CompanyMembershipRepository {
     ) = error("not exercised by this test")
 }
 
-/**
- * A vendor can only ever be force-ended one way (the real service's own admin-permission check,
- * DB end, sync, and `hub.markOffline` are all its concern, not something [VehicleServiceI] should
- * re-implement) — this fake only needs to report success/failure and count calls, so
- * [VehicleServiceI.archiveVehicle]'s own logic (skip if already archived, abort if ending fails
- * for any reason other than "nothing to end") is what's actually under test, not
- * `VehicleAssignmentServiceI` itself (already covered by its own test suite).
- */
-internal class FakeVehicleAssignmentService(
-    private var endActiveAssignmentResult: AppResult<Unit, VehicleAssignmentError> =
-        AppResult.Error(VehicleAssignmentError.NO_ACTIVE_ASSIGNMENT),
-) : VehicleAssignmentService {
-    var endActiveAssignmentCallCount = 0
+internal class FakeVehicleAssignmentService : VehicleAssignmentService {
+    private var activeAssignment: VehicleAssignment? = null
+    private var activeAssignmentCompanyId: Int? = null
+    private var failEndingActiveAssignment = false
+    val notifiedEndedAssignments = mutableListOf<VehicleAssignment>()
+
+    var endActiveAssignmentForVendorInCompanyCallCount = 0
         private set
 
-    fun setEndActiveAssignmentResult(result: AppResult<Unit, VehicleAssignmentError>) {
-        endActiveAssignmentResult = result
+    fun seedActiveAssignment(
+        companyId: Int,
+        vehicleId: Int,
+        vendorUserId: Int,
+    ) {
+        activeAssignment =
+            VehicleAssignment(
+                id = 1,
+                vehicleId = vehicleId,
+                vendorUserId = vendorUserId,
+                startedAt = Instant.now(),
+            )
+        activeAssignmentCompanyId = companyId
+    }
+
+    fun failEndingActiveAssignment() {
+        failEndingActiveAssignment = true
     }
 
     override suspend fun link(
@@ -155,41 +179,88 @@ internal class FakeVehicleAssignmentService(
     override suspend fun endActiveAssignment(
         adminUserId: Int,
         vehicleId: Int,
-    ): AppResult<Unit, VehicleAssignmentError> {
-        endActiveAssignmentCallCount++
-        return endActiveAssignmentResult
-    }
+    ): AppResult<Unit, VehicleAssignmentError> = error("not exercised by this test")
 
     override suspend fun endActiveAssignmentForVendorInCompany(
         vendorUserId: Int,
         companyId: Int,
-    ) = error("not exercised by this test")
+    ): VehicleAssignment? {
+        endActiveAssignmentForVendorInCompanyCallCount++
+        val active = activeAssignment?.takeIf { it.vendorUserId == vendorUserId } ?: return null
+        if (activeAssignmentCompanyId != companyId || failEndingActiveAssignment) return null
+
+        activeAssignment = null
+        activeAssignmentCompanyId = null
+        return active
+    }
 
     override suspend fun endAllActiveAssignmentsForCompany(companyId: Int) = error("not exercised by this test")
 
+    override suspend fun findAllForCompany(companyId: Int) = error("not exercised by this test")
+
+    override fun notifyEndedAssignments(assignments: List<VehicleAssignment>) {
+        notifiedEndedAssignments += assignments
+    }
+
     override suspend fun findActiveForVendor(vendorUserId: Int): VehicleAssignment? =
-        error("not exercised by this test")
+        activeAssignment?.takeIf { it.vendorUserId == vendorUserId }
 
     override suspend fun findActiveDetailsForVendor(vendorUserId: Int): ActiveVehicleAssignment? =
         error("not exercised by this test")
 
-    override suspend fun findActiveForVehicle(vehicleId: Int): VehicleAssignment? = error("not exercised by this test")
+    override suspend fun findActiveForVehicle(vehicleId: Int): VehicleAssignment? =
+        activeAssignment?.takeIf { it.vehicleId == vehicleId }
+}
+
+internal class FakeVehicleCompanyRepository : CompanyRepository {
+    override suspend fun create(
+        name: String,
+        inviteCode: String,
+    ): Company = error("not exercised by this test")
+
+    override suspend fun findByInviteCode(inviteCode: String): Company? = error("not exercised by this test")
+
+    override suspend fun findById(companyId: Int): Company = fakeCompany(companyId)
+
+    override suspend fun findByIdForUpdate(companyId: Int): Company = fakeCompany(companyId)
+
+    override suspend fun rename(
+        companyId: Int,
+        newName: String,
+    ): Company? = error("not exercised by this test")
+
+    override suspend fun updateInviteCode(
+        companyId: Int,
+        newInviteCode: String,
+    ): Company? = error("not exercised by this test")
+
+    override suspend fun delete(companyId: Int): Boolean = error("not exercised by this test")
+
+    private fun fakeCompany(companyId: Int) =
+        Company(
+            id = companyId,
+            name = "Company $companyId",
+            inviteCode = "INVITE-$companyId",
+            createdAt = Instant.EPOCH,
+        )
 }
 
 /** One fixture class, plain properties, no destructuring — mirrors CompanyServiceTestFixtures'
  * CompanyServiceFixture shape rather than a positional tuple, so adding a new fake later never
  * breaks an existing test's destructuring arity. */
 internal data class VehicleServiceFixture(
+    val companyRepository: FakeVehicleCompanyRepository = FakeVehicleCompanyRepository(),
     val membershipRepository: FakeCompanyMembershipRepository = FakeCompanyMembershipRepository(),
     val vehicleRepository: FakeVehicleRepository = FakeVehicleRepository(),
     val vehicleAssignmentService: FakeVehicleAssignmentService = FakeVehicleAssignmentService(),
     val syncService: FakeSyncService = FakeSyncService(),
-    val imageSanitizer: FakeImageSanitizer = FakeImageSanitizer(),
+    val imageSanitizer: ImageSanitizer = FakeImageSanitizer(),
     val virusScanner: FakeVirusScanner = FakeVirusScanner(),
-    val imageStorage: FakeImageStorage = FakeImageStorage(),
+    val imageStorage: ImageStorage = FakeImageStorage(),
 ) {
     val service =
         VehicleServiceI(
+            companyRepository = companyRepository,
             vehicleRepository = vehicleRepository,
             membershipRepository = membershipRepository,
             vehicleAssignmentService = vehicleAssignmentService,

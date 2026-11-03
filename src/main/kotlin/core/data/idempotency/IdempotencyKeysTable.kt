@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.idempotency
 
 import org.jetbrains.exposed.v1.core.Table

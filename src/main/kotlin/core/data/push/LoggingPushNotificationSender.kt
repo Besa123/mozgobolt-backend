@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.push
 
 import com.mozgobolt.core.domain.push.PUSH_DATA_KEY_TYPE

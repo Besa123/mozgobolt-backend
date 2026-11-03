@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.security
 
 import com.auth0.jwt.JWT
@@ -21,12 +25,13 @@ class JwtTokenManagerTest {
 
     @Test
     fun `an access token verifies and carries the correct user id and role`() {
-        val token = manager.generateAccessToken(userId = 42, role = "VENDOR")
+        val token = manager.generateAccessToken(userId = 42, role = "VENDOR", familyId = "family-42")
 
         val decoded = manager.accessTokenVerifier.verify(token)
 
         assertEquals(42, decoded.getClaim(AuthConstants.CLAIM_USER_ID).asInt())
         assertEquals("VENDOR", decoded.getClaim(AuthConstants.CLAIM_USER_ROLE).asString())
+        assertEquals("family-42", decoded.getClaim(AuthConstants.CLAIM_TOKEN_FAMILY_ID).asString())
         assertEquals(AuthConstants.TOKEN_TYPE_ACCESS, decoded.getClaim(AuthConstants.CLAIM_TOKEN_TYPE).asString())
     }
 
@@ -38,8 +43,17 @@ class JwtTokenManagerTest {
     }
 
     @Test
+    fun `a rotated refresh token cannot outlive its original family expiry`() {
+        val familyExpiresAt = Instant.now().plus(5, ChronoUnit.MINUTES).truncatedTo(ChronoUnit.SECONDS)
+
+        val token = manager.generateRefreshToken(userId = 7, familyExpiresAt = familyExpiresAt)
+
+        assertEquals(familyExpiresAt, JWT.decode(token).expiresAt.toInstant())
+    }
+
+    @Test
     fun `an access token is not accepted where a refresh token is expected`() {
-        val accessToken = manager.generateAccessToken(userId = 1, role = "BUYER")
+        val accessToken = manager.generateAccessToken(userId = 1, role = "BUYER", familyId = "family-1")
 
         assertNull(manager.verifyAndGetUserIdFromRefreshToken(accessToken))
     }

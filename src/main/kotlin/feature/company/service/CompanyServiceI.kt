@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.company.service
 
 import com.mozgobolt.core.database.TransactionalRunner
@@ -14,17 +18,20 @@ import com.mozgobolt.feature.company.domain.model.CompanyMemberSummary
 import com.mozgobolt.feature.company.domain.model.CompanyMembershipSummary
 import com.mozgobolt.feature.company.domain.model.CompanyRole
 import com.mozgobolt.feature.company.domain.requireAdminMembership
+import com.mozgobolt.feature.companyFavorite.domain.CompanyFavoriteRepository
 import com.mozgobolt.feature.sync.domain.SyncService
+import com.mozgobolt.feature.sync.domain.model.SyncChange
 import com.mozgobolt.feature.sync.domain.model.SyncEntityType
 import com.mozgobolt.feature.sync.domain.model.SyncOperation
 import com.mozgobolt.feature.vehicleAssignment.domain.VehicleAssignmentService
+import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignment
 
-/** Below (not equal to) this many admins, removing/demoting one more would leave zero. */
 private const val MIN_ADMINS_BEFORE_REMOVING_ONE_MORE = 2
 
 class CompanyServiceI(
     private val companyRepository: CompanyRepository,
     private val membershipRepository: CompanyMembershipRepository,
+    private val companyFavoriteRepository: CompanyFavoriteRepository,
     private val vehicleAssignmentService: VehicleAssignmentService,
     private val syncService: SyncService,
     private val tx: TransactionalRunner,
@@ -46,12 +53,17 @@ class CompanyServiceI(
             // collide with a concurrent one.
             membershipRepository.addIfAbsent(company.id, creatorUserId, CompanyRole.ADMIN)
 
-            syncService.recordChange(creatorUserId, SyncEntityType.COMPANY, company.id, SyncOperation.UPSERT)
             syncService.recordChange(
-                creatorUserId,
-                SyncEntityType.COMPANY_MEMBERSHIP,
-                company.id,
-                SyncOperation.UPSERT,
+                userId = creatorUserId,
+                entityType = SyncEntityType.COMPANY,
+                entityId = company.id,
+                operation = SyncOperation.UPSERT,
+            )
+            syncService.recordChange(
+                userId = creatorUserId,
+                entityType = SyncEntityType.COMPANY_MEMBERSHIP,
+                entityId = company.id,
+                operation = SyncOperation.UPSERT,
             )
 
             AppResult.Success(company)
@@ -64,17 +76,33 @@ class CompanyServiceI(
         inviteCode: String,
     ): AppResult<Company, CompanyError> =
         tx.transactional {
-            val company =
+            val companyFoundByInviteCode =
                 companyRepository.findByInviteCode(inviteCode)
+                    ?: return@transactional AppResult.Error(CompanyError.INVALID_INVITE_CODE)
+            val company =
+                companyRepository
+                    .findByIdForUpdate(companyFoundByInviteCode.id)
+                    ?.takeIf { it.inviteCode == inviteCode }
                     ?: return@transactional AppResult.Error(CompanyError.INVALID_INVITE_CODE)
 
             // insertIgnore-backed: the actual guard against a double-submitted join racing itself
-            // is the DB's UNIQUE(company_id, user_id) index, not this call alone.
+            // is the DB's UNIQUE(company_id, user_id) index. The company-row lock serializes this
+            // use with invite-code rotation, and the code is rechecked after acquiring that lock.
             membershipRepository.addIfAbsent(company.id, userId, CompanyRole.MEMBER)
                 ?: return@transactional AppResult.Error(CompanyError.ALREADY_MEMBER)
 
-            syncService.recordChange(userId, SyncEntityType.COMPANY, company.id, SyncOperation.UPSERT)
-            syncService.recordChange(userId, SyncEntityType.COMPANY_MEMBERSHIP, company.id, SyncOperation.UPSERT)
+            syncService.recordChange(
+                userId = userId,
+                entityType = SyncEntityType.COMPANY,
+                entityId = company.id,
+                operation = SyncOperation.UPSERT,
+            )
+            syncService.recordChange(
+                userId = userId,
+                entityType = SyncEntityType.COMPANY_MEMBERSHIP,
+                entityId = company.id,
+                operation = SyncOperation.UPSERT,
+            )
 
             AppResult.Success(company)
         }
@@ -88,12 +116,18 @@ class CompanyServiceI(
         val trimmedName = newName.trim()
 
         return tx.transactional {
+            companyRepository.findByIdForUpdate(companyId)
             requireAdmin(adminUserId, companyId)?.let { return@transactional it }
 
             val renamed =
                 companyRepository.rename(companyId, trimmedName)
                     ?: return@transactional AppResult.Error(CompanyError.COMPANY_NOT_FOUND)
-            syncService.recordChange(adminUserId, SyncEntityType.COMPANY, companyId, SyncOperation.UPSERT)
+            syncService.recordChange(
+                userId = adminUserId,
+                entityType = SyncEntityType.COMPANY,
+                entityId = companyId,
+                operation = SyncOperation.UPSERT,
+            )
 
             AppResult.Success(renamed)
         }
@@ -103,34 +137,92 @@ class CompanyServiceI(
     override suspend fun deleteCompany(
         adminUserId: Int,
         companyId: Int,
-    ): AppResult<Unit, CompanyError> =
-        tx.transactional {
-            requireAdmin(adminUserId, companyId)?.let { return@transactional it }
+    ): AppResult<Unit, CompanyError> {
+        val (result, endedAssignments) =
+            tx.transactional {
+                requireAdmin(adminUserId, companyId)?.let {
+                    return@transactional it to emptyList<VehicleAssignment>()
+                }
+                if (companyRepository.findByIdForUpdate(companyId) == null) {
+                    return@transactional AppResult.Error(CompanyError.COMPANY_NOT_FOUND) to
+                        emptyList<VehicleAssignment>()
+                }
+                requireAdmin(adminUserId, companyId)?.let {
+                    return@transactional it to emptyList<VehicleAssignment>()
+                }
 
-            val memberUserIds = membershipRepository.findAllForCompany(companyId).map { it.userId }
+                val favoriteUserIds = companyFavoriteRepository.findUserIdsFavoritingCompany(companyId).toSet()
+                val memberUserIds = membershipRepository.findAllForCompany(companyId).map { it.userId }.toSet()
+                val companyAssignments = vehicleAssignmentService.findAllForCompany(companyId)
 
-            // Must happen before the delete below: once the DB cascades vehicles away, there's
-            // nothing left to look up an active assignment's vehicle against, and any vehicle
-            // that was actively being driven would otherwise stay stuck on the live map forever.
-            vehicleAssignmentService.endAllActiveAssignmentsForCompany(companyId)
+                // End active sessions before the vehicle/assignment cascade removes the rows needed
+                // to identify their live-map entries. The actual hub notification waits until commit.
+                val endedAssignments = vehicleAssignmentService.endAllActiveAssignmentsForCompany(companyId)
 
-            // Flyway V1 cascades company memberships, vehicles, assignments, locations, favorites,
-            // and pings; nothing else needs relational cleanup here.
-            if (!companyRepository.delete(companyId)) {
-                return@transactional AppResult.Error(CompanyError.COMPANY_NOT_FOUND)
+                // Flyway V1 cascades company memberships, vehicles, assignments, locations, favorites,
+                // and pings. Every assignment row is synced independently, including ended shifts
+                // owned by vendors who have since left this company.
+                check(companyRepository.delete(companyId)) {
+                    "Company disappeared after its row was locked"
+                }
+                val assignmentsByVendor = companyAssignments.groupBy { it.vendorUserId }
+                val affectedUserIds =
+                    (assignmentsByVendor.keys + favoriteUserIds + memberUserIds).sorted()
+
+                val syncChanges =
+                    buildList {
+                        affectedUserIds.forEach { userId ->
+                            assignmentsByVendor[userId]
+                                .orEmpty()
+                                .sortedBy(VehicleAssignment::id)
+                                .forEach { assignment ->
+                                    add(
+                                        SyncChange(
+                                            userId = userId,
+                                            entityType = SyncEntityType.VEHICLE_ASSIGNMENT,
+                                            entityId = assignment.id,
+                                            operation = SyncOperation.DELETE,
+                                        ),
+                                    )
+                                }
+                            if (userId in favoriteUserIds) {
+                                add(
+                                    SyncChange(
+                                        userId = userId,
+                                        entityType = SyncEntityType.COMPANY_FAVORITE,
+                                        entityId = companyId,
+                                        operation = SyncOperation.DELETE,
+                                    ),
+                                )
+                            }
+                            if (userId in memberUserIds) {
+                                add(
+                                    SyncChange(
+                                        userId = userId,
+                                        entityType = SyncEntityType.COMPANY,
+                                        entityId = companyId,
+                                        operation = SyncOperation.DELETE,
+                                    ),
+                                )
+                                add(
+                                    SyncChange(
+                                        userId = userId,
+                                        entityType = SyncEntityType.COMPANY_MEMBERSHIP,
+                                        entityId = companyId,
+                                        operation = SyncOperation.DELETE,
+                                    ),
+                                )
+                            }
+                        }
+                    }
+                syncService.recordChanges(syncChanges)
+
+                AppResult.Success(Unit) to endedAssignments
             }
-            memberUserIds.forEach { memberUserId ->
-                syncService.recordChange(memberUserId, SyncEntityType.COMPANY, companyId, SyncOperation.DELETE)
-                syncService.recordChange(
-                    memberUserId,
-                    SyncEntityType.COMPANY_MEMBERSHIP,
-                    companyId,
-                    SyncOperation.DELETE,
-                )
-            }
 
-            AppResult.Success(Unit)
-        }
+        if (result is AppResult.Success) vehicleAssignmentService.notifyEndedAssignments(endedAssignments)
+        return result
+    }
 
     @Suppress("ReturnCount")
     override suspend fun regenerateInviteCode(
@@ -138,6 +230,7 @@ class CompanyServiceI(
         companyId: Int,
     ): AppResult<Company, CompanyError> =
         tx.transactional {
+            companyRepository.findByIdForUpdate(companyId)
             requireAdmin(adminUserId, companyId)?.let { return@transactional it }
 
             val updated =
@@ -145,9 +238,27 @@ class CompanyServiceI(
                     companyId,
                     SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
                 ) ?: return@transactional AppResult.Error(CompanyError.COMPANY_NOT_FOUND)
-            syncService.recordChange(adminUserId, SyncEntityType.COMPANY, companyId, SyncOperation.UPSERT)
+            syncService.recordChange(
+                userId = adminUserId,
+                entityType = SyncEntityType.COMPANY,
+                entityId = companyId,
+                operation = SyncOperation.UPSERT,
+            )
 
             AppResult.Success(updated)
+        }
+
+    override suspend fun getCurrentInviteCode(
+        adminUserId: Int,
+        companyId: Int,
+    ): AppResult<String, CompanyError> =
+        tx.transactional {
+            val company =
+                companyRepository.findByIdForUpdate(companyId)
+                    ?: return@transactional AppResult.Error(CompanyError.COMPANY_NOT_FOUND)
+            requireAdmin(adminUserId, companyId)?.let { return@transactional it }
+
+            AppResult.Success(company.inviteCode)
         }
 
     @Suppress("ReturnCount")
@@ -171,13 +282,25 @@ class CompanyServiceI(
         adminUserId: Int,
         companyId: Int,
         targetUserId: Int,
-    ): AppResult<Unit, CompanyError> = changeRole(adminUserId, companyId, targetUserId, CompanyRole.ADMIN)
+    ): AppResult<Unit, CompanyError> =
+        changeRole(
+            adminUserId = adminUserId,
+            companyId = companyId,
+            targetUserId = targetUserId,
+            newRole = CompanyRole.ADMIN,
+        )
 
     override suspend fun demoteMember(
         adminUserId: Int,
         companyId: Int,
         targetUserId: Int,
-    ): AppResult<Unit, CompanyError> = changeRole(adminUserId, companyId, targetUserId, CompanyRole.MEMBER)
+    ): AppResult<Unit, CompanyError> =
+        changeRole(
+            adminUserId = adminUserId,
+            companyId = companyId,
+            targetUserId = targetUserId,
+            newRole = CompanyRole.MEMBER,
+        )
 
     @Suppress("ReturnCount")
     private suspend fun changeRole(
@@ -187,6 +310,7 @@ class CompanyServiceI(
         newRole: CompanyRole,
     ): AppResult<Unit, CompanyError> =
         tx.transactional {
+            companyRepository.findByIdForUpdate(companyId)
             requireAdmin(adminUserId, companyId)?.let { return@transactional it }
 
             val target =
@@ -199,7 +323,12 @@ class CompanyServiceI(
             }
 
             membershipRepository.updateRole(companyId, targetUserId, newRole)
-            syncService.recordChange(targetUserId, SyncEntityType.COMPANY_MEMBERSHIP, companyId, SyncOperation.UPSERT)
+            syncService.recordChange(
+                userId = targetUserId,
+                entityType = SyncEntityType.COMPANY_MEMBERSHIP,
+                entityId = companyId,
+                operation = SyncOperation.UPSERT,
+            )
 
             AppResult.Success(Unit)
         }
@@ -220,36 +349,73 @@ class CompanyServiceI(
      * — the last-admin guard and the auto-end-active-session behavior apply identically either
      * way; only the caller-is-admin check differs.
      */
-    @Suppress("ReturnCount")
+    @Suppress("CommentOverPrivateFunction", "ReturnCount")
     private suspend fun removeMembership(
         companyId: Int,
         targetUserId: Int,
         requireAdminUserId: Int?,
-    ): AppResult<Unit, CompanyError> =
-        tx.transactional {
-            if (requireAdminUserId != null) {
-                requireAdmin(requireAdminUserId, companyId)?.let { return@transactional it }
+    ): AppResult<Unit, CompanyError> {
+        val (result, endedAssignment) =
+            tx.transactional {
+                companyRepository.findByIdForUpdate(companyId)
+
+                if (requireAdminUserId != null) {
+                    requireAdmin(requireAdminUserId, companyId)?.let {
+                        return@transactional it to null
+                    }
+                }
+
+                val target =
+                    membershipRepository.find(companyId, targetUserId)
+                        ?: return@transactional AppResult.Error(CompanyError.TARGET_NOT_A_MEMBER) to null
+
+                if (target.role == CompanyRole.ADMIN) {
+                    requireNotLastAdmin(companyId)?.let {
+                        return@transactional it to null
+                    }
+                }
+
+                // The assignment service mutates durable state and returns the ended row, but
+                // live-map notification is deferred until this owning transaction commits.
+                val endedAssignment =
+                    vehicleAssignmentService.endActiveAssignmentForVendorInCompany(targetUserId, companyId)
+
+                membershipRepository.remove(companyId, targetUserId)
+                val syncChanges =
+                    buildList {
+                        endedAssignment?.let { assignment ->
+                            add(
+                                SyncChange(
+                                    userId = targetUserId,
+                                    entityType = SyncEntityType.VEHICLE_ASSIGNMENT,
+                                    entityId = assignment.id,
+                                    operation = SyncOperation.UPSERT,
+                                ),
+                            )
+                        }
+                        add(
+                            SyncChange(
+                                userId = targetUserId,
+                                entityType = SyncEntityType.COMPANY_MEMBERSHIP,
+                                entityId = companyId,
+                                operation = SyncOperation.DELETE,
+                            ),
+                        )
+                    }
+                syncService.recordChanges(syncChanges)
+
+                AppResult.Success(Unit) to endedAssignment
             }
 
-            val target =
-                membershipRepository.find(companyId, targetUserId)
-                    ?: return@transactional AppResult.Error(CompanyError.TARGET_NOT_A_MEMBER)
-
-            if (target.role == CompanyRole.ADMIN) {
-                requireNotLastAdmin(companyId)?.let { return@transactional it }
+        if (result is AppResult.Success) {
+            endedAssignment?.let {
+                vehicleAssignmentService.notifyEndedAssignments(
+                    listOf(it),
+                )
             }
-
-            // Ends the target's active assignment if (and only if) it's for one of *this*
-            // company's vehicles — delegated to VehicleAssignmentService rather than touched
-            // here directly, so this always goes through the one place that also clears the
-            // vehicle from the live map (see VehicleAssignmentServiceI.endAssignmentAndNotify).
-            vehicleAssignmentService.endActiveAssignmentForVendorInCompany(targetUserId, companyId)
-
-            membershipRepository.remove(companyId, targetUserId)
-            syncService.recordChange(targetUserId, SyncEntityType.COMPANY_MEMBERSHIP, companyId, SyncOperation.DELETE)
-
-            AppResult.Success(Unit)
         }
+        return result
+    }
 
     private suspend fun requireAdmin(
         userId: Int,
@@ -262,15 +428,11 @@ class CompanyServiceI(
         }
 
     /**
-     * Rejects an admin-count-reducing action if the company currently has fewer than
-     * [MIN_ADMINS_BEFORE_REMOVING_ONE_MORE] admins. This is a plain read-then-check inside the
-     * same transaction, not a row-locked one — two concurrent demotes of two *different* admins on
-     * a two-admin company could theoretically both pass this check before either commits and leave
-     * zero admins. Accepted: this is a narrow, low-probability race for a small-scale app (the same
-     * risk tolerance already agreed for this project elsewhere, e.g. the orphaned-company-row case
-     * in the old create/join race), not worth a locking- or trigger-based guard that would be
-     * genuine over-engineering for the actual threat here.
+     * Rejects an admin-count-reducing action if fewer than two admins currently exist. Callers
+     * hold the company's row lock for this transaction so concurrent membership mutations see
+     * the committed admin count before deciding.
      */
+    @Suppress("CommentOverPrivateFunction")
     private suspend fun requireNotLastAdmin(companyId: Int): AppResult.Error<CompanyError>? =
         AppResult.Error(CompanyError.LAST_ADMIN).takeIf {
             membershipRepository.countAdmins(companyId) < MIN_ADMINS_BEFORE_REMOVING_ONE_MORE

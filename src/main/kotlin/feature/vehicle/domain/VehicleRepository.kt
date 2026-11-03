@@ -1,7 +1,12 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicle.domain
 
 import com.mozgobolt.feature.vehicle.domain.model.Vehicle
 
+/** Persistence operations for vehicle records and their archival state. */
 interface VehicleRepository {
     /**
      * `null` means a concurrent request already took this exact (companyId, licensePlate) pair
@@ -17,10 +22,20 @@ interface VehicleRepository {
         pictureUrl: String? = null,
     ): Vehicle?
 
+    /** Finds a vehicle by its identifier. */
     suspend fun findById(vehicleId: Int): Vehicle?
 
+    /**
+     * Reads a fresh vehicle snapshot while locking its row for the caller's transaction.
+     * Use after locking the owning company row when a vehicle state change must serialize with
+     * company membership, assignment, or deletion operations.
+     */
+    suspend fun findByIdForUpdate(vehicleId: Int): Vehicle?
+
+    /** Lists the vehicles associated with a company. */
     suspend fun findAllByCompany(companyId: Int): List<Vehicle>
 
+    /** Finds a vehicle by its company and license plate. */
     suspend fun findByCompanyAndPlate(
         companyId: Int,
         licensePlate: String,
@@ -32,6 +47,7 @@ interface VehicleRepository {
         vehicleId: Int,
         licensePlate: String,
         pictureUrl: String?,
+        pictureStorageKey: String? = null,
     ): Vehicle?
 
     /**
@@ -47,5 +63,6 @@ interface VehicleRepository {
     suspend fun updatePictureUrl(
         vehicleId: Int,
         pictureUrl: String?,
+        pictureStorageKey: String? = null,
     ): Vehicle?
 }

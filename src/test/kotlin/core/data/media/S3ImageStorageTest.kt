@@ -1,8 +1,12 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.media
 
 import com.mozgobolt.core.modules.AppConfig
-import com.mozgobolt.core.modules.plugin.ResiliencePolicy
-import com.mozgobolt.core.modules.plugin.ResilienceRegistry
+import com.mozgobolt.core.resilience.ExternalServiceResiliencePolicies
+import com.mozgobolt.core.resilience.ResiliencePolicy
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import kotlinx.coroutines.runBlocking
 import software.amazon.awssdk.core.ResponseInputStream
@@ -15,6 +19,7 @@ import software.amazon.awssdk.services.s3.model.GetObjectResponse
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.model.PutObjectResponse
+import software.amazon.awssdk.services.s3.model.S3Error
 import java.io.ByteArrayInputStream
 import java.net.ServerSocket
 import kotlin.system.measureTimeMillis
@@ -24,13 +29,16 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class S3ImageStorageTest {
-    private fun freshResilience(): ResiliencePolicy =
-        ResiliencePolicy(CircuitBreaker.of("test-s3-breaker", ResilienceRegistry.s3CircuitBreaker.circuitBreakerConfig))
+    private fun freshResilience(): ResiliencePolicy {
+        val profile = ExternalServiceResiliencePolicies.create().s3
+        return ResiliencePolicy(CircuitBreaker.of("test-s3-breaker", profile.circuitBreaker.circuitBreakerConfig))
+    }
 
     private class FakeS3Client : S3Client {
         val stored = mutableMapOf<String, ByteArray>()
         var lastPutBucket: String? = null
         var lastDeleteObjectKeys: List<String>? = null
+        var deleteErrors: List<S3Error> = emptyList()
 
         override fun serviceName(): String = "s3"
 
@@ -53,8 +61,9 @@ class S3ImageStorageTest {
         override fun deleteObjects(deleteObjectsRequest: DeleteObjectsRequest): DeleteObjectsResponse {
             val keys = deleteObjectsRequest.delete().objects().map { it.key() }
             lastDeleteObjectKeys = keys
-            keys.forEach { stored.remove(it) }
-            return DeleteObjectsResponse.builder().build()
+            val failedKeys = deleteErrors.map { it.key() }.toSet()
+            keys.filterNot { it in failedKeys }.forEach(stored::remove)
+            return DeleteObjectsResponse.builder().errors(deleteErrors).build()
         }
     }
 
@@ -105,6 +114,29 @@ class S3ImageStorageTest {
             storage.deleteBestEffort(emptyList())
 
             assertEquals(null, client.lastDeleteObjectKeys)
+        }
+    }
+
+    @Test
+    fun `deleteBestEffort observes partial failures returned by S3`() {
+        runBlocking {
+            val client =
+                FakeS3Client().apply {
+                    stored["key-1"] = byteArrayOf(1)
+                    deleteErrors =
+                        listOf(
+                            S3Error
+                                .builder()
+                                .key("key-1")
+                                .code("AccessDenied")
+                                .build(),
+                        )
+                }
+            val storage = S3ImageStorage(client, "test-bucket", freshResilience())
+
+            storage.deleteBestEffort(listOf("key-1"))
+
+            assertEquals(listOf<Byte>(1), client.stored["key-1"]?.toList())
         }
     }
 

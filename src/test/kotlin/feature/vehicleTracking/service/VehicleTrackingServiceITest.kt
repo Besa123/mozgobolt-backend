@@ -1,7 +1,12 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleTracking.service
 
 import com.mozgobolt.core.domain.AppResult
 import com.mozgobolt.feature.proximityNotification.domain.ProximityAlertService
+import com.mozgobolt.feature.user.service.NoopTransactionalRunner
 import com.mozgobolt.feature.vehicle.domain.VehicleRepository
 import com.mozgobolt.feature.vehicle.domain.model.Vehicle
 import com.mozgobolt.feature.vehicleAssignment.domain.VehicleAssignmentService
@@ -53,6 +58,39 @@ class VehicleTrackingServiceITest {
     }
 
     @Test
+    fun `telemetry rejected by the assignment heartbeat is not published or persisted`() {
+        runBlocking {
+            val hub = FakeVehicleLocationHub()
+            val buffer = FakeVehicleLocationBuffer()
+            val proximityAlertService = FakeProximityAlertService()
+            val service =
+                newService(
+                    activeAssignment = activeAssignment(vehicleId = 7),
+                    hub = hub,
+                    buffer = buffer,
+                    vehicleRepository = FakeVehicleRepository(companyIdByVehicleId = mapOf(7 to 42)),
+                    proximityAlertService = proximityAlertService,
+                    recordTelemetryResult = false,
+                )
+            val (latitude, longitude) = budapest
+
+            val result =
+                service.ingestTelemetry(
+                    vendorUserId = 1,
+                    points = listOf(point(latitude, longitude, Instant.now())),
+                )
+
+            result.fold(
+                onSuccess = { fail("expected NOT_LINKED_TO_VEHICLE but got success") },
+                onError = { assertEquals(TelemetryError.NOT_LINKED_TO_VEHICLE, it) },
+            )
+            assertTrue(hub.published.isEmpty())
+            assertTrue(buffer.enqueued.isEmpty())
+            assertTrue(proximityAlertService.evaluations.isEmpty())
+        }
+    }
+
+    @Test
     fun `a plausible point is published to the hub and enqueued for the durable history`() {
         runBlocking {
             val hub = FakeVehicleLocationHub()
@@ -73,6 +111,57 @@ class VehicleTrackingServiceITest {
             assertEquals(assignment.id, hub.published.single().assignmentId)
             assertEquals(1, buffer.enqueued.size)
             assertEquals(assignment.id, buffer.enqueued.single().assignmentId)
+        }
+    }
+
+    @Test
+    fun `points recorded before the active assignment started are dropped instead of being misattributed`() {
+        runBlocking {
+            val hub = FakeVehicleLocationHub()
+            val buffer = FakeVehicleLocationBuffer()
+            val startedAt = Instant.parse("2026-11-04T10:00:00Z")
+            val service =
+                newService(
+                    activeAssignment = activeAssignment(vehicleId = 7, startedAt = startedAt),
+                    hub = hub,
+                    buffer = buffer,
+                )
+            val (latitude, longitude) = budapest
+
+            val result =
+                service.ingestTelemetry(
+                    vendorUserId = 1,
+                    points =
+                        listOf(
+                            point(latitude, longitude, startedAt.minusSeconds(1)),
+                            point(latitude, longitude, startedAt),
+                        ),
+                )
+
+            result.fold(onSuccess = {}, onError = { fail("expected success but got $it") })
+            assertEquals(1, hub.published.size)
+            assertEquals(startedAt, hub.published.single().recordedAt)
+            assertEquals(listOf(startedAt), buffer.enqueued.map(VehicleLocationUpdate::recordedAt))
+        }
+    }
+
+    @Test
+    fun `a full history buffer drops only the history copy and still publishes live location`() {
+        runBlocking {
+            val hub = FakeVehicleLocationHub()
+            val buffer = FakeVehicleLocationBuffer(acceptEnqueues = false)
+            val service = newService(activeAssignment = activeAssignment(vehicleId = 7), hub = hub, buffer = buffer)
+            val (latitude, longitude) = budapest
+
+            val result =
+                service.ingestTelemetry(
+                    vendorUserId = 1,
+                    points = listOf(point(latitude, longitude, Instant.now())),
+                )
+
+            result.fold(onSuccess = {}, onError = { fail("expected success but got $it") })
+            assertEquals(1, hub.published.size)
+            assertTrue(buffer.enqueued.isEmpty())
         }
     }
 
@@ -129,6 +218,34 @@ class VehicleTrackingServiceITest {
             assertEquals(42, evaluation.companyId)
             assertEquals(lat, evaluation.latitude)
             assertEquals(lon, evaluation.longitude)
+        }
+    }
+
+    @Test
+    fun `a shift without customer sharing consent never emits buyer-facing alerts`() {
+        runBlocking {
+            val hub = FakeVehicleLocationHub()
+            val buffer = FakeVehicleLocationBuffer()
+            val proximityAlertService = FakeProximityAlertService()
+            val assignment =
+                activeAssignment(vehicleId = 7)
+                    .copy(locationSharingConsentedAt = null)
+            val service =
+                newService(
+                    activeAssignment = assignment,
+                    hub = hub,
+                    buffer = buffer,
+                    vehicleRepository = FakeVehicleRepository(companyIdByVehicleId = mapOf(7 to 42)),
+                    proximityAlertService = proximityAlertService,
+                )
+            val (latitude, longitude) = budapest
+
+            service
+                .ingestTelemetry(vendorUserId = 1, points = listOf(point(latitude, longitude, Instant.now())))
+                .fold(onSuccess = {}, onError = { fail("expected success but got $it") })
+
+            assertEquals(false, hub.published.single().sharesLocationWithCustomers)
+            assertTrue(proximityAlertService.evaluations.isEmpty())
         }
     }
 
@@ -216,8 +333,16 @@ class VehicleTrackingServiceITest {
         }
     }
 
-    private fun activeAssignment(vehicleId: Int) =
-        VehicleAssignment(id = 1, vehicleId = vehicleId, vendorUserId = 1, startedAt = Instant.now())
+    private fun activeAssignment(
+        vehicleId: Int,
+        startedAt: Instant = Instant.now(),
+    ) = VehicleAssignment(
+        id = 1,
+        vehicleId = vehicleId,
+        vendorUserId = 1,
+        startedAt = startedAt,
+        locationSharingConsentedAt = Instant.EPOCH,
+    )
 
     private fun newService(
         activeAssignment: VehicleAssignment?,
@@ -225,13 +350,15 @@ class VehicleTrackingServiceITest {
         buffer: VehicleLocationBuffer,
         vehicleRepository: VehicleRepository = FakeVehicleRepository(companyIdByVehicleId = emptyMap()),
         proximityAlertService: ProximityAlertService = FakeProximityAlertService(),
+        recordTelemetryResult: Boolean = true,
     ) = VehicleTrackingServiceI(
-        vehicleAssignmentService = FakeVehicleAssignmentService(activeAssignment),
+        vehicleAssignmentService = FakeVehicleAssignmentService(activeAssignment, recordTelemetryResult),
         vehicleRepository = vehicleRepository,
         cellIndexer = H3CellIndexer(),
         hub = hub,
         buffer = buffer,
         proximityAlertService = proximityAlertService,
+        tx = NoopTransactionalRunner(),
     )
 }
 
@@ -257,6 +384,8 @@ private class FakeVehicleRepository(
             )
         }
 
+    override suspend fun findByIdForUpdate(vehicleId: Int): Vehicle? = findById(vehicleId)
+
     override suspend fun findAllByCompany(companyId: Int) = error("not exercised by this test")
 
     override suspend fun findByCompanyAndPlate(
@@ -268,6 +397,7 @@ private class FakeVehicleRepository(
         vehicleId: Int,
         licensePlate: String,
         pictureUrl: String?,
+        pictureStorageKey: String?,
     ) = error("not exercised by this test")
 
     override suspend fun archive(vehicleId: Int) = error("not exercised by this test")
@@ -275,6 +405,7 @@ private class FakeVehicleRepository(
     override suspend fun updatePictureUrl(
         vehicleId: Int,
         pictureUrl: String?,
+        pictureStorageKey: String?,
     ) = error("not exercised by this test")
 }
 
@@ -305,6 +436,7 @@ private class FakeProximityAlertService : ProximityAlertService {
 
 private class FakeVehicleAssignmentService(
     private val activeAssignment: VehicleAssignment?,
+    private val recordTelemetryResult: Boolean,
 ) : VehicleAssignmentService {
     override suspend fun link(
         vendorUserId: Int,
@@ -328,12 +460,22 @@ private class FakeVehicleAssignmentService(
 
     override suspend fun endAllActiveAssignmentsForCompany(companyId: Int) = error("not exercised by this test")
 
+    override suspend fun findAllForCompany(companyId: Int) = error("not exercised by this test")
+
+    override fun notifyEndedAssignments(assignments: List<VehicleAssignment>) = Unit
+
     override suspend fun findActiveForVendor(vendorUserId: Int): VehicleAssignment? = activeAssignment
 
     override suspend fun findActiveDetailsForVendor(vendorUserId: Int): ActiveVehicleAssignment? =
         error("not exercised by this test")
 
     override suspend fun findActiveForVehicle(vehicleId: Int): VehicleAssignment? = error("not exercised by this test")
+
+    override suspend fun recordTelemetryReceived(
+        assignmentId: Int,
+        vendorUserId: Int,
+        receivedAt: Instant,
+    ): Boolean = recordTelemetryResult
 }
 
 private class FakeVehicleLocationHub : VehicleLocationHub {
@@ -355,23 +497,29 @@ private class FakeVehicleLocationHub : VehicleLocationHub {
         radiusKm: Double,
     ): Flow<VehicleLiveEvent> = error("not exercised by this test")
 
-    override fun subscribeAll(): Flow<VehicleLiveEvent> = error("not exercised by this test")
-
     override fun snapshotNear(
         latitude: Double,
         longitude: Double,
         radiusKm: Double,
     ): List<VehicleLocationUpdate> = error("not exercised by this test")
-
-    override fun snapshotAll(): List<VehicleLocationUpdate> = error("not exercised by this test")
 }
 
-private class FakeVehicleLocationBuffer : VehicleLocationBuffer {
+private class FakeVehicleLocationBuffer(
+    private val acceptEnqueues: Boolean = true,
+) : VehicleLocationBuffer {
     val enqueued = mutableListOf<VehicleLocationUpdate>()
 
-    override fun enqueue(update: VehicleLocationUpdate) {
+    override fun enqueue(update: VehicleLocationUpdate): Boolean {
+        if (!acceptEnqueues) return false
         enqueued += update
+        return true
     }
 
-    override fun drainAll(): List<VehicleLocationUpdate> = enqueued.toList()
+    override fun drainAll(): List<VehicleLocationUpdate> = enqueued.toList().also { enqueued.clear() }
+
+    override fun completeBatch(batch: List<VehicleLocationUpdate>) = Unit
+
+    override fun restoreFailedBatch(batch: List<VehicleLocationUpdate>) {
+        enqueued.addAll(0, batch)
+    }
 }

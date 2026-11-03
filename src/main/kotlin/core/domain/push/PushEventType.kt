@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.domain.push
 
 /**
@@ -12,15 +16,33 @@ package com.mozgobolt.core.domain.push
  * notification copy and builds it from this structured payload.
  */
 enum class PushEventType {
+    /** A buyer's transient request for a vehicle's attention. */
     PING,
+
+    /** A vehicle entered a buyer's saved-location radius. */
     PROXIMITY_ALERT,
 }
 
+/** Data-payload key containing the [PushEventType] value. */
 const val PUSH_DATA_KEY_TYPE = "type"
+
+/** Data-payload key containing the vehicle identifier. */
 const val PUSH_DATA_KEY_VEHICLE_ID = "vehicleId"
+
+/** Data-payload key containing the event timestamp. */
 const val PUSH_DATA_KEY_SENT_AT = "sentAt"
+
+/** Data-payload key containing the company identifier. */
 const val PUSH_DATA_KEY_COMPANY_ID = "companyId"
+
+/** Data-payload key containing the saved-location identifier. */
 const val PUSH_DATA_KEY_SAVED_LOCATION_ID = "savedLocationId"
+
+/** Data-payload key containing the saved-location label. */
 const val PUSH_DATA_KEY_SAVED_LOCATION_LABEL = "savedLocationLabel"
+
+/** Data-payload key containing the event latitude. */
 const val PUSH_DATA_KEY_LATITUDE = "latitude"
+
+/** Data-payload key containing the event longitude. */
 const val PUSH_DATA_KEY_LONGITUDE = "longitude"

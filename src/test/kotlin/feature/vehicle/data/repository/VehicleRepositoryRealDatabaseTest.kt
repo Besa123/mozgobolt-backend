@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicle.data.repository
 
 import com.mozgobolt.core.domain.security.SecureTokenGenerator
@@ -7,9 +11,12 @@ import com.mozgobolt.feature.company.data.repository.CompanyRepositoryI
 import com.mozgobolt.feature.company.domain.model.CompanyConstraints
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import java.sql.SQLException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFails
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 /**
  * The unit tests in [com.mozgobolt.feature.vehicle.service.VehicleServiceITest] prove the
@@ -94,6 +101,44 @@ class VehicleRepositoryRealDatabaseTest {
     }
 
     @Test
+    fun `database rejects a vehicle without an existing company and remains usable after rollback`() {
+        skipIfNoDocker()
+
+        withRealDatabase { _, tx ->
+            val vehicleRepository = VehicleRepositoryI()
+            val failure =
+                assertFails {
+                    tx.transactional {
+                        vehicleRepository.create(
+                            companyId = Int.MAX_VALUE,
+                            label = "Orphan vehicle",
+                            licensePlate = "ORPHAN-PLATE",
+                        )
+                    }
+                }
+
+            assertTrue(
+                generateSequence(failure) { it.cause }
+                    .filterIsInstance<SQLException>()
+                    .any { it.sqlState == "23503" },
+                "expected PostgreSQL foreign-key violation for a missing company",
+            )
+
+            val validVehicle =
+                tx.transactional {
+                    val company =
+                        CompanyRepositoryI()
+                            .create(
+                                name = "Valid Company",
+                                inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
+                            )
+                    vehicleRepository.create(company.id, "Valid vehicle", "VALID-PLATE")
+                }
+            assertNotNull(validVehicle, "the failed transaction must not poison later database work")
+        }
+    }
+
+    @Test
     fun `archiving a vehicle sets archivedAt and excludes it from the company's fleet listing`() {
         skipIfNoDocker()
 
@@ -144,6 +189,63 @@ class VehicleRepositoryRealDatabaseTest {
             assertEquals(false, secondAttempt, "re-archiving must report nothing changed")
             val secondArchivedAt = tx.transactional { vehicleRepository.findById(vehicleId)!!.archivedAt }
             assertEquals(firstArchivedAt, secondArchivedAt, "the original archive instant must survive untouched")
+        }
+    }
+
+    @Test
+    fun `vehicle lookups and detail and picture updates return the persisted row or null for missing ids`() {
+        skipIfNoDocker()
+
+        withRealDatabase { _, tx ->
+            val repository = VehicleRepositoryI()
+            val companyId =
+                tx.transactional {
+                    CompanyRepositoryI()
+                        .create(
+                            name = "FamilyFrost",
+                            inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
+                        ).id
+                }
+            val vehicleId =
+                tx.transactional {
+                    repository.create(companyId, "Truck", "ORIGINAL-PLATE")!!.id
+                }
+
+            assertEquals(
+                vehicleId,
+                tx.transactional { repository.findByCompanyAndPlate(companyId, "ORIGINAL-PLATE")?.id },
+            )
+            assertEquals(null, tx.transactional { repository.findByCompanyAndPlate(companyId, "MISSING-PLATE") })
+            assertEquals(null, tx.transactional { repository.findByCompanyAndPlate(companyId + 1, "ORIGINAL-PLATE") })
+            assertEquals(null, tx.transactional { repository.updateDetails(-1, "MISSING", null) })
+            assertEquals(null, tx.transactional { repository.updatePictureUrl(-1, "https://example.test/missing.jpg") })
+            assertEquals(false, tx.transactional { repository.archive(-1) })
+
+            val updated =
+                tx.transactional {
+                    repository.updateDetails(vehicleId, "UPDATED-PLATE", "https://example.test/vehicle.jpg")
+                }
+            assertEquals("UPDATED-PLATE", updated?.licensePlate)
+            assertEquals("https://example.test/vehicle.jpg", updated?.pictureUrl)
+
+            val storageKey = "vehicles/$vehicleId/8f8a6c38-4538-44c8-8ac3-6d3ea2a0ef5d"
+            val pictureAdded =
+                tx.transactional {
+                    repository.updatePictureUrl(
+                        vehicleId,
+                        "/vehicles/$vehicleId/picture",
+                        storageKey,
+                    )
+                }
+            assertEquals(storageKey, pictureAdded?.pictureStorageKey)
+
+            val pictureRemoved = tx.transactional { repository.updatePictureUrl(vehicleId, null) }
+            assertEquals(null, pictureRemoved?.pictureUrl)
+            assertEquals(null, pictureRemoved?.pictureStorageKey)
+            assertEquals(
+                null,
+                tx.transactional { repository.findByCompanyAndPlate(companyId + 1, "UPDATED-PLATE") },
+            )
         }
     }
 }

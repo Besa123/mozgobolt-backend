@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.health.routing
 
 import io.ktor.client.request.get
@@ -78,9 +82,10 @@ class HealthRoutesTest {
 
     private fun fakeDataSource(connection: Connection?): DataSource =
         Proxy.newProxyInstance(DataSource::class.java.classLoader, arrayOf(DataSource::class.java)) { _, method, _ ->
-            when (method.name) {
-                "getConnection" -> connection ?: throw SQLException("could not connect")
-                else -> throw UnsupportedOperationException("unexpected call to DataSource.${method.name}")
+            if (method.name == "getConnection") {
+                connection ?: throw SQLException("could not connect")
+            } else {
+                throw UnsupportedOperationException("unexpected call to DataSource.${method.name}")
             }
         } as DataSource
 }

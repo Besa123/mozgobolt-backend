@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.data.repository
 
 import com.mozgobolt.feature.user.data.database.EmailVerificationTokenEntity
@@ -18,7 +22,13 @@ import com.mozgobolt.feature.user.domain.model.UserRole
 import com.mozgobolt.feature.user.domain.model.VerificationTokenRecord
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.core.greater
+import org.jetbrains.exposed.v1.core.less
 import org.jetbrains.exposed.v1.core.plus
+import org.jetbrains.exposed.v1.jdbc.deleteWhere
+import org.jetbrains.exposed.v1.jdbc.insertIgnore
+import org.jetbrains.exposed.v1.jdbc.select
+import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.update
 import java.time.Instant
 import kotlin.time.Duration
@@ -34,6 +44,29 @@ class UserRepositoryI(
 
     override suspend fun findUserById(userId: Int): User? = UserEntity.findById(userId)?.toUser()
 
+    override suspend fun findUserByIdForUpdate(userId: Int): User? =
+        UsersTable
+            .selectAll()
+            .where { UsersTable.id eq userId }
+            .forUpdate()
+            .singleOrNull()
+            ?.toUser()
+
+    override suspend fun deleteUser(userId: Int): Boolean = UsersTable.deleteWhere { UsersTable.id eq userId } == 1
+
+    @Suppress("SqlInjection")
+    override suspend fun purgeExpiredAuthenticationTokens(
+        now: Instant,
+        oneTimeTokenRetentionCutoff: Instant,
+    ): Int =
+        RefreshTokensTable.deleteWhere { RefreshTokensTable.familyExpiresAt less now } +
+            EmailVerificationTokensTable.deleteWhere {
+                EmailVerificationTokensTable.expiresAt less oneTimeTokenRetentionCutoff
+            } +
+            PasswordResetTokensTable.deleteWhere {
+                PasswordResetTokensTable.expiresAt less oneTimeTokenRetentionCutoff
+            }
+
     override suspend fun createUser(
         email: String,
         password: String,
@@ -43,34 +76,43 @@ class UserRepositoryI(
         whatsappNumber: String?,
         viberNumber: String?,
         messengerUsername: String?,
-    ): User {
-        val entity =
-            UserEntity.new {
-                this.email = email
-                this.name = name
-                this.passwordHash = password
-                this.role = role
-                this.phoneNumber = phoneNumber
-                this.whatsappNumber = whatsappNumber
-                this.viberNumber = viberNumber
-                this.messengerUsername = messengerUsername
-            }
-        return entity.toUser()
+    ): User? {
+        val inserted =
+            UsersTable
+                .insertIgnore {
+                    it[UsersTable.email] = email
+                    it[UsersTable.name] = name
+                    it[UsersTable.passwordHash] = password
+                    it[UsersTable.role] = role
+                    it[UsersTable.phoneNumber] = phoneNumber
+                    it[UsersTable.whatsappNumber] = whatsappNumber
+                    it[UsersTable.viberNumber] = viberNumber
+                    it[UsersTable.messengerUsername] = messengerUsername
+                }.insertedCount
+
+        return inserted.takeIf { it > 0 }?.let {
+            UserEntity.find { UsersTable.email eq email }.single().toUser()
+        }
     }
 
     override suspend fun saveRefreshToken(
         userId: Int,
         token: String,
         familyId: String,
-    ) {
+        familyExpiresAt: Instant?,
+    ): Instant {
         val now = Instant.now()
+        val tokenExpiresAt = now.plus(refreshTokenExpiration.toJavaDuration())
+        val absoluteFamilyExpiration = familyExpiresAt ?: tokenExpiresAt
         RefreshTokenEntity.new {
             this.user = UserEntity[userId]
             this.token = token
             this.familyId = familyId
             this.createdAt = now
-            this.expiresAt = now.plus(refreshTokenExpiration.toJavaDuration())
+            this.expiresAt = minOf(tokenExpiresAt, absoluteFamilyExpiration)
+            this.familyExpiresAt = absoluteFamilyExpiration
         }
+        return absoluteFamilyExpiration
     }
 
     @Suppress("ReturnCount")
@@ -85,7 +127,9 @@ class UserRepositoryI(
                 .singleOrNull()
                 ?: return TokenValidationResult.NotFound
 
-        if (tokenRow.expiresAt.isBefore(now)) return TokenValidationResult.NotFound
+        if (tokenRow.expiresAt.isBefore(now) || tokenRow.familyExpiresAt.isBefore(now)) {
+            return TokenValidationResult.NotFound
+        }
 
         if (tokenRow.isRevoked) {
             return TokenValidationResult.AlreadyRevoked(familyId = tokenRow.familyId)
@@ -105,8 +149,27 @@ class UserRepositoryI(
             return TokenValidationResult.AlreadyRevoked(familyId = tokenRow.familyId)
         }
 
-        return TokenValidationResult.Valid(familyId = tokenRow.familyId)
+        return TokenValidationResult.Valid(
+            familyId = tokenRow.familyId,
+            familyExpiresAt = tokenRow.familyExpiresAt,
+        )
     }
+
+    override suspend fun isTokenFamilyActive(
+        userId: Int,
+        familyId: String,
+        now: Instant,
+    ): Boolean =
+        RefreshTokensTable
+            .select(RefreshTokensTable.expiresAt, RefreshTokensTable.familyExpiresAt)
+            .where {
+                (RefreshTokensTable.userId eq userId) and
+                    (RefreshTokensTable.familyId eq familyId) and
+                    (RefreshTokensTable.isRevoked eq false) and
+                    (RefreshTokensTable.expiresAt greater now) and
+                    (RefreshTokensTable.familyExpiresAt greater now)
+            }.limit(1)
+            .any()
 
     override suspend fun recordFailedLogin(
         userId: Int,
@@ -166,16 +229,17 @@ class UserRepositoryI(
     }
 
     override suspend fun findVerificationToken(token: String): VerificationTokenRecord? =
-        EmailVerificationTokenEntity
-            .find { EmailVerificationTokensTable.token eq token }
+        EmailVerificationTokensTable
+            .selectAll()
+            .where { EmailVerificationTokensTable.token eq token }
             .singleOrNull()
-            ?.let { entity ->
+            ?.let { row ->
                 VerificationTokenRecord(
-                    id = entity.id.value,
-                    userId = entity.user.id.value,
-                    token = entity.token,
-                    expiresAt = entity.expiresAt,
-                    used = entity.used,
+                    id = row[EmailVerificationTokensTable.id].value,
+                    userId = row[EmailVerificationTokensTable.userId].value,
+                    token = row[EmailVerificationTokensTable.token],
+                    expiresAt = row[EmailVerificationTokensTable.expiresAt],
+                    used = row[EmailVerificationTokensTable.used],
                 )
             }
 
@@ -220,18 +284,19 @@ class UserRepositoryI(
     }
 
     override suspend fun findPasswordResetToken(token: String): PasswordResetToken? =
-        PasswordResetTokenEntity
-            .find { PasswordResetTokensTable.token eq token }
+        PasswordResetTokensTable
+            .selectAll()
+            .where { PasswordResetTokensTable.token eq token }
             .singleOrNull()
-            ?.let { entity ->
+            ?.let { row ->
                 PasswordResetToken(
-                    id = entity.id.value,
-                    userId = entity.user.id.value,
-                    token = entity.token,
-                    expiresAt = entity.expiresAt,
-                    used = entity.used,
-                    usedAt = entity.usedAt,
-                    createdAt = entity.createdAt,
+                    id = row[PasswordResetTokensTable.id].value,
+                    userId = row[PasswordResetTokensTable.userId].value,
+                    token = row[PasswordResetTokensTable.token],
+                    expiresAt = row[PasswordResetTokensTable.expiresAt],
+                    used = row[PasswordResetTokensTable.used],
+                    usedAt = row[PasswordResetTokensTable.usedAt],
+                    createdAt = row[PasswordResetTokensTable.createdAt],
                 )
             }
 
@@ -272,17 +337,19 @@ class UserRepositoryI(
     override suspend fun updateContactInfo(
         userId: Int,
         contactInfo: UserContactInfo,
-    ) {
-        UsersTable.update(where = { UsersTable.id eq userId }) {
-            it[phoneNumber] = contactInfo.phoneNumber
-            it[phoneNumberVisible] = contactInfo.phoneNumberVisible
-            it[whatsappNumber] = contactInfo.whatsappNumber
-            it[whatsappVisible] = contactInfo.whatsappVisible
-            it[viberNumber] = contactInfo.viberNumber
-            it[viberVisible] = contactInfo.viberVisible
-            it[messengerUsername] = contactInfo.messengerUsername
-            it[messengerVisible] = contactInfo.messengerVisible
-        }
+    ): Boolean {
+        val updated =
+            UsersTable.update(where = { UsersTable.id eq userId }) {
+                it[phoneNumber] = contactInfo.phoneNumber
+                it[phoneNumberVisible] = contactInfo.phoneNumberVisible
+                it[whatsappNumber] = contactInfo.whatsappNumber
+                it[whatsappVisible] = contactInfo.whatsappVisible
+                it[viberNumber] = contactInfo.viberNumber
+                it[viberVisible] = contactInfo.viberVisible
+                it[messengerUsername] = contactInfo.messengerUsername
+                it[messengerVisible] = contactInfo.messengerVisible
+            }
+        return updated > 0
     }
 
     companion object {

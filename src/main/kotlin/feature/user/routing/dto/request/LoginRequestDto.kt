@@ -1,3 +1,10 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+// Credential fields are required for inbound request deserialization, not API response serialization.
+@file:Suppress("KotlinxSerializationSensitiveField")
+
 package com.mozgobolt.feature.user.routing.dto.request
 
 import com.mozgobolt.core.domain.validation.ValidatedRequest

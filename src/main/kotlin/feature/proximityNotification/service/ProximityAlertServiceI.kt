@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.proximityNotification.service
 
 import com.mozgobolt.core.database.TransactionalRunner
@@ -72,7 +76,13 @@ class ProximityAlertServiceI(
             points.forEach { point ->
                 candidates.forEach { savedLocation ->
                     runSuspendCatching {
-                        evaluateCandidate(vehicleId, companyId, point.latitude, point.longitude, savedLocation)
+                        evaluateCandidate(
+                            vehicleId = vehicleId,
+                            companyId = companyId,
+                            latitude = point.latitude,
+                            longitude = point.longitude,
+                            savedLocation = savedLocation,
+                        )
                     }.onFailure { throwable ->
                         logger.warn(throwable) {
                             "Proximity check failed for saved location ${savedLocation.id}, vehicle $vehicleId"
@@ -91,7 +101,9 @@ class ProximityAlertServiceI(
         companyId: Int,
         latitude: Double,
         longitude: Double,
-    ) = evaluateBatch(vehicleId, companyId, listOf(GeoPoint(latitude, longitude)))
+    ) {
+        evaluateBatch(vehicleId, companyId, listOf(GeoPoint(latitude, longitude)))
+    }
 
     private suspend fun evaluateCandidate(
         vehicleId: Int,
@@ -100,7 +112,13 @@ class ProximityAlertServiceI(
         longitude: Double,
         savedLocation: UserSavedLocation,
     ) {
-        val distanceKm = haversineKm(latitude, longitude, savedLocation.latitude, savedLocation.longitude)
+        val distanceKm =
+            haversineKm(
+                lat1 = latitude,
+                lon1 = longitude,
+                lat2 = savedLocation.latitude,
+                lon2 = savedLocation.longitude,
+            )
         val isWithinRadius = distanceKm <= savedLocation.radiusKm
 
         if (!isWithinRadius) {
@@ -110,24 +128,28 @@ class ProximityAlertServiceI(
             return
         }
 
-        val now = Instant.now()
-        val existing =
-            tx.transactional { proximityNotificationRepository.find(savedLocation.userId, savedLocation.id, vehicleId) }
-
-        // Renotify when this triple has never been seen inside before, or the vehicle left and
-        // came back (existing.currentlyInside == false — re-entry always renotifies, regardless
-        // of how little time has passed), or the vehicle has been continuously inside long enough
-        // that a fresh reminder is reasonable (cooldown elapsed since the last notification).
-        val cooldownElapsed =
-            existing != null &&
-                !now.isBefore(existing.lastNotifiedAt.plus(PROXIMITY_NOTIFICATION_COOLDOWN.toJavaDuration()))
-        val shouldNotify = existing == null || !existing.currentlyInside || cooldownElapsed
+        val attemptedAt = Instant.now()
+        // Claim before sending so concurrent telemetry cannot duplicate an alert attempt. Delivery
+        // is deliberately best-effort: a failure still consumes this cooldown.
+        val shouldNotify =
+            tx.transactional {
+                proximityNotificationRepository.claimEntryNotification(
+                    buyerUserId = savedLocation.userId,
+                    savedLocationId = savedLocation.id,
+                    vehicleId = vehicleId,
+                    attemptedAt = attemptedAt,
+                    cooldownCutoff = attemptedAt.minus(PROXIMITY_NOTIFICATION_COOLDOWN.toJavaDuration()),
+                )
+            }
         if (!shouldNotify) return
 
-        tx.transactional {
-            proximityNotificationRepository.recordEntryNotified(savedLocation.userId, savedLocation.id, vehicleId, now)
-        }
-        notifyBuyerViaPush(savedLocation.userId, companyId, vehicleId, savedLocation.id, savedLocation.label)
+        notifyBuyerViaPush(
+            buyerUserId = savedLocation.userId,
+            companyId = companyId,
+            vehicleId = vehicleId,
+            savedLocationId = savedLocation.id,
+            savedLocationLabel = savedLocation.label,
+        )
     }
 
     private suspend fun notifyBuyerViaPush(

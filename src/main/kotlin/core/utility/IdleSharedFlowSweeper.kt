@@ -1,12 +1,15 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.utility
 
 import com.mozgobolt.core.utility.functions.runSuspendCatching
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.isActive
@@ -28,6 +31,8 @@ internal val DEFAULT_SWEEP_INTERVAL = 15.minutes
  * `InMemoryVehiclePingHub.flowsByVendorUserId`) once nobody is subscribed to them anymore, so the
  * map doesn't hold one entry forever per distinct key ever seen (a geographic cell, a vendor id,
  * ...).
+ * An optional [additionalSweep] can reclaim related in-memory state on the same application-owned
+ * maintenance loop.
  *
  * Safe specifically because every flow this sweeps is constructed with `replay = 0` in its owning
  * hub — a subscriber only ever sees emissions from after it attaches, so a flow with zero current
@@ -47,20 +52,20 @@ internal val DEFAULT_SWEEP_INTERVAL = 15.minutes
  */
 class IdleSharedFlowSweeper<K : Any, T>(
     private val flows: ConcurrentHashMap<K, MutableSharedFlow<T>>,
+    private val backgroundScope: ApplicationBackgroundScope,
     private val sweepInterval: Duration = DEFAULT_SWEEP_INTERVAL,
+    private val additionalSweep: () -> Unit = {},
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
-    private val exceptionHandler =
-        CoroutineExceptionHandler { _, failure ->
-            logger.error(failure) { "IdleSharedFlowSweeper terminated unexpectedly and will not restart" }
-        }
-
-    // Default, not IO: a sweep only ever touches in-memory map/flow state, never blocking I/O.
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + exceptionHandler)
     private var job: Job? = null
 
+    /** Starts periodic cleanup if it is not already running. */
+    @Synchronized
     fun start() {
+        if (job?.isActive == true) return
+
         job =
-            scope.launch {
+            backgroundScope.launch(dispatcher + CoroutineName("idle-shared-flow-sweeper")) {
                 while (isActive) {
                     delay(sweepInterval)
                     // A single failed sweep must not permanently kill this loop — every future
@@ -72,6 +77,8 @@ class IdleSharedFlowSweeper<K : Any, T>(
             }
     }
 
+    /** Stops periodic cleanup and clears its job reference. */
+    @Synchronized
     fun stop() {
         job?.cancel()
         job = null
@@ -81,5 +88,6 @@ class IdleSharedFlowSweeper<K : Any, T>(
         flows.keys.toList().forEach { key ->
             flows.compute(key) { _, flow -> flow?.takeIf { it.subscriptionCount.value > 0 } }
         }
+        additionalSweep()
     }
 }

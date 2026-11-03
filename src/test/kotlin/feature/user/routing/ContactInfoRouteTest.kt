@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.routing
 
 import com.mozgobolt.core.configureTestEnvironment
@@ -77,5 +81,20 @@ class ContactInfoRouteTest {
 
             assertEquals(HttpStatusCode.BadRequest, response.status)
             assertEquals("INVALID_PHONE_NUMBER", response.errorBody().error)
+        }
+
+    @Test
+    fun `updating contact info for a missing user maps to not found`() =
+        testApplication {
+            configureTestEnvironment()
+            val userService = FakeUserService()
+            userService.updateContactInfoResult = AppResult.Error(ContactInfoError.USER_NOT_FOUND)
+            application { installAuthRoutesTestApp(userService) }
+
+            val response =
+                patchJson(AuthPaths.CONTACT_INFO, REQUEST_BODY) { bearerAuth(testAccessTokenFor(userId = 7)) }
+
+            assertEquals(HttpStatusCode.NotFound, response.status)
+            assertEquals("USER_NOT_FOUND", response.errorBody().error)
         }
 }

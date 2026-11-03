@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleTracking.routing
 
 import kotlin.test.Test
@@ -32,12 +36,10 @@ class LiveRequestParserTest {
     }
 
     @Test
-    fun `scope=all ignores lat, lon and radius entirely`() {
-        val withJunkParams = parseLiveRequest(scope = "all", lat = "not-a-number", lon = null, radiusKm = "-5")
-        val withNoParams = parseLiveRequest(scope = "all", lat = null, lon = null, radiusKm = null)
+    fun `scope=all is rejected rather than exposing the nationwide feed`() {
+        val result = parseLiveRequest(scope = "all", lat = null, lon = null, radiusKm = null)
 
-        assertEquals(LiveRequest.All, withJunkParams)
-        assertEquals(LiveRequest.All, withNoParams)
+        assertIs<LiveRequest.Invalid>(result)
     }
 
     @Test

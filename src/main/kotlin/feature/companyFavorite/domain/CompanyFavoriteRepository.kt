@@ -1,7 +1,12 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.companyFavorite.domain
 
 import com.mozgobolt.feature.companyFavorite.domain.model.CompanyFavorite
 
+/** Persistence operations for company favorites. */
 interface CompanyFavoriteRepository {
     /**
      * `null` means this (userId, companyId) pair was already favorited — the DB's
@@ -21,6 +26,7 @@ interface CompanyFavoriteRepository {
         companyId: Int,
     ): Boolean
 
+    /** Lists the companies favorited by [userId]. */
     suspend fun findAllForUser(userId: Int): List<CompanyFavorite>
 
     /**

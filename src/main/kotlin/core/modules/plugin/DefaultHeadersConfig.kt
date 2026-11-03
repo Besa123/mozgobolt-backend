@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.modules.plugin
 
 import io.ktor.server.application.Application
@@ -11,7 +15,7 @@ fun Application.configureDefaultHeaders() {
         header("X-Content-Type-Options", "nosniff")
         header("X-Frame-Options", "DENY")
         header("X-XSS-Protection", "0")
-        header("Referrer-Policy", "strict-origin-when-cross-origin")
+        header("Referrer-Policy", "no-referrer")
         header("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
         header(
             "Content-Security-Policy",

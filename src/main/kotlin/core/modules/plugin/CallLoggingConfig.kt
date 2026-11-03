@@ -1,8 +1,10 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.modules.plugin
 
 import com.mozgobolt.core.domain.security.AuthConstants.CLAIM_USER_ID
-import com.mozgobolt.core.utility.functions.currentDeviceIdOrNull
-import io.ktor.http.HttpHeaders
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.auth.jwt.JWTPrincipal
@@ -13,8 +15,6 @@ import io.ktor.server.plugins.calllogging.processingTimeMillis
 import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
 import org.slf4j.event.Level
-
-private const val MAX_USER_AGENT_LENGTH = 100
 
 fun Application.configureCallLogging() {
     install(CallLogging) {
@@ -37,23 +37,11 @@ fun Application.configureCallLogging() {
         callIdMdc("requestId")
 
         mdc("userId") { call ->
-            call
-                .principal<JWTPrincipal>()
-                ?.payload
-                ?.getClaim(CLAIM_USER_ID)
-                ?.asInt()
-                ?.toString()
+            call.principal<JWTPrincipal>()?.let { principal ->
+                val userId = principal.payload.getClaim(CLAIM_USER_ID).asInt()
+                userId?.toString()
+            }
         }
-
-        mdc("remoteHost") { call ->
-            call.request.local.remoteHost
-        }
-
-        mdc("userAgent") { call ->
-            call.request.headers[HttpHeaders.UserAgent]?.take(MAX_USER_AGENT_LENGTH)
-        }
-
-        mdc("deviceId") { call -> call.currentDeviceIdOrNull() }
 
         mdc("method") { call ->
             call.request.httpMethod.value

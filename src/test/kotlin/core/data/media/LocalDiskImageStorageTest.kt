@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.media
 
 import kotlinx.coroutines.runBlocking
@@ -21,6 +25,19 @@ class LocalDiskImageStorageTest {
             val storage = newStorage()
             val key = UUID.randomUUID().toString()
             val bytes = byteArrayOf(1, 2, 3, 4, 5)
+
+            storage.store(key, bytes)
+
+            assertEquals(bytes.toList(), storage.read(key)?.toList())
+        }
+    }
+
+    @Test
+    fun `a safe namespaced key round-trips back the exact bytes`() {
+        runBlocking {
+            val storage = newStorage()
+            val key = "vehicles/123"
+            val bytes = byteArrayOf(1, 2, 3)
 
             storage.store(key, bytes)
 
@@ -87,7 +104,7 @@ class LocalDiskImageStorageTest {
     }
 
     @Test
-    fun `a key containing a path separator is rejected rather than resolved`() {
+    fun `a key containing path traversal is rejected rather than resolved`() {
         runBlocking {
             val storage = newStorage()
 

@@ -1,5 +1,10 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehiclePing.service
 
+import com.mozgobolt.core.utility.ApplicationBackgroundScope
 import com.mozgobolt.core.utility.IdleSharedFlowSweeper
 import com.mozgobolt.feature.vehiclePing.domain.model.VehiclePingNotification
 import kotlinx.coroutines.async
@@ -12,8 +17,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.time.Duration.Companion.seconds
 
-/** Same safety-net reasoning as `InMemoryVehicleLocationHubTest`'s identical constant: a bug that
- * broke delivery should fail this test in 2 seconds with a clear message, not hang the suite. */
 private val TEST_AWAIT_TIMEOUT = 2.seconds
 
 class InMemoryVehiclePingHubTest {
@@ -78,7 +81,7 @@ class InMemoryVehiclePingHubTest {
             val received = async { withTimeout(TEST_AWAIT_TIMEOUT) { hub.subscribe(vendorUserId = 500).first() } }
             yield()
 
-            IdleSharedFlowSweeper(hub.flowsByVendorUserId).sweepOnce()
+            IdleSharedFlowSweeper(hub.flowsByVendorUserId, ApplicationBackgroundScope()).sweepOnce()
             hub.publish(vendorUserId = 500, notification = notification(vehicleId = 10))
 
             assertEquals(10, received.await().vehicleId)
@@ -96,7 +99,7 @@ class InMemoryVehiclePingHubTest {
 
             // The collector above already completed on its first element — nobody is subscribed
             // as vendor 500 right now, so that flow is genuinely idle and should be evicted.
-            IdleSharedFlowSweeper(hub.flowsByVendorUserId).sweepOnce()
+            IdleSharedFlowSweeper(hub.flowsByVendorUserId, ApplicationBackgroundScope()).sweepOnce()
 
             val secondReceived =
                 async { withTimeout(TEST_AWAIT_TIMEOUT) { hub.subscribe(vendorUserId = 500).first() } }

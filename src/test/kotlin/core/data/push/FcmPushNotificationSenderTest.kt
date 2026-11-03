@@ -1,8 +1,14 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.push
 
 import com.google.firebase.messaging.Message
 import com.google.firebase.messaging.MessagingErrorCode
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
+import java.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -51,13 +57,39 @@ class FcmPushNotificationSenderTest {
     }
 
     @Test
-    fun `a non-FCM failure from the message sender is treated as transient`() {
+    fun `an IO failure from the message sender is treated as transient`() {
         runBlocking {
-            val sender = FcmMessageSender { throw IllegalStateException("network blew up") }
+            val sender = FcmMessageSender { throw IOException("network unavailable") }
 
             assertFailsWith<TransientPushDeliveryException> {
                 FcmPushNotificationSender(sender).send("device-fid", mapOf("type" to "PING"))
             }
+        }
+    }
+
+    @Test
+    fun `an unexpected local failure is propagated without being classified as transient`() {
+        runBlocking {
+            val sender = FcmMessageSender { throw IllegalStateException("invalid local state") }
+
+            assertFailsWith<IllegalStateException> {
+                FcmPushNotificationSender(sender).send("device-fid", mapOf("type" to "PING"))
+            }
+        }
+    }
+
+    @Test
+    fun `caller cancellation is propagated unchanged`() {
+        runBlocking {
+            val cancellation = CancellationException("request cancelled")
+
+            val thrown =
+                assertFailsWith<CancellationException> {
+                    FcmPushNotificationSender(FcmMessageSender { throw cancellation })
+                        .send("device-fid", mapOf("type" to "PING"))
+                }
+
+            assertEquals(cancellation.message, thrown.message)
         }
     }
 
@@ -68,9 +100,9 @@ class FcmPushNotificationSenderTest {
     }
 
     @Test
-    fun `SENDER_ID_MISMATCH also classifies as an invalid token`() {
+    fun `SENDER_ID_MISMATCH is permanent and does not invalidate the installation`() {
         val result = MessagingErrorCode.SENDER_ID_MISMATCH.toPushDeliveryException("wrong sender")
-        assertIs<InvalidPushTargetException>(result)
+        assertIs<PermanentPushDeliveryException>(result)
     }
 
     @Test

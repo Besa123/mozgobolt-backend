@@ -1,8 +1,12 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.push
 
 import com.mozgobolt.core.domain.push.PushNotificationSender
-import com.mozgobolt.core.modules.plugin.ResiliencePolicy
-import com.mozgobolt.core.modules.plugin.ResilienceRegistry
+import com.mozgobolt.core.resilience.ExternalServiceResiliencePolicies
+import com.mozgobolt.core.resilience.ResiliencePolicy
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import io.github.resilience4j.retry.Retry
@@ -12,15 +16,17 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 class ResilientPushNotificationSenderTest {
-    private fun freshResilience(): ResiliencePolicy =
-        ResiliencePolicy(
+    private fun freshResilience(): ResiliencePolicy {
+        val profile = ExternalServiceResiliencePolicies.create().push
+        return ResiliencePolicy(
             circuitBreaker =
                 CircuitBreaker.of(
                     "test-push-breaker",
-                    ResilienceRegistry.pushCircuitBreaker.circuitBreakerConfig,
+                    profile.circuitBreaker.circuitBreakerConfig,
                 ),
-            retry = Retry.of("test-push-retry", ResilienceRegistry.pushRetry.retryConfig),
+            retry = Retry.of("test-push-retry", profile.retry!!.retryConfig),
         )
+    }
 
     private class FakePushNotificationSenderDelegate(
         private val failuresBeforeSuccess: Int = 0,

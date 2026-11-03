@@ -1,7 +1,12 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.company.service
 
 import com.mozgobolt.feature.company.domain.model.CompanyError
 import com.mozgobolt.feature.sync.domain.model.SyncEntityType
+import com.mozgobolt.feature.sync.domain.model.SyncOperation
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -74,16 +79,16 @@ class CompanyServiceMembershipRemovalTest {
             )
 
             assertNull(fx.assignmentRepository.findActiveForVendor(2))
-            assertTrue(
-                fx.syncService.recorded.any {
-                    it.entityType == SyncEntityType.VEHICLE_ASSIGNMENT && it.entityId == activeAssignment.id
-                },
+            val removalChanges = fx.syncService.recorded.takeLast(2)
+            assertEquals(
+                listOf(SyncEntityType.VEHICLE_ASSIGNMENT, SyncEntityType.COMPANY_MEMBERSHIP),
+                removalChanges.map { it.entityType },
             )
-            // The actual regression this test guards: removeMember() used to end the assignment by
-            // reaching directly into the repository, silently skipping the "clear it from the live
-            // map" step that VehicleAssignmentService.unlink()/endActiveAssignment() always do —
-            // leaving the vehicle stuck on the live map forever. It now goes through
-            // VehicleAssignmentService.endActiveAssignmentForVendorInCompany(), which doesn't skip it.
+            assertEquals(listOf(2, 2), removalChanges.map { it.userId })
+            assertEquals(listOf(SyncOperation.UPSERT, SyncOperation.DELETE), removalChanges.map { it.operation })
+            assertEquals(activeAssignment.id, removalChanges.first().entityId)
+            // Ending the assignment clears the live map; the caller batches its sync event with
+            // the membership tombstone in the same transaction.
             assertEquals(listOf(vehicle.id), fx.locationHub.markedOffline)
         }
     }

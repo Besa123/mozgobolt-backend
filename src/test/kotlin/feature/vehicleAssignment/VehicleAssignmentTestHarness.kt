@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleAssignment
 
 import com.mozgobolt.core.database.TransactionalRunner
@@ -76,6 +80,7 @@ fun withRealVehicleAssignmentDatabase(block: suspend (VehicleAssignmentTestHarne
         val service =
             VehicleAssignmentServiceI(
                 vehicleAssignmentRepository = assignmentRepository,
+                companyRepository = companyRepository,
                 vehicleRepository = vehicleRepository,
                 membershipRepository = membershipRepository,
                 syncService = FakeSyncService(),

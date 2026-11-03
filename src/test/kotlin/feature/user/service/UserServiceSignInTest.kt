@@ -1,7 +1,12 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.service
 
 import com.mozgobolt.feature.user.domain.model.LoginError
 import kotlinx.coroutines.runBlocking
+import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -20,6 +25,24 @@ class UserServiceSignInTest {
             val response = result.fold(onSuccess = { it }, onError = { fail("expected success but got $it") })
             assertTrue(response.accessToken.isNotBlank())
             assertTrue(response.refreshToken.isNotBlank())
+        }
+    }
+
+    @Test
+    fun `an unverified account can sign in as documented`() {
+        runBlocking {
+            val harness = newHarness()
+            val user =
+                harness.repository.seedVerifiedUser(
+                    email = "unverified@example.com",
+                    password = "Str0ngPass",
+                    verified = false,
+                )
+
+            val result = harness.service.signInUser(password = "Str0ngPass", email = user.email)
+
+            result.fold(onSuccess = {}, onError = { fail("unverified sign-in is currently supported: $it") })
+            assertEquals(false, assertNotNull(harness.repository.findUserById(user.id)).isEmailVerified)
         }
     }
 
@@ -120,6 +143,93 @@ class UserServiceSignInTest {
 
             harness.service.signInUser(password = "Str0ngPass", email = "user@example.com")
 
+            assertEquals(0, assertNotNull(harness.repository.findUserById(user.id)).failedLoginAttempts)
+        }
+    }
+
+    @Test
+    fun `a correct password is accepted after lockout expiry and clears lock state`() {
+        runBlocking {
+            val harness = newHarness()
+            val user = harness.repository.seedVerifiedUser(email = "user@example.com", password = "Str0ngPass")
+            repeat(5) {
+                harness.repository.recordFailedLogin(user.id, lockUntil = Instant.now().minusSeconds(1))
+            }
+
+            val result = harness.service.signInUser(password = "Str0ngPass", email = "user@example.com")
+
+            result.fold(onSuccess = {}, onError = { fail("expired lockout should permit login: $it") })
+            val unlocked = assertNotNull(harness.repository.findUserById(user.id))
+            assertEquals(0, unlocked.failedLoginAttempts)
+            assertEquals(null, unlocked.lockedUntil)
+        }
+    }
+
+    @Test
+    fun `a correct password cannot create a session after the account becomes locked during verification`() {
+        runBlocking {
+            val harness = newHarness()
+            val user = harness.repository.seedVerifiedUser(email = "user@example.com", password = "Str0ngPass")
+            harness.repository.lockUntilOnNextLockedUserRead = Instant.now().plusSeconds(60)
+            harness.repository.failedLoginAttemptsOnNextLockedUserRead = 5
+
+            val result = harness.service.signInUser(password = "Str0ngPass", email = "user@example.com")
+
+            assertError(LoginError.ACCOUNT_LOCKED, result)
+            assertEquals(5, assertNotNull(harness.repository.findUserById(user.id)).failedLoginAttempts)
+        }
+    }
+
+    @Test
+    fun `sign in rejects a password that changed after the initial credential read`() {
+        runBlocking {
+            val harness = newHarness()
+            harness.repository.seedVerifiedUser(email = "user@example.com", password = "OldPassphrase1x")
+            harness.repository.passwordHashOnNextLockedUserRead = "hashed:NewPassphrase2x"
+
+            val result = harness.service.signInUser(password = "OldPassphrase1x", email = "user@example.com")
+
+            assertError(LoginError.INVALID_CREDENTIALS, result)
+        }
+    }
+
+    @Test
+    fun `sign in rejects a user deleted after the initial credential read`() {
+        runBlocking {
+            val harness = newHarness()
+            harness.repository.seedVerifiedUser(email = "user@example.com", password = "Str0ngPass")
+            harness.repository.returnNullOnNextLockedUserRead = true
+
+            val result = harness.service.signInUser(password = "Str0ngPass", email = "user@example.com")
+
+            assertError(LoginError.INVALID_CREDENTIALS, result)
+        }
+    }
+
+    @Test
+    fun `a user disappearing after a wrong-password check does not create a failed-login row`() {
+        runBlocking {
+            val harness = newHarness()
+            val user = harness.repository.seedVerifiedUser(email = "user@example.com", password = "Str0ngPass")
+            harness.repository.returnNullOnNextLockedUserRead = true
+
+            val result = harness.service.signInUser(password = "WrongPass1", email = "user@example.com")
+
+            assertError(LoginError.INVALID_CREDENTIALS, result)
+            assertEquals(0, assertNotNull(harness.repository.findUserById(user.id)).failedLoginAttempts)
+        }
+    }
+
+    @Test
+    fun `a password changed after a wrong-password check does not increment the new account lockout counter`() {
+        runBlocking {
+            val harness = newHarness()
+            val user = harness.repository.seedVerifiedUser(email = "user@example.com", password = "OldPassphrase1x")
+            harness.repository.passwordHashOnNextLockedUserRead = "hashed:NewPassphrase2x"
+
+            val result = harness.service.signInUser(password = "WrongPass1", email = "user@example.com")
+
+            assertError(LoginError.INVALID_CREDENTIALS, result)
             assertEquals(0, assertNotNull(harness.repository.findUserById(user.id)).failedLoginAttempts)
         }
     }

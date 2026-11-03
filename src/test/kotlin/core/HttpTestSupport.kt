@@ -1,7 +1,12 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core
 
 import com.auth0.jwt.JWTVerifier
 import com.mozgobolt.core.data.security.JwtTokenManager
+import com.mozgobolt.core.domain.security.AccessTokenSessionValidator
 import com.mozgobolt.core.domain.security.TokenManager
 import com.mozgobolt.core.modules.plugin.configureCallId
 import com.mozgobolt.core.modules.plugin.configureCallLogging
@@ -34,10 +39,13 @@ private fun testJwtTokenManager(): JwtTokenManager =
 
 fun testTokenManager(): TokenManager = testJwtTokenManager()
 
+fun testAccessTokenSessionValidator(): AccessTokenSessionValidator = AccessTokenSessionValidator { _, _ -> true }
+
 fun testAccessTokenFor(
     userId: Int,
     role: String = "BUYER",
-): String = testJwtTokenManager().generateAccessToken(userId, role)
+    familyId: String = "test-family",
+): String = testJwtTokenManager().generateAccessToken(userId, role, familyId)
 
 fun ApplicationTestBuilder.configureTestEnvironment(
     corsAllowedHosts: String = "",
@@ -64,6 +72,7 @@ fun Application.installTestModules() {
         val tokenManager = testJwtTokenManager()
         provide<TokenManager> { tokenManager }
         provide<JWTVerifier> { tokenManager.accessTokenVerifier }
+        provide<AccessTokenSessionValidator> { testAccessTokenSessionValidator() }
     }
     configureSecurity()
     configureCors()

@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.savedLocation.service
 
 import com.mozgobolt.feature.savedLocation.domain.SavedLocationRepository
@@ -45,9 +49,7 @@ class SavedLocationServiceITest {
         override suspend fun findAllForUser(userId: Int): List<UserSavedLocation> =
             locationsById.values.filter { it.userId == userId }
 
-        override suspend fun delete(id: Int) {
-            locationsById.remove(id)
-        }
+        override suspend fun delete(id: Int): Boolean = locationsById.remove(id) != null
 
         override suspend fun findAllForUsers(userIds: Collection<Int>): List<UserSavedLocation> =
             locationsById.values.filter { it.userId in userIds }

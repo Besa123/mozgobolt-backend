@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleAssignment.domain.model
 
 data class ActiveVehicleAssignment(
@@ -6,4 +10,5 @@ data class ActiveVehicleAssignment(
     val companyId: Int,
     val vehicleLabel: String,
     val licensePlate: String,
+    val sharesLocationWithCustomers: Boolean = false,
 )

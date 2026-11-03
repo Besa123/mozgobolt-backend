@@ -1,6 +1,13 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.sync.routing
 
+import com.mozgobolt.core.domain.security.AccessTokenSessionValidator
+import com.mozgobolt.core.utility.functions.collectWhileAccessSessionActive
 import com.mozgobolt.core.utility.functions.currentDeviceIdOrNull
+import com.mozgobolt.core.utility.functions.currentTokenFamilyIdOrNull
 import com.mozgobolt.core.utility.functions.currentUserIdOrNull
 import com.mozgobolt.core.utility.functions.protectedApi
 import com.mozgobolt.core.utility.functions.remainingJwtValidityOrNull
@@ -15,7 +22,6 @@ import io.ktor.server.sse.heartbeat
 import io.ktor.server.sse.sse
 import io.ktor.sse.ServerSentEvent
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration
@@ -29,6 +35,7 @@ private val RECONNECT_WARNING_LEAD_TIME = 60.seconds
 fun Route.syncRoutes(
     syncService: SyncService,
     syncEventHub: SyncEventHub,
+    accessTokenSessionValidator: AccessTokenSessionValidator,
 ) {
     protectedApi {
         get("/sync") {
@@ -42,6 +49,7 @@ fun Route.syncRoutes(
 
         sse(SYNC_LIVE_PATH) {
             val userId = call.currentUserIdOrNull() ?: return@sse
+            val familyId = call.currentTokenFamilyIdOrNull() ?: return@sse
             val myDeviceId = call.currentDeviceIdOrNull()
             val remainingTokenValidity = call.remainingJwtValidityOrNull() ?: return@sse
 
@@ -55,9 +63,14 @@ fun Route.syncRoutes(
             }
 
             withTimeoutOrNull(remainingTokenValidity) {
-                syncEventHub.subscribe(userId).collect { hint ->
-                    if (hint.isOwnAction(myDeviceId)) return@collect
-                    send(ServerSentEvent(data = hint.eventId.toString(), event = "changed"))
+                syncEventHub.subscribe(userId).collectWhileAccessSessionActive(
+                    userId = userId,
+                    familyId = familyId,
+                    validator = accessTokenSessionValidator,
+                ) { hint ->
+                    if (!hint.isOwnAction(myDeviceId)) {
+                        send(ServerSentEvent(data = hint.eventId.toString(), event = "changed"))
+                    }
                 }
             }
         }

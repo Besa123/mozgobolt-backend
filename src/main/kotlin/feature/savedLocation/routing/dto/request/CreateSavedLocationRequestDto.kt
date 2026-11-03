@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.savedLocation.routing.dto.request
 
 import com.mozgobolt.core.domain.validation.DISPLAY_NAME_MAX_LENGTH
@@ -23,9 +27,7 @@ data class CreateSavedLocationRequestDto(
             if (longitude !in GeoBounds.MIN_LONGITUDE..GeoBounds.MAX_LONGITUDE) {
                 add("Longitude must be between ${GeoBounds.MIN_LONGITUDE} and ${GeoBounds.MAX_LONGITUDE}")
             }
-            if (radiusKm < SavedLocationConstraints.MIN_RADIUS_KM ||
-                radiusKm > SavedLocationConstraints.MAX_RADIUS_KM
-            ) {
+            if (radiusKm !in SavedLocationConstraints.MIN_RADIUS_KM..SavedLocationConstraints.MAX_RADIUS_KM) {
                 add(
                     "Radius must be between ${SavedLocationConstraints.MIN_RADIUS_KM} and " +
                         "${SavedLocationConstraints.MAX_RADIUS_KM} km",

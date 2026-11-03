@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicle.routing
 
 import com.mozgobolt.core.data.idempotency.IdempotencyStore
@@ -48,111 +52,14 @@ fun Route.vehicleRoutes(
     idempotencyStore: IdempotencyStore,
 ) {
     protectedApi {
-        validatedPost<CreateVehicleRequestDto>(
-            "/companies/{id}/vehicles",
-            BodyLimit.TINY,
-            RequestTimeout.STANDARD,
-        ) { request ->
-            if (!requireRole(UserRole.VENDOR)) return@validatedPost
-            val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
-            val companyId =
-                call.parameters["id"]?.toIntOrNull()
-                    ?: return@validatedPost call.respond(
-                        HttpStatusCode.BadRequest,
-                        ErrorResponse(error = INVALID_COMPANY_ID),
-                    )
+        registerCreateVehicleRoute(vehicleService, idempotencyStore)
+        registerUpdateVehicleRoute(vehicleService)
+        registerArchiveVehicleRoute(vehicleService)
+        registerCompanyVehicleListRoute(vehicleService, vehicleAssignmentService, userService)
 
-            // A network retry re-sending the same "add this vehicle" request must not create a
-            // second vehicle with the same label.
-            idempotent(
-                idempotencyStore,
-                requestFingerprint = "$userId:$companyId:${Json.encodeToString(request)}",
-            ) {
-                vehicleService
-                    .createVehicle(
-                        adminUserId = userId,
-                        companyId = companyId,
-                        label = request.label,
-                        licensePlate = request.licensePlate,
-                        pictureUrl = request.pictureUrl,
-                    ).fold(
-                        onSuccess = { vehicle -> idempotentResult(HttpStatusCode.Created, vehicle.toResponseDto()) },
-                        onError = { error ->
-                            idempotentResult(error.toHttpStatusCode(), ErrorResponse(error = error.name))
-                        },
-                    )
-            }
-        }
-
-        validatedPatch<UpdateVehicleRequestDto>(
-            "/companies/{companyId}/vehicles/{id}",
-            BodyLimit.TINY,
-            RequestTimeout.STANDARD,
-        ) { request ->
-            if (!requireRole(UserRole.VENDOR)) return@validatedPatch
-            val userId = call.currentUserIdOrNull() ?: return@validatedPatch call.respond(HttpStatusCode.Unauthorized)
-            val companyId =
-                call.parameters[PARAM_COMPANY_ID]?.toIntOrNull()
-                    ?: return@validatedPatch call.respond(
-                        HttpStatusCode.BadRequest,
-                        ErrorResponse(error = INVALID_COMPANY_ID),
-                    )
-            val vehicleId =
-                call.parameters["id"]?.toIntOrNull()
-                    ?: return@validatedPatch call.respond(
-                        HttpStatusCode.BadRequest,
-                        ErrorResponse(error = INVALID_VEHICLE_ID),
-                    )
-
-            vehicleService
-                .updateVehicle(
-                    adminUserId = userId,
-                    companyId = companyId,
-                    vehicleId = vehicleId,
-                    licensePlate = request.licensePlate,
-                    pictureUrl = request.pictureUrl,
-                ).fold(
-                    onSuccess = { vehicle -> call.respond(HttpStatusCode.OK, vehicle.toResponseDto()) },
-                    onError = { error -> call.respond(error.toHttpStatusCode(), ErrorResponse(error = error.name)) },
-                )
-        }
-
-        // No idempotent{} wrapper: archiving is already naturally idempotent at the service layer
-        // (an already-archived vehicle short-circuits to Success), the same reasoning already
-        // applied to company member promote/demote.
-        limitedPost("/companies/{companyId}/vehicles/{id}/archive", timeout = RequestTimeout.STANDARD) {
-            handleArchiveVehicle(vehicleService)
-        }
-
-        get("/companies/{id}/vehicles") {
-            if (!requireRole(UserRole.VENDOR)) return@get
-            val userId = call.currentUserIdOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
-            val companyId =
-                call.parameters["id"]?.toIntOrNull()
-                    ?: return@get call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = INVALID_COMPANY_ID))
-
-            vehicleService.listCompanyVehicles(userId = userId, companyId = companyId).fold(
-                onSuccess = { vehicles ->
-                    val responses =
-                        vehicles.map {
-                            it.toResponseDtoWithDriverInfo(
-                                vehicleAssignmentService,
-                                userService,
-                            )
-                        }
-                    call.respond(HttpStatusCode.OK, responses)
-                },
-                onError = { error -> call.respond(error.toHttpStatusCode(), ErrorResponse(error = error.name)) },
-            )
-        }
-
-        // Deliberately not company/membership-scoped, unlike the listing above: any authenticated
-        // user (buyer or vendor) can be looking at this vehicle on the public live map and needs
-        // to fetch its details — this is the buyer-facing counterpart to that admin/fleet view.
+        // Deliberately not company/membership-scoped: any authenticated user viewing a vehicle on
+        // the live map can fetch its details and picture.
         get("/vehicles/{id}") { handleGetVehicle(vehicleService, vehicleAssignmentService, userService) }
-
-        // Deliberately not company/membership-scoped, unlike upload below: mirrors GET
-        // /vehicles/{id} above — any authenticated user viewing a vehicle can fetch its picture.
         get("/vehicles/{id}/picture") { handleGetVehiclePicture(vehicleService) }
     }
 
@@ -162,6 +69,120 @@ fun Route.vehicleRoutes(
         limitedFileUploadPost("/companies/{companyId}/vehicles/{id}/picture", BodyLimit.LARGE) { bytes ->
             handleUploadVehiclePicture(vehicleService, bytes)
         }
+    }
+}
+
+private fun Route.registerCreateVehicleRoute(
+    vehicleService: VehicleService,
+    idempotencyStore: IdempotencyStore,
+) {
+    validatedPost<CreateVehicleRequestDto>(
+        "/companies/{id}/vehicles",
+        BodyLimit.TINY,
+        RequestTimeout.STANDARD,
+    ) { request ->
+        if (!requireRole(UserRole.VENDOR)) return@validatedPost
+        val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
+        val companyId =
+            call.parameters["id"]?.toIntOrNull()
+                ?: return@validatedPost call.respond(
+                    HttpStatusCode.BadRequest,
+                    ErrorResponse(error = INVALID_COMPANY_ID),
+                )
+
+        // A network retry re-sending the same "add this vehicle" request must not create a
+        // second vehicle with the same label.
+        idempotent(
+            idempotencyStore,
+            requestFingerprint = "$userId:$companyId:${Json.encodeToString(request)}",
+        ) {
+            val createResult =
+                vehicleService.createVehicle(
+                    adminUserId = userId,
+                    companyId = companyId,
+                    label = request.label,
+                    licensePlate = request.licensePlate,
+                    pictureUrl = request.pictureUrl,
+                )
+            createResult.fold(
+                onSuccess = { vehicle -> idempotentResult(HttpStatusCode.Created, vehicle.toResponseDto()) },
+                onError = { error -> idempotentResult(error.toHttpStatusCode(), ErrorResponse(error = error.name)) },
+            )
+        }
+    }
+}
+
+private fun Route.registerUpdateVehicleRoute(vehicleService: VehicleService) {
+    validatedPatch<UpdateVehicleRequestDto>(
+        "/companies/{companyId}/vehicles/{id}",
+        BodyLimit.TINY,
+        RequestTimeout.STANDARD,
+    ) { request ->
+        if (!requireRole(UserRole.VENDOR)) return@validatedPatch
+        val userId = call.currentUserIdOrNull() ?: return@validatedPatch call.respond(HttpStatusCode.Unauthorized)
+        val companyId =
+            call.parameters[PARAM_COMPANY_ID]?.toIntOrNull()
+                ?: return@validatedPatch call.respond(
+                    HttpStatusCode.BadRequest,
+                    ErrorResponse(error = INVALID_COMPANY_ID),
+                )
+        val vehicleId =
+            call.parameters["id"]?.toIntOrNull()
+                ?: return@validatedPatch call.respond(
+                    HttpStatusCode.BadRequest,
+                    ErrorResponse(error = INVALID_VEHICLE_ID),
+                )
+
+        val updateResult =
+            vehicleService.updateVehicle(
+                adminUserId = userId,
+                companyId = companyId,
+                vehicleId = vehicleId,
+                licensePlate = request.licensePlate,
+                pictureUrl = request.pictureUrl,
+                clearPictureUrl = request.clearPictureUrl,
+            )
+        updateResult.fold(
+            onSuccess = { vehicle -> call.respond(HttpStatusCode.OK, vehicle.toResponseDto()) },
+            onError = { error -> call.respond(error.toHttpStatusCode(), ErrorResponse(error = error.name)) },
+        )
+    }
+}
+
+private fun Route.registerArchiveVehicleRoute(vehicleService: VehicleService) {
+    // No idempotent{} wrapper: archiving is already naturally idempotent at the service layer
+    // (an already-archived vehicle short-circuits to Success), the same reasoning already
+    // applied to company member promote/demote.
+    limitedPost("/companies/{companyId}/vehicles/{id}/archive", timeout = RequestTimeout.STANDARD) {
+        handleArchiveVehicle(vehicleService)
+    }
+}
+
+private fun Route.registerCompanyVehicleListRoute(
+    vehicleService: VehicleService,
+    vehicleAssignmentService: VehicleAssignmentService,
+    userService: UserService,
+) {
+    get("/companies/{id}/vehicles") {
+        if (!requireRole(UserRole.VENDOR)) return@get
+        val userId = call.currentUserIdOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
+        val companyId =
+            call.parameters["id"]?.toIntOrNull()
+                ?: return@get call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = INVALID_COMPANY_ID))
+
+        vehicleService.listCompanyVehicles(userId = userId, companyId = companyId).fold(
+            onSuccess = { vehicles ->
+                val responses =
+                    vehicles.map {
+                        it.toResponseDtoWithDriverInfo(
+                            vehicleAssignmentService,
+                            userService,
+                        )
+                    }
+                call.respond(HttpStatusCode.OK, responses)
+            },
+            onError = { error -> call.respond(error.toHttpStatusCode(), ErrorResponse(error = error.name)) },
+        )
     }
 }
 
@@ -178,7 +199,14 @@ private suspend fun RoutingContext.handleUploadVehiclePicture(
         call.parameters["id"]?.toIntOrNull()
             ?: return call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = INVALID_VEHICLE_ID))
 
-    vehicleService.uploadVehiclePicture(userId, companyId, vehicleId, bytes).fold(
+    val uploadResult =
+        vehicleService.uploadVehiclePicture(
+            adminUserId = userId,
+            companyId = companyId,
+            vehicleId = vehicleId,
+            rawBytes = bytes,
+        )
+    uploadResult.fold(
         onSuccess = { vehicle -> call.respond(HttpStatusCode.OK, vehicle.toResponseDto()) },
         onError = { error -> call.respond(error.toHttpStatusCode(), ErrorResponse(error = error.name)) },
     )
@@ -237,6 +265,7 @@ private suspend fun RoutingContext.handleArchiveVehicle(vehicleService: VehicleS
  * is the right trade-off, not worth denormalizing. WhatsApp/Viber/Messenger are already-built,
  * ready-to-open deep links (see core.domain.contact.ContactLinks) — the client just opens them.
  */
+@Suppress("CommentOverPrivateFunction")
 private suspend fun Vehicle.toResponseDtoWithDriverInfo(
     vehicleAssignmentService: VehicleAssignmentService,
     userService: UserService,
@@ -245,9 +274,9 @@ private suspend fun Vehicle.toResponseDtoWithDriverInfo(
     val contactInfo = activeAssignment?.let { userService.findContactInfo(it.vendorUserId) }
     return toResponseDto(
         currentDriverPhoneNumber = contactInfo?.phoneNumber,
-        currentDriverWhatsAppLink = contactInfo?.whatsappNumber?.let(::whatsAppLink),
-        currentDriverViberLink = contactInfo?.viberNumber?.let(::viberLink),
-        currentDriverMessengerLink = contactInfo?.messengerUsername?.let(::messengerLink),
+        currentDriverWhatsAppLink = contactInfo?.run { whatsappNumber?.let(::whatsAppLink) },
+        currentDriverViberLink = contactInfo?.run { viberNumber?.let(::viberLink) },
+        currentDriverMessengerLink = contactInfo?.run { messengerUsername?.let(::messengerLink) },
     )
 }
 
@@ -258,4 +287,5 @@ private fun VehicleError.toHttpStatusCode() =
         VehicleError.VEHICLE_NOT_FOUND -> HttpStatusCode.NotFound
         VehicleError.LICENSE_PLATE_TAKEN -> HttpStatusCode.Conflict
         VehicleError.INVALID_IMAGE -> HttpStatusCode.BadRequest
+        VehicleError.VIRUS_SCANNER_UNAVAILABLE -> HttpStatusCode.ServiceUnavailable
     }

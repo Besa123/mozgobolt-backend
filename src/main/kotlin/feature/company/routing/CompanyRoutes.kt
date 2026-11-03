@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.company.routing
 
 import com.mozgobolt.core.data.idempotency.IdempotencyStore
@@ -17,6 +21,7 @@ import com.mozgobolt.feature.company.domain.model.CompanyError
 import com.mozgobolt.feature.company.routing.dto.request.CreateCompanyRequestDto
 import com.mozgobolt.feature.company.routing.dto.request.JoinCompanyRequestDto
 import com.mozgobolt.feature.company.routing.dto.request.RenameCompanyRequestDto
+import com.mozgobolt.feature.company.routing.dto.response.InviteCodeResponseDto
 import com.mozgobolt.feature.company.routing.dto.response.toMemberResponseDto
 import com.mozgobolt.feature.company.routing.dto.response.toMyCompanyResponseDto
 import com.mozgobolt.feature.company.routing.dto.response.toResponseDto
@@ -48,6 +53,15 @@ private fun Route.registerCompanyCrudRoutes(
     companyService: CompanyService,
     idempotencyStore: IdempotencyStore,
 ) {
+    registerCompanyReadRoutes(companyService)
+    registerCompanyCreateRoute(companyService, idempotencyStore)
+    registerCompanyJoinRoute(companyService, idempotencyStore)
+    registerCompanyRenameRoute(companyService)
+    registerInviteCodeRegenerationRoute(companyService, idempotencyStore)
+    registerCompanyDeleteRoute(companyService)
+}
+
+private fun Route.registerCompanyReadRoutes(companyService: CompanyService) {
     get("/companies") {
         if (!requireRole(UserRole.VENDOR)) return@get
         val userId = call.currentUserIdOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
@@ -60,7 +74,31 @@ private fun Route.registerCompanyCrudRoutes(
         )
     }
 
-    validatedPost<CreateCompanyRequestDto>("/companies", BodyLimit.TINY, RequestTimeout.STANDARD) { request ->
+    get("/companies/{id}/invite-code") {
+        if (!requireRole(UserRole.VENDOR)) return@get
+        val adminUserId = call.currentUserIdOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
+        val companyId =
+            call.parameters["id"]?.toIntOrNull()
+                ?: return@get call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = INVALID_COMPANY_ID))
+
+        companyService.getCurrentInviteCode(adminUserId, companyId).fold(
+            onSuccess = { inviteCode ->
+                call.respond(HttpStatusCode.OK, InviteCodeResponseDto(inviteCode))
+            },
+            onError = { error -> call.respond(error.toHttpStatusCode(), ErrorResponse(error = error.name)) },
+        )
+    }
+}
+
+private fun Route.registerCompanyCreateRoute(
+    companyService: CompanyService,
+    idempotencyStore: IdempotencyStore,
+) {
+    validatedPost<CreateCompanyRequestDto>(
+        "/companies",
+        BodyLimit.TINY,
+        RequestTimeout.STANDARD,
+    ) { request ->
         if (!requireRole(UserRole.VENDOR)) return@validatedPost
         val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
 
@@ -73,11 +111,18 @@ private fun Route.registerCompanyCrudRoutes(
             )
         }
     }
+}
 
+@Suppress("SqlInjection")
+private fun Route.registerCompanyJoinRoute(
+    companyService: CompanyService,
+    idempotencyStore: IdempotencyStore,
+) {
     validatedPost<JoinCompanyRequestDto>("/companies/join", BodyLimit.TINY, RequestTimeout.STANDARD) { request ->
         if (!requireRole(UserRole.VENDOR)) return@validatedPost
         val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
 
+        // This is an idempotency namespace, not an SQL query.
         idempotent(idempotencyStore, requestFingerprint = "join-company:$userId:${Json.encodeToString(request)}") {
             companyService.joinCompany(userId = userId, inviteCode = request.inviteCode).fold(
                 onSuccess = { company -> idempotentResult(HttpStatusCode.OK, company.toMemberResponseDto()) },
@@ -85,7 +130,9 @@ private fun Route.registerCompanyCrudRoutes(
             )
         }
     }
+}
 
+private fun Route.registerCompanyRenameRoute(companyService: CompanyService) {
     validatedPatch<RenameCompanyRequestDto>("/companies/{id}", BodyLimit.TINY, RequestTimeout.STANDARD) { request ->
         if (!requireRole(UserRole.VENDOR)) return@validatedPatch
         val userId = call.currentUserIdOrNull() ?: return@validatedPatch call.respond(HttpStatusCode.Unauthorized)
@@ -101,7 +148,12 @@ private fun Route.registerCompanyCrudRoutes(
             onError = { error -> call.respond(error.toHttpStatusCode(), ErrorResponse(error = error.name)) },
         )
     }
+}
 
+private fun Route.registerInviteCodeRegenerationRoute(
+    companyService: CompanyService,
+    idempotencyStore: IdempotencyStore,
+) {
     limitedPost("/companies/{id}/invite-code/regenerate", timeout = RequestTimeout.STANDARD) {
         if (!requireRole(UserRole.VENDOR)) return@limitedPost
         val userId = call.currentUserIdOrNull() ?: return@limitedPost call.respond(HttpStatusCode.Unauthorized)
@@ -121,7 +173,9 @@ private fun Route.registerCompanyCrudRoutes(
             )
         }
     }
+}
 
+private fun Route.registerCompanyDeleteRoute(companyService: CompanyService) {
     limitedDelete("/companies/{id}", timeout = RequestTimeout.STANDARD) {
         if (!requireRole(UserRole.VENDOR)) return@limitedDelete
         val userId = call.currentUserIdOrNull() ?: return@limitedDelete call.respond(HttpStatusCode.Unauthorized)

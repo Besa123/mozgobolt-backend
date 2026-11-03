@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleTracking.service
 
 import com.mozgobolt.feature.vehicleTracking.domain.model.CellId
@@ -9,6 +13,7 @@ import kotlinx.coroutines.runBlocking
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class InMemoryVehicleLocationBufferTest {
@@ -39,27 +44,31 @@ class InMemoryVehicleLocationBufferTest {
         val drained = buffer.drainAll()
 
         assertEquals(listOf(1, 2, 3), drained.map { it.vehicleId })
+        buffer.completeBatch(drained)
     }
 
     @Test
     fun `draining empties the buffer, so a second immediate drain is empty`() {
         val buffer = InMemoryVehicleLocationBuffer()
         buffer.enqueue(update(1))
-        buffer.drainAll()
+        val batch = buffer.drainAll()
 
         assertEquals(emptyList(), buffer.drainAll())
+        buffer.completeBatch(batch)
     }
 
     @Test
     fun `only what's enqueued after a drain shows up in the next one`() {
         val buffer = InMemoryVehicleLocationBuffer()
         buffer.enqueue(update(1))
-        buffer.drainAll()
+        val failedBatch = buffer.drainAll()
         buffer.enqueue(update(2))
+        buffer.restoreFailedBatch(failedBatch)
 
-        val secondDrain = buffer.drainAll()
+        val retryBatch = buffer.drainAll()
 
-        assertEquals(listOf(2), secondDrain.map { it.vehicleId })
+        assertEquals(listOf(1, 2), retryBatch.map { it.vehicleId })
+        buffer.completeBatch(retryBatch)
     }
 
     @Test
@@ -68,14 +77,76 @@ class InMemoryVehicleLocationBufferTest {
             val buffer = InMemoryVehicleLocationBuffer()
             val concurrentEnqueues = 500
 
-            (1..concurrentEnqueues)
-                .map { vehicleId -> async(Dispatchers.Default) { buffer.enqueue(update(vehicleId)) } }
-                .awaitAll()
+            val accepted =
+                (1..concurrentEnqueues)
+                    .map { vehicleId -> async(Dispatchers.Default) { buffer.enqueue(update(vehicleId)) } }
+                    .awaitAll()
 
             val drained = buffer.drainAll()
+            assertTrue(accepted.all { it })
             assertEquals(concurrentEnqueues, drained.size)
             assertEquals((1..concurrentEnqueues).toSet(), drained.map { it.vehicleId }.toSet())
+            buffer.completeBatch(drained)
             assertTrue(buffer.drainAll().isEmpty(), "every enqueued item must have been drained exactly once")
         }
+    }
+
+    @Test
+    fun `cap includes an in-flight batch and releases capacity after completion`() {
+        val buffer = InMemoryVehicleLocationBuffer(maxPendingUpdates = 2)
+        val first = update(1)
+        val second = update(2)
+        val overflow = update(3)
+
+        assertTrue(buffer.enqueue(first))
+        assertTrue(buffer.enqueue(second))
+        val failedBatch = buffer.drainAll()
+        assertFalse(buffer.enqueue(overflow), "claimed rows still occupy buffer capacity")
+
+        buffer.restoreFailedBatch(failedBatch)
+        val retryBatch = buffer.drainAll()
+
+        assertEquals(listOf(1, 2), retryBatch.map { it.vehicleId })
+        buffer.completeBatch(retryBatch)
+
+        assertTrue(buffer.enqueue(overflow), "persisting a batch releases its capacity")
+        val nextBatch = buffer.drainAll()
+        assertEquals(listOf(3), nextBatch.map { it.vehicleId })
+        buffer.completeBatch(nextBatch)
+    }
+
+    @Test
+    fun `a full queued buffer preserves its FIFO backlog and rejects only the new history copy`() {
+        val buffer = InMemoryVehicleLocationBuffer(maxPendingUpdates = 2)
+        val first = update(1)
+        val second = update(2)
+
+        assertTrue(buffer.enqueue(first))
+        assertTrue(buffer.enqueue(second))
+        assertFalse(buffer.enqueue(update(3)))
+
+        val batch = buffer.drainAll()
+
+        assertEquals(listOf(first, second), batch)
+        buffer.completeBatch(batch)
+    }
+
+    @Test
+    fun `restoring a failed batch keeps it ahead of points accepted during the failed attempt`() {
+        val buffer = InMemoryVehicleLocationBuffer(maxPendingUpdates = 3)
+        val first = update(1)
+        val second = update(2)
+        val newer = update(3)
+        buffer.enqueue(first)
+        buffer.enqueue(second)
+        val failedBatch = buffer.drainAll()
+
+        assertTrue(buffer.enqueue(newer))
+        buffer.restoreFailedBatch(failedBatch)
+
+        val retryBatch = buffer.drainAll()
+
+        assertEquals(listOf(first, second, newer), retryBatch)
+        buffer.completeBatch(retryBatch)
     }
 }

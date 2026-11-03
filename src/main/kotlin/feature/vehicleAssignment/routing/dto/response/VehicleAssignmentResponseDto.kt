@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleAssignment.routing.dto.response
 
 import com.mozgobolt.feature.vehicleAssignment.domain.model.ActiveVehicleAssignment
@@ -9,6 +13,7 @@ data class VehicleAssignmentResponseDto(
     val id: Int,
     val vehicleId: Int,
     val vendorUserId: Int,
+    val sharesLocationWithCustomers: Boolean = false,
 )
 
 fun VehicleAssignment.toResponseDto() =
@@ -16,6 +21,7 @@ fun VehicleAssignment.toResponseDto() =
         id = id,
         vehicleId = vehicleId,
         vendorUserId = vendorUserId,
+        sharesLocationWithCustomers = sharesLocationWithCustomers,
     )
 
 @Serializable
@@ -25,6 +31,7 @@ data class ActiveVehicleAssignmentResponseDto(
     val companyId: Int,
     val vehicleLabel: String,
     val licensePlate: String,
+    val sharesLocationWithCustomers: Boolean = false,
 )
 
 @Serializable
@@ -39,4 +46,5 @@ fun ActiveVehicleAssignment.toResponseDto() =
         companyId = companyId,
         vehicleLabel = vehicleLabel,
         licensePlate = licensePlate,
+        sharesLocationWithCustomers = sharesLocationWithCustomers,
     )

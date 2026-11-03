@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.domain.model
 
 /** A driver's optional contact methods, resolved together in one lookup for a vehicle's response. */

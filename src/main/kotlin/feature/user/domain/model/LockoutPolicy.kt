@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.domain.model
 
 import java.time.Duration
@@ -17,11 +21,13 @@ import java.time.Instant
  * Resets to 0 on successful login.
  */
 object LockoutPolicy {
+    /** Number of consecutive failed attempts permitted before lockout begins. */
     const val MAX_ATTEMPTS_BEFORE_LOCK = 5
     private const val MAX_EXPONENT = 10
     private val MAX_LOCKOUT_DURATION: Duration = Duration.ofMinutes(30)
     private val BASE_LOCKOUT_DURATION: Duration = Duration.ofMinutes(1)
 
+    /** Returns the progressive lockout expiry for [failedAttempts], or `null` before the threshold. */
     fun calculateLockUntil(failedAttempts: Int): Instant? {
         val attemptsOverThreshold = failedAttempts.coerceAtLeast(0) - MAX_ATTEMPTS_BEFORE_LOCK + 1
 

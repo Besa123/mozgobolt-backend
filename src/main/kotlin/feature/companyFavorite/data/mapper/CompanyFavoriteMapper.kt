@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.companyFavorite.data.mapper
 
 import com.mozgobolt.feature.companyFavorite.data.database.CompanyFavoriteEntity

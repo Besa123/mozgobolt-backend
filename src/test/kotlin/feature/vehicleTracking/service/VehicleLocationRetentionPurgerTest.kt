@@ -1,6 +1,11 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleTracking.service
 
 import com.mozgobolt.core.database.TransactionalRunner
+import com.mozgobolt.core.utility.ApplicationBackgroundScope
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationRepository
 import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationUpdate
 import kotlinx.coroutines.delay
@@ -37,6 +42,9 @@ class VehicleLocationRetentionPurgerTest {
 
         override suspend fun insertAll(updates: List<VehicleLocationUpdate>) = error("not exercised by this test")
 
+        override suspend fun insertAllForCurrentReferences(updates: List<VehicleLocationUpdate>): Int =
+            error("not exercised by this test")
+
         override suspend fun purgeOlderThan(cutoff: Instant): Int {
             attemptCount++
             throwOnNextPurge?.let {
@@ -66,7 +74,7 @@ class VehicleLocationRetentionPurgerTest {
         runBlocking {
             val repository = FakeVehicleLocationRepository()
             val tx = CountingTransactionalRunner()
-            val purger = VehicleLocationRetentionPurger(repository, tx)
+            val purger = VehicleLocationRetentionPurger(repository, tx, ApplicationBackgroundScope())
             val before = Instant.now()
 
             purger.purge()
@@ -90,6 +98,7 @@ class VehicleLocationRetentionPurgerTest {
                 VehicleLocationRetentionPurger(
                     repository = repository,
                     tx = CountingTransactionalRunner(),
+                    backgroundScope = ApplicationBackgroundScope(),
                     checkInterval = 20.milliseconds,
                 )
             repository.throwOnNextPurge = IOException("simulated transient DB failure")
@@ -112,6 +121,7 @@ class VehicleLocationRetentionPurgerTest {
                 VehicleLocationRetentionPurger(
                     repository = repository,
                     tx = CountingTransactionalRunner(),
+                    backgroundScope = ApplicationBackgroundScope(),
                     checkInterval = 20.milliseconds,
                 )
             purger.start()

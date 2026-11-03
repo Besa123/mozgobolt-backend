@@ -1,8 +1,12 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.email
 
 import com.mozgobolt.core.domain.email.EmailService
-import com.mozgobolt.core.modules.plugin.ResiliencePolicy
-import com.mozgobolt.core.modules.plugin.ResilienceRegistry
+import com.mozgobolt.core.resilience.ExternalServiceResiliencePolicies
+import com.mozgobolt.core.resilience.ResiliencePolicy
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import io.github.resilience4j.retry.Retry
@@ -12,15 +16,17 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 class ResilientEmailServiceTest {
-    private fun freshResilience(): ResiliencePolicy =
-        ResiliencePolicy(
+    private fun freshResilience(): ResiliencePolicy {
+        val profile = ExternalServiceResiliencePolicies.create().email
+        return ResiliencePolicy(
             circuitBreaker =
                 CircuitBreaker.of(
                     "test-email-breaker",
-                    ResilienceRegistry.emailCircuitBreaker.circuitBreakerConfig,
+                    profile.circuitBreaker.circuitBreakerConfig,
                 ),
-            retry = Retry.of("test-email-retry", ResilienceRegistry.emailRetry.retryConfig),
+            retry = Retry.of("test-email-retry", profile.retry!!.retryConfig),
         )
+    }
 
     private class FakeEmailService(
         private val failuresBeforeSuccess: Int = 0,
@@ -40,7 +46,9 @@ class ResilientEmailServiceTest {
         override suspend fun sendPasswordResetEmail(
             to: String,
             token: String,
-        ) = sendVerificationEmail(to, token)
+        ) {
+            sendVerificationEmail(to, token)
+        }
     }
 
     @Test

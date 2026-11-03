@@ -1,10 +1,16 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicle.domain
 
 import com.mozgobolt.core.domain.AppResult
 import com.mozgobolt.feature.vehicle.domain.model.Vehicle
 import com.mozgobolt.feature.vehicle.domain.model.VehicleError
 
+/** Vehicle-management use cases with company authorization enforced by the service layer. */
 interface VehicleService {
+    /** Creates a vehicle for a company managed by the caller. */
     suspend fun createVehicle(
         adminUserId: Int,
         companyId: Int,
@@ -13,14 +19,17 @@ interface VehicleService {
         pictureUrl: String? = null,
     ): AppResult<Vehicle, VehicleError>
 
+    /** Updates a vehicle's details and picture URL. */
     suspend fun updateVehicle(
         adminUserId: Int,
         companyId: Int,
         vehicleId: Int,
         licensePlate: String,
         pictureUrl: String?,
+        clearPictureUrl: Boolean = false,
     ): AppResult<Vehicle, VehicleError>
 
+    /** Lists the vehicles belonging to a company visible to the caller. */
     suspend fun listCompanyVehicles(
         userId: Int,
         companyId: Int,
@@ -48,11 +57,10 @@ interface VehicleService {
     ): AppResult<Unit, VehicleError>
 
     /**
-     * Scans, sanitizes (re-encodes to a bounded-size JPEG) and stores [rawBytes] under a key
-     * deterministic per vehicle (`vehicles/{vehicleId}`) — a vehicle has at most one current
-     * picture, so re-uploading naturally overwrites the old one instead of needing an explicit
-     * delete-on-replace step. Sets [Vehicle.pictureUrl] to this backend's own serving route, not
-     * the storage key itself; a plain external URL can still be set directly via [updateVehicle].
+     * Scans, sanitizes (re-encodes to a bounded-size JPEG), and stores [rawBytes] under a
+     * versioned private key. The active key is committed with [Vehicle.pictureUrl] so failed or
+     * concurrent uploads cannot overwrite the currently served image. Old objects are deleted
+     * best-effort after commit.
      */
     suspend fun uploadVehiclePicture(
         adminUserId: Int,

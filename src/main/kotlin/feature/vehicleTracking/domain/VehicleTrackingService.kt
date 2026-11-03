@@ -1,9 +1,14 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleTracking.domain
 
 import com.mozgobolt.core.domain.AppResult
 import com.mozgobolt.feature.vehicleTracking.domain.model.TelemetryError
 import com.mozgobolt.feature.vehicleTracking.domain.model.TelemetryPoint
 
+/** Use cases for validating and ingesting vendor vehicle telemetry. */
 interface VehicleTrackingService {
     /**
      * Resolves the vendor's currently active vehicle, then publishes and enqueues each plausible

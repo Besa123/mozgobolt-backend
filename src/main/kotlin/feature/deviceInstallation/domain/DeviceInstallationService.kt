@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.deviceInstallation.domain
 
 import com.mozgobolt.core.domain.AppResult
@@ -5,13 +9,16 @@ import com.mozgobolt.feature.deviceInstallation.domain.model.DeviceInstallation
 import com.mozgobolt.feature.deviceInstallation.domain.model.DeviceInstallationError
 import com.mozgobolt.feature.deviceInstallation.domain.model.DevicePlatform
 
+/** Use cases for registering devices and delivering push messages. */
 interface DeviceInstallationService {
+    /** Registers or refreshes a device installation for the user. */
     suspend fun registerInstallation(
         userId: Int,
         installationId: String,
         platform: DevicePlatform,
     ): DeviceInstallation
 
+    /** Removes the specified installation when it belongs to the user. */
     suspend fun unregisterInstallation(
         userId: Int,
         installationId: String,

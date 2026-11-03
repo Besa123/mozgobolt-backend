@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.domain.messaging
 
 import kotlinx.coroutines.flow.Flow
@@ -8,16 +12,18 @@ import kotlinx.coroutines.flow.Flow
  * channel instead of talking to each other directly.
  *
  * [start] must be called before [publish]/[subscribe] do anything meaningful, and [stop] releases
- * whatever [start] opened — the same explicit lifecycle shape already used by
- * [com.mozgobolt.feature.vehicleTracking.service.VehicleLocationBatchWriter], wired the same way
- * in `Application.rootModule`, so every background process an operator needs to reason about is
- * started/stopped from the same place.
+ * whatever [start] opened. The relay is started before its consumers and its connection is closed
+ * during application shutdown; long-lived coroutine consumers are canceled by the shared
+ * [com.mozgobolt.core.utility.ApplicationBackgroundScope].
  */
 interface MessageRelay {
+    /** Opens the shared relay connection and begins its lifecycle. */
     fun start()
 
+    /** Closes resources opened by [start]. */
     fun stop()
 
+    /** Publishes [message] to the shared [channel]. */
     suspend fun publish(
         channel: String,
         message: String,

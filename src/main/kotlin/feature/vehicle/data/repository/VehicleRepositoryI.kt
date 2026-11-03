@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicle.data.repository
 
 import com.mozgobolt.feature.vehicle.data.database.VehicleEntity
@@ -9,6 +13,7 @@ import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.isNull
 import org.jetbrains.exposed.v1.jdbc.insertIgnore
+import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.update
 import java.time.Instant
 
@@ -37,6 +42,14 @@ class VehicleRepositoryI : VehicleRepository {
 
     override suspend fun findById(vehicleId: Int): Vehicle? = VehicleEntity.findById(vehicleId)?.toVehicle()
 
+    override suspend fun findByIdForUpdate(vehicleId: Int): Vehicle? =
+        VehiclesTable
+            .selectAll()
+            .where { VehiclesTable.id eq vehicleId }
+            .forUpdate()
+            .singleOrNull()
+            ?.toVehicle()
+
     override suspend fun findAllByCompany(companyId: Int): List<Vehicle> =
         VehicleEntity
             .find { (VehiclesTable.companyId eq companyId) and VehiclesTable.archivedAt.isNull() }
@@ -55,11 +68,13 @@ class VehicleRepositoryI : VehicleRepository {
         vehicleId: Int,
         licensePlate: String,
         pictureUrl: String?,
+        pictureStorageKey: String?,
     ): Vehicle? {
         val updated =
             VehiclesTable.update(where = { VehiclesTable.id eq vehicleId }) {
                 it[VehiclesTable.licensePlate] = licensePlate
                 it[VehiclesTable.pictureUrl] = pictureUrl
+                it[VehiclesTable.pictureStorageKey] = pictureStorageKey
             }
         return updated.takeIf { it > 0 }?.let { findById(vehicleId) }
     }
@@ -77,10 +92,12 @@ class VehicleRepositoryI : VehicleRepository {
     override suspend fun updatePictureUrl(
         vehicleId: Int,
         pictureUrl: String?,
+        pictureStorageKey: String?,
     ): Vehicle? {
         val updated =
             VehiclesTable.update(where = { VehiclesTable.id eq vehicleId }) {
                 it[VehiclesTable.pictureUrl] = pictureUrl
+                it[VehiclesTable.pictureStorageKey] = pictureStorageKey
             }
         return updated.takeIf { it > 0 }?.let { findById(vehicleId) }
     }

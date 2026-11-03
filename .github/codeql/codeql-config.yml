@@ -1,0 +1,11 @@
+name: MozgoBolt Kotlin security analysis
+
+queries:
+  - uses: security-extended
+
+paths:
+  - 'src/main/**'
+
+paths-ignore:
+  - '**/build/**'
+  - '**/generated/**'

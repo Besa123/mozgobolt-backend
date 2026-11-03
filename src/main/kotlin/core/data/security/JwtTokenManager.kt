@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.security
 
 import com.auth0.jwt.JWT
@@ -44,6 +48,7 @@ class JwtTokenManager(
     override fun generateAccessToken(
         userId: Int,
         role: String,
+        familyId: String,
     ): String {
         val expirationDate = Instant.now().plus(accessTokenExpiration.toJavaDuration())
 
@@ -54,13 +59,19 @@ class JwtTokenManager(
             .withJWTId(UUID.randomUUID().toString())
             .withClaim(AuthConstants.CLAIM_USER_ID, userId)
             .withClaim(AuthConstants.CLAIM_USER_ROLE, role)
+            .withClaim(AuthConstants.CLAIM_TOKEN_FAMILY_ID, familyId)
             .withClaim(AuthConstants.CLAIM_TOKEN_TYPE, AuthConstants.TOKEN_TYPE_ACCESS)
             .withExpiresAt(expirationDate)
             .sign(algorithm)
     }
 
-    override fun generateRefreshToken(userId: Int): String {
-        val expirationDate = Instant.now().plus(refreshTokenExpiration.toJavaDuration())
+    override fun generateRefreshToken(
+        userId: Int,
+        familyExpiresAt: Instant?,
+    ): String {
+        val now = Instant.now()
+        val rollingExpiration = now.plus(refreshTokenExpiration.toJavaDuration())
+        val expirationDate = familyExpiresAt?.let { minOf(rollingExpiration, it) } ?: rollingExpiration
 
         return JWT
             .create()

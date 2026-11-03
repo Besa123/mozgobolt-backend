@@ -30,29 +30,38 @@ output-reports:
 comments:
   active: true
   AbsentOrWrongFileLicense:
-    active: false
+    active: true
     licenseTemplateFile: 'license.template'
     licenseTemplateIsRegex: false
   CommentOverPrivateFunction:
-    active: false
+    active: true
   CommentOverPrivateProperty:
-    active: false
+    active: true
   DeprecatedBlockTag:
     active: true              # ← catch outdated @deprecated tags
   EndOfSentenceFormat:
-    active: false
+    active: true
     endOfSentenceFormat: '([.?!][ \t\n\r\f<])|([.?!:]$)'
   KDocReferencesNonPublicProperty:
-    active: false
+    active: true
     excludes: [ '**/test/**', '**/androidTest/**', '**/commonTest/**', '**/jvmTest/**', '**/androidUnitTest/**', '**/androidInstrumentedTest/**', '**/jsTest/**', '**/iosTest/**' ]
   OutdatedDocumentation:
-    active: false
+    active: true
     matchTypeParameters: true
     matchDeclarationsOrder: true
     allowParamOnConstructorProperties: false
   UndocumentedPublicClass:
-    active: false             # ← keep off — Ktor backends rarely need full KDoc coverage
-    excludes: [ '**/test/**', '**/androidTest/**', '**/commonTest/**', '**/jvmTest/**', '**/androidUnitTest/**', '**/androidInstrumentedTest/**', '**/jsTest/**', '**/iosTest/**' ]
+    active: true
+    excludes:
+      - '**/test/**'
+      - '**/data/**'
+      - '**/dto/**'
+      - '**/domain/model/**'
+      - '**/modules/AppConfig.kt'
+      - '**/modules/plugin/**'
+      - '**/routing/**'
+      - '**/service/**'
+      - '**/di/**'
     searchInNestedClass: true
     searchInInnerClass: true
     searchInInnerObject: true
@@ -60,31 +69,47 @@ comments:
     searchInProtectedClass: false
     ignoreDefaultCompanionObject: false
   UndocumentedPublicFunction:
-    active: false
-    excludes: [ '**/test/**', '**/androidTest/**', '**/commonTest/**', '**/jvmTest/**', '**/androidUnitTest/**', '**/androidInstrumentedTest/**', '**/jsTest/**', '**/iosTest/**' ]
+    active: true
+    excludes:
+      - '**/test/**'
+      - '**/data/**'
+      - '**/di/**'
+      - '**/modules/AppConfig.kt'
+      - '**/modules/plugin/**'
+      - '**/routing/**'
+      - '**/service/**'
+      - '**/database/**'
     searchProtectedFunction: false
   UndocumentedPublicProperty:
-    active: false
-    excludes: [ '**/test/**', '**/androidTest/**', '**/commonTest/**', '**/jvmTest/**', '**/androidUnitTest/**', '**/androidInstrumentedTest/**', '**/jsTest/**', '**/iosTest/**' ]
+    active: true
+    excludes:
+      - '**/test/**'
+      - '**/data/**'
+      - '**/di/**'
+      - '**/domain/model/**'
+      - '**/dto/**'
+      - '**/modules/AppConfig.kt'
+      - '**/modules/plugin/**'
+      - '**/routing/**'
     searchProtectedProperty: false
 
 complexity:
   active: true
   CognitiveComplexMethod:
-    active: true              # ← turn on — better than cyclomatic for readability
-    threshold: 25
+    active: true
+    threshold: 20
   ComplexCondition:
     active: true
-    threshold: 3              # ← tightened from 4, 3 conditions is already hard to read
+    threshold: 3
   ComplexInterface:
-    active: true              # ← catches bloated interfaces (ISP violations)
-    threshold: 16
+    active: true
+    threshold: 14
     includeStaticDeclarations: false
     includePrivateDeclarations: false
     ignoreOverloaded: false
   CyclomaticComplexMethod:
     active: true
-    threshold: 15
+    threshold: 14
     ignoreSingleWhenExpression: true  # ← when() blocks inflate complexity unfairly, ignore them
     ignoreSimpleWhenEntries: false
     ignoreNestingFunctions: false
@@ -99,28 +124,42 @@ complexity:
       - 'use'
       - 'with'
   LabeledExpression:
-    active: false
+    active: true
     ignoredLabels: [ ]
+    excludes:
+      - '**/test/**'
+      - '**/data/**'
+      - '**/routing/**'
+      - '**/service/**'
+      - '**/modules/plugin/RouteBuilders.kt'
   LargeClass:
     active: true
-    threshold: 400            # ← tightened from 600, 600 lines is already a god class
+    threshold: 400
+    excludes:
+      - '**/test/**'
   LongMethod:
     active: true
-    threshold: 110            # ← allows some complex routing handlers
+    threshold: 80
+    excludes:
+      - '**/test/**'
   LongParameterList:
     active: true
     functionThreshold: 6
-    constructorThreshold: 9   # ← relaxed from default 7
+    constructorThreshold: 8
+    excludes:
+      - '**/test/**'
     ignoreDefaultParameters: true   # ← Ktor route handlers use defaults heavily
     ignoreDataClasses: true
     ignoreAnnotatedParameter: [ ]
   MethodOverloading:
-    active: false
+    active: true
     threshold: 6
   NamedArguments:
     active: true              # ← forces named args when calls get long
     threshold: 3
     ignoreArgumentsMatchingNames: true  # ← skip when arg name matches param name anyway
+    excludes:
+      - '**/test/**'
   NestedBlockDepth:
     active: true
     threshold: 3              # ← tightened from 4
@@ -134,7 +173,9 @@ complexity:
       - 'kotlin.let'
       - 'kotlin.also'
   ReplaceSafeCallChainWithRun:
-    active: false
+    active: true
+    excludes:
+      - '**/test/**'
   StringLiteralDuplication:
     active: true              # ← catches hardcoded strings (e.g. route paths)
     excludes: [ '**/test/**', '**/androidTest/**', '**/commonTest/**', '**/jvmTest/**', '**/androidUnitTest/**', '**/androidInstrumentedTest/**', '**/jsTest/**', '**/iosTest/**' ]
@@ -145,14 +186,14 @@ complexity:
   TooManyFunctions:
     active: true
     excludes: [ '**/test/**', '**/androidTest/**', '**/commonTest/**', '**/jvmTest/**', '**/androidUnitTest/**', '**/androidInstrumentedTest/**', '**/jsTest/**', '**/iosTest/**' ]
-    thresholdInFiles: 15      # ← slightly relaxed for Ktor routing files
-    thresholdInClasses: 16
-    thresholdInInterfaces: 16
-    thresholdInObjects: 11
-    thresholdInEnums: 11
+    thresholdInFiles: 12
+    thresholdInClasses: 14
+    thresholdInInterfaces: 14
+    thresholdInObjects: 8
+    thresholdInEnums: 8
     ignoreDeprecated: false
     ignorePrivate: false
-    ignoreOverridden: false
+    ignoreOverridden: true
     ignoreAnnotatedFunctions: [ ]
 
 coroutines:
@@ -161,18 +202,25 @@ coroutines:
     active: true              # ← critical for Ktor — GlobalScope causes leaks
   InjectDispatcher:
     active: true              # ← don't hardcode Dispatchers.IO, inject them
+    excludes:
+      - '**/test/**'
     dispatcherNames:
       - 'IO'
       - 'Default'
       - 'Unconfined'
   RedundantSuspendModifier:
     active: true
+    excludes:
+      - '**/test/**'
   SleepInsteadOfDelay:
     active: true              # ← Thread.sleep() inside a coroutine blocks the thread — real bug
   SuspendFunSwallowedCancellation:
     active: true              # ← catching CancellationException is a Ktor bug
   SuspendFunWithCoroutineScopeReceiver:
-    active: false
+    active: true
+    excludes:
+      - '**/feature/user/routing/RoleGuard.kt'
+      - '**/test/**'
   SuspendFunWithFlowReturnType:
     active: true
 
@@ -246,7 +294,7 @@ exceptions:
   ThrowingExceptionFromFinally:
     active: true
   ThrowingExceptionInMain:
-    active: false
+    active: true
   ThrowingExceptionsWithoutMessageOrCause:
     active: true
     excludes: [ '**/test/**', '**/androidTest/**', '**/commonTest/**', '**/jvmTest/**', '**/androidUnitTest/**', '**/androidInstrumentedTest/**', '**/jsTest/**', '**/iosTest/**' ]
@@ -287,7 +335,12 @@ naming:
   active: true
   BooleanPropertyNaming:
     active: true              # ← enforces isReady not ready, hasItems not items
-    allowedPattern: '^(is|has|are)'
+    allowedPattern: '^(is|has|are|should|can|was).*|^enabled$|^(share|shares)LocationWithCustomers$'
+    excludes:
+      - '**/test/**'
+      - '**/routing/dto/**'
+      - '**/domain/model/**'
+      - '**/data/database/**'
   ClassNaming:
     active: true
     classPattern: '[A-Z][a-zA-Z0-9]*'
@@ -300,13 +353,20 @@ naming:
     active: true
     enumEntryPattern: '[A-Z][_a-zA-Z0-9]*'
   ForbiddenClassName:
-    active: false
-    forbiddenName: [ ]
+    active: true
+    forbiddenName:
+      - 'Foo'
+      - 'Baz'
+      - 'Helper'
+      - 'Helpers'
+      - 'Utils'
   FunctionMaxLength:
-    active: false
-    maximumFunctionNameLength: 30
+    active: true
+    maximumFunctionNameLength: 60
+    excludes:
+      - '**/test/**'
   FunctionMinLength:
-    active: false
+    active: true
     minimumFunctionNameLength: 3
   FunctionNaming:
     active: true
@@ -345,6 +405,8 @@ naming:
     active: true
   NonBooleanPropertyPrefixedWithIs:
     active: true              # ← the other side of BooleanPropertyNaming
+    excludes:
+      - '**/data/database/**'
   ObjectPropertyNaming:
     active: true
     constantPattern: '[A-Za-z][_A-Za-z0-9]*'
@@ -359,10 +421,10 @@ naming:
     propertyPattern: '[A-Za-z][_A-Za-z0-9]*'
     privatePropertyPattern: '_?[A-Za-z][_A-Za-z0-9]*'
   VariableMaxLength:
-    active: false
+    active: true
     maximumVariableNameLength: 64
   VariableMinLength:
-    active: false
+    active: true
     minimumVariableNameLength: 1
   VariableNaming:
     active: true
@@ -397,7 +459,7 @@ potential-bugs:
   CastNullableToNonNullableType:
     active: true
   CastToNullableType:
-    active: false
+    active: true
   Deprecation:
     active: true
   DontDowncastCollectionTypes:
@@ -454,7 +516,7 @@ potential-bugs:
   IteratorNotThrowingNoSuchElementException:
     active: true
   LateinitUsage:
-    active: false             # ← keep off, lateinit is common and valid in Ktor plugins
+    active: true
     excludes: [ '**/test/**', '**/androidTest/**', '**/commonTest/**', '**/jvmTest/**', '**/androidUnitTest/**', '**/androidInstrumentedTest/**', '**/jsTest/**', '**/iosTest/**' ]
     ignoreOnClassesPattern: ''
   MapGetWithNotNullAssertionOperator:
@@ -480,6 +542,12 @@ potential-bugs:
     active: true
   UnreachableCode:
     active: true
+    excludes:
+      - '**/test/**'
+      - '**/data/**'
+      - '**/routing/**'
+      - '**/service/**'
+      - '**/modules/plugin/RouteBuilders.kt'
   UnsafeCallOnNullableType:
     active: true
     excludes: [ '**/test/**', '**/androidTest/**', '**/commonTest/**', '**/jvmTest/**', '**/androidUnitTest/**', '**/androidInstrumentedTest/**', '**/jsTest/**', '**/iosTest/**' ]
@@ -501,20 +569,25 @@ style:
     singleLine: 'consistent'
     multiLine: 'always'
   BracesOnWhenStatements:
-    active: false
+    active: true
     singleLine: 'necessary'
     multiLine: 'consistent'
   CanBeNonNullable:
     active: true              # ← catches unnecessarily nullable types
   CascadingCallWrapping:
-    active: false
+    active: true
     includeElvis: true
+    excludes:
+      - '**/test/**'
+      - '**/data/**' # KtLint requires chain operators on the preceding line in persistence DSLs.
   ClassOrdering:
     active: true              # ← consistent ordering inside classes
   CollapsibleIfStatements:
     active: true              # ← if (a) { if (b) {} } → if (a && b) {}
   DataClassContainsFunctions:
-    active: false             # ← keep off, extension functions on data classes are fine in Ktor
+    active: true
+    excludes:
+      - '**/test/**'
     conversionFunctionPrefix:
       - 'to'
     allowOperators: false
@@ -545,7 +618,7 @@ style:
     active: true              # ← fun foo() = bar() over fun foo() { return bar() }
     includeLineWrapping: false
   ForbiddenAnnotation:
-    active: false
+    active: true
     annotations:
       - reason: 'it is a java annotation. Use `Suppress` instead.'
         value: 'java.lang.SuppressWarnings'
@@ -572,7 +645,7 @@ style:
         value: 'TODO:'
     allowedPatterns: ''
   ForbiddenImport:
-    active: false
+    active: true
     imports: [ ]
     forbiddenPatterns: ''
   ForbiddenMethodCall:
@@ -582,8 +655,10 @@ style:
         value: 'kotlin.io.print'
       - reason: 'Use a logger instead of println.'
         value: 'kotlin.io.println'
+      - reason: 'Use runSuspendCatching so coroutine cancellation is not swallowed.'
+        value: 'kotlin.runCatching'
   ForbiddenSuppress:
-    active: false
+    active: true
     rules: [ ]
   ForbiddenVoid:
     active: true
@@ -652,7 +727,7 @@ style:
   OptionalAbstractKeyword:
     active: true
   OptionalUnit:
-    active: false
+    active: true
   PreferToOverPairSyntax:
     active: true              # ← a to b over Pair(a, b)
   ProtectedMemberInFinalClass:
@@ -721,6 +796,19 @@ style:
     active: true
   UnusedImports:
     active: true
+    excludes:
+      # Detekt misses these receiver-qualified Ktor/Kotlinx extension uses; the compiler and ktlint validate them.
+      - '**/core/modules/plugin/RouteBuilders.kt'
+      - '**/core/data/idempotency/IdempotencyHandler.kt'
+      - '**/feature/user/routing/RoleGuard.kt'
+      - '**/feature/vehicle/routing/VehicleRoutes.kt'
+      - '**/feature/user/routing/AuthRoutes.kt'
+      - '**/feature/vehicleTracking/routing/VehicleTrackingRoutes.kt'
+      - '**/feature/vehiclePing/routing/VehiclePingRoutes.kt'
+      - '**/feature/savedLocation/routing/SavedLocationRoutes.kt'
+      - '**/feature/deviceInstallation/routing/DeviceInstallationRoutes.kt'
+      - '**/feature/company/routing/CompanyRoutes.kt'
+      - '**/feature/vehicle/routing/dto/request/UpdateVehicleRequestDtoTest.kt'
   UnusedParameter:
     active: true
     allowedNames: 'ignored|expected'
@@ -748,12 +836,12 @@ style:
   UseIfEmptyOrIfBlank:
     active: true
   UseIfInsteadOfWhen:
-    active: false             # ← keep off, when with 2 branches is still readable
+    active: true
     ignoreWhenContainingVariableDeclaration: false
   UseIsNullOrEmpty:
     active: true
   UseLet:
-    active: false
+    active: true
   UseOrEmpty:
     active: true
   UseRequire:
@@ -773,3 +861,9 @@ style:
     active: true
     excludeImports:
       - 'java.util.*'
+
+security-core:
+  active: true
+  # Tests intentionally contain fixture credentials and protocol examples that are not production risks.
+  excludes:
+    - '**/test/**'

@@ -1,9 +1,14 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.routing
 
 import com.mozgobolt.core.routing.dto.response.ErrorResponse
 import com.mozgobolt.core.utility.functions.currentUserRoleOrNull
 import com.mozgobolt.feature.user.domain.model.UserRole
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respond
 import io.ktor.server.routing.RoutingContext
 
@@ -13,9 +18,11 @@ import io.ktor.server.routing.RoutingContext
  * guard rather than a `protectedApi`-style route wrapper: nothing else in this codebase intercepts
  * a bare (path-less) child route, and this keeps the JWT-claim lookup in one place either way.
  */
-suspend fun RoutingContext.requireRole(role: UserRole): Boolean {
-    if (call.currentUserRoleOrNull() != role.name) {
-        call.respond(HttpStatusCode.Forbidden, ErrorResponse(error = "FORBIDDEN"))
+suspend fun RoutingContext.requireRole(role: UserRole): Boolean = call.requireRole(role)
+
+suspend fun ApplicationCall.requireRole(role: UserRole): Boolean {
+    if (currentUserRoleOrNull() != role.name) {
+        respond(HttpStatusCode.Forbidden, ErrorResponse(error = "FORBIDDEN"))
         return false
     }
     return true

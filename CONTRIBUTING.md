@@ -27,12 +27,56 @@ Run the same checks CI runs, in this order, and make sure all of them pass:
 ```bash
 ./gradlew ktlintCheck         # formatting — auto-fixable with ./gradlew ktlintFormat
 ./gradlew detekt              # static analysis, zero-tolerance (config/detekt.yml)
-./gradlew test                # unit + integration tests
-./gradlew jacocoTestReport    # coverage report at build/reports/jacoco/test/html/index.html
+./gradlew test koverVerify koverXmlReport koverHtmlReport
 ```
 
-CI (`.github/workflows/ci.yml`) gates on all of the above except the coverage report (report-only, no hard threshold
-yet). A PR that fails ktlint, detekt, or tests will not merge.
+The Kover tasks run the JVM test suite, enforce the configured line and branch coverage bounds, and write reports to
+`build/reports/kover/` (HTML: `build/reports/kover/html/index.html`; XML: `build/reports/kover/report.xml`). CI
+(`.github/workflows/ci.yml`) gates on the same coverage verification as well as ktlint, detekt, and tests.
+The current minimums are 92% line coverage and 62% branch coverage. PostgreSQL, Redis, and S3 Testcontainers tests
+are skipped when Docker is unavailable; because those tests cover persistence and infrastructure code, Docker is
+required for `koverVerify` to meet the 92% line and 62% branch minimums. On Colima, Testcontainers may need
+`DOCKER_HOST=unix://$HOME/.colima/default/docker.sock` and
+`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`.
+
+## Dependency updates
+
+The Gradle Versions Plugin checks declared dependencies, plugins, and the Gradle wrapper against stable releases:
+
+```bash
+./gradlew dependencyUpdates
+```
+
+The report is written to `build/dependencyUpdates/report.txt`. It is informational and does not edit the version
+catalog or wrapper; review release notes and run the test suite before changing versions. Use
+`./gradlew dependencyUpdates --refresh-dependencies` when checking for a very recent release not yet in Gradle's cache.
+The report may also list transitive dependencies supplied by plugins (currently KtLint); do not force those versions
+unless the owning plugin documents compatibility and the affected tooling passes its checks.
+
+## CodeQL
+
+`.github/workflows/codeql.yml` runs GitHub CodeQL on pull requests, pushes to `master`, and weekly. It analyzes
+production Kotlin with the `security-extended` suite using a manual Gradle build; it does not run tests or require
+database credentials.
+
+CodeQL is not a Gradle plugin or a Docker container. To run it locally, install the [CodeQL CLI](https://github.com/github/codeql-cli-binaries/releases)
+and put `codeql` on your `PATH`. From the repository root, use a fresh database directory for each run:
+
+```bash
+./gradlew clean --no-configuration-cache --console=plain
+DB_DIR="build/codeql-local-$(date +%Y%m%d%H%M%S)"
+codeql database create "$DB_DIR" \
+  --language=java-kotlin \
+  --source-root=. \
+  --codescanning-config=.github/codeql/codeql-config.yml \
+  --command='./gradlew classes -PmigrationPreviewScriptName=codeql-analysis --no-configuration-cache --console=plain'
+mkdir -p build/reports/codeql
+codeql database analyze "$DB_DIR" \
+  --format=sarif-latest \
+  --output=build/reports/codeql/results.sarif
+```
+
+The local run writes SARIF but does not publish GitHub code-scanning alerts.
 
 ## Code conventions & security rules
 

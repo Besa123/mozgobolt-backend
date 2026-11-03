@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.routing
 
 import com.mozgobolt.core.domain.AppResult
@@ -62,14 +66,6 @@ class FakeUserService : UserService {
     var signInResult: AppResult<AuthResponse, LoginError> =
         AppResult.Success(AuthResponse(accessToken = "fake-access", refreshToken = "fake-refresh"))
 
-    data class LogoutCall(
-        val userId: Int,
-        val refreshToken: String,
-    )
-
-    val logoutUserCalls = mutableListOf<LogoutCall>()
-    val logoutAllSessionsCalls = mutableListOf<Int>()
-
     var refreshTokenResult: AppResult<AuthResponse, RefreshError> =
         AppResult.Success(AuthResponse(accessToken = "fake-access-2", refreshToken = "fake-refresh-2"))
 
@@ -87,6 +83,8 @@ class FakeUserService : UserService {
     val validatePasswordResetTokenCalls = mutableListOf<String>()
 
     var confirmPasswordResetResult: AppResult<Unit, PasswordResetError> = AppResult.Success(Unit)
+    var confirmPasswordResetCallCount: Int = 0
+        private set
 
     data class ConfirmPasswordResetCall(
         val token: String,
@@ -135,17 +133,6 @@ class FakeUserService : UserService {
         email: String,
     ): AppResult<AuthResponse, LoginError> = signInResult
 
-    override suspend fun logoutUser(
-        userId: Int,
-        refreshToken: String,
-    ) {
-        logoutUserCalls += LogoutCall(userId, refreshToken)
-    }
-
-    override suspend fun logoutAllSessions(userId: Int) {
-        logoutAllSessionsCalls += userId
-    }
-
     override suspend fun refreshToken(oldRefreshToken: String): AppResult<AuthResponse, RefreshError> =
         refreshTokenResult
 
@@ -172,6 +159,7 @@ class FakeUserService : UserService {
         token: String,
         newPassword: String,
     ): AppResult<Unit, PasswordResetError> {
+        confirmPasswordResetCallCount++
         lastConfirmPasswordResetCall = ConfirmPasswordResetCall(token, newPassword)
         return confirmPasswordResetResult
     }

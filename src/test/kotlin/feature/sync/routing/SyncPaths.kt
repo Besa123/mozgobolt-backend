@@ -1,8 +1,13 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.sync.routing
 
 import com.mozgobolt.core.installTestModules
 import com.mozgobolt.core.routing.apiV1
 import com.mozgobolt.core.testAccessTokenFor
+import com.mozgobolt.core.testAccessTokenSessionValidator
 import com.mozgobolt.feature.sync.domain.SyncEventHub
 import com.mozgobolt.feature.sync.domain.SyncService
 import com.mozgobolt.feature.sync.service.InMemorySyncEventHub
@@ -39,7 +44,7 @@ fun Application.installSyncRoutesTestApp(
     installTestModules()
     routing {
         apiV1 {
-            syncRoutes(syncService, syncEventHub)
+            syncRoutes(syncService, syncEventHub, testAccessTokenSessionValidator())
         }
     }
 }

@@ -1,7 +1,12 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.modules.plugin
 
 import com.mozgobolt.core.domain.validation.ValidatedRequest
 import com.mozgobolt.core.routing.dto.response.ErrorResponse
+import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.PartData
 import io.ktor.http.content.forEachPart
@@ -11,13 +16,10 @@ import io.ktor.server.request.receiveMultipart
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.RoutingContext
-import io.ktor.server.routing.delete
-import io.ktor.server.routing.patch
-import io.ktor.server.routing.post
-import io.ktor.server.routing.put
 import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.withTimeout
 import java.io.ByteArrayOutputStream
+import java.nio.charset.StandardCharsets
 
 private const val UPLOAD_READ_CHUNK_SIZE = 8192
 
@@ -27,8 +29,8 @@ inline fun <reified T : ValidatedRequest> Route.validatedPost(
     timeout: RequestTimeout = RequestTimeout.STANDARD,
     crossinline handler: suspend RoutingContext.(T) -> Unit,
 ) {
-    post(path) {
-        if (exceedsLimit(limit)) return@post
+    withRequestBodyLimit(path, HttpMethod.Post, limit) {
+        if (exceedsLimit(limit)) return@withRequestBodyLimit
         val request = call.receive<T>()
         withTimeout(timeout.duration) { handler(request) }
     }
@@ -40,8 +42,8 @@ inline fun <reified T : ValidatedRequest> Route.validatedPut(
     timeout: RequestTimeout = RequestTimeout.STANDARD,
     crossinline handler: suspend RoutingContext.(T) -> Unit,
 ) {
-    put(path) {
-        if (exceedsLimit(limit)) return@put
+    withRequestBodyLimit(path, HttpMethod.Put, limit) {
+        if (exceedsLimit(limit)) return@withRequestBodyLimit
         val request = call.receive<T>()
         withTimeout(timeout.duration) { handler(request) }
     }
@@ -53,8 +55,8 @@ inline fun <reified T : ValidatedRequest> Route.validatedPatch(
     timeout: RequestTimeout = RequestTimeout.STANDARD,
     crossinline handler: suspend RoutingContext.(T) -> Unit,
 ) {
-    patch(path) {
-        if (exceedsLimit(limit)) return@patch
+    withRequestBodyLimit(path, HttpMethod.Patch, limit) {
+        if (exceedsLimit(limit)) return@withRequestBodyLimit
         val request = call.receive<T>()
         withTimeout(timeout.duration) { handler(request) }
     }
@@ -66,8 +68,8 @@ fun Route.limitedPost(
     timeout: RequestTimeout = RequestTimeout.STANDARD,
     body: suspend RoutingContext.() -> Unit,
 ) {
-    post(path) {
-        if (exceedsLimit(limit)) return@post
+    withRequestBodyLimit(path, HttpMethod.Post, limit) {
+        if (exceedsLimit(limit)) return@withRequestBodyLimit
         withTimeout(timeout.duration) { body() }
     }
 }
@@ -78,8 +80,8 @@ fun Route.limitedDelete(
     timeout: RequestTimeout = RequestTimeout.FAST,
     body: suspend RoutingContext.() -> Unit,
 ) {
-    delete(path) {
-        if (exceedsLimit(limit)) return@delete
+    withRequestBodyLimit(path, HttpMethod.Delete, limit) {
+        if (exceedsLimit(limit)) return@withRequestBodyLimit
         withTimeout(timeout.duration) { body() }
     }
 }
@@ -99,8 +101,8 @@ fun Route.limitedFileUploadPost(
     timeout: RequestTimeout = RequestTimeout.UPLOAD,
     body: suspend RoutingContext.(bytes: ByteArray) -> Unit,
 ) {
-    post(path) {
-        if (exceedsLimit(limit)) return@post
+    withRequestBodyLimit(path, HttpMethod.Post, limit) {
+        if (exceedsLimit(limit)) return@withRequestBodyLimit
         withTimeout(timeout.duration) { handleFileUpload(limit, body) }
     }
 }
@@ -111,8 +113,8 @@ fun Route.limitedFileUploadPut(
     timeout: RequestTimeout = RequestTimeout.UPLOAD,
     body: suspend RoutingContext.(bytes: ByteArray) -> Unit,
 ) {
-    put(path) {
-        if (exceedsLimit(limit)) return@put
+    withRequestBodyLimit(path, HttpMethod.Put, limit) {
+        if (exceedsLimit(limit)) return@withRequestBodyLimit
         withTimeout(timeout.duration) { handleFileUpload(limit, body) }
     }
 }
@@ -122,10 +124,21 @@ private suspend fun RoutingContext.handleFileUpload(
     body: suspend RoutingContext.(bytes: ByteArray) -> Unit,
 ) {
     when (val result = receiveSingleFilePart(limit)) {
-        is FilePartResult.Ok -> body(result.bytes)
-        FilePartResult.TooLarge -> call.respond(HttpStatusCode.PayloadTooLarge)
-        FilePartResult.Missing ->
+        is FilePartResult.Ok -> {
+            body(result.bytes)
+        }
+
+        FilePartResult.TooLarge -> {
+            call.respond(HttpStatusCode.PayloadTooLarge)
+        }
+
+        FilePartResult.Missing -> {
             call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = "MISSING_FILE"))
+        }
+
+        FilePartResult.Multiple -> {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = "MULTIPLE_FILES"))
+        }
     }
 }
 
@@ -138,6 +151,8 @@ private sealed interface FilePartResult {
     data object TooLarge : FilePartResult
 
     data object Missing : FilePartResult
+
+    data object Multiple : FilePartResult
 }
 
 private suspend fun RoutingContext.receiveSingleFilePart(limit: BodyLimit): FilePartResult {
@@ -145,15 +160,23 @@ private suspend fun RoutingContext.receiveSingleFilePart(limit: BodyLimit): File
     var totalRead = 0L
 
     call.receiveMultipart().forEachPart { part ->
+        if (part is PartData.FormItem && result !is FilePartResult.TooLarge) {
+            totalRead += part.value.toByteArray(StandardCharsets.UTF_8).size
+            if (totalRead > limit.bytes) result = FilePartResult.TooLarge
+        }
+
         if (part is PartData.FileItem && result !is FilePartResult.TooLarge) {
-            when (val bytes = readBoundedFilePart(part, limit.bytes - totalRead)) {
-                null -> result = FilePartResult.TooLarge
-                else -> {
-                    totalRead += bytes.size
-                    if (result is FilePartResult.Missing) {
-                        result = FilePartResult.Ok(bytes)
+            val bytes = readBoundedFilePart(part, limit.bytes - totalRead)
+            if (bytes == null) {
+                result = FilePartResult.TooLarge
+            } else {
+                totalRead += bytes.size
+                result =
+                    when (result) {
+                        FilePartResult.Missing -> FilePartResult.Ok(bytes)
+                        is FilePartResult.Ok, FilePartResult.Multiple -> FilePartResult.Multiple
+                        FilePartResult.TooLarge -> FilePartResult.TooLarge
                     }
-                }
             }
         }
         part.release()
@@ -162,6 +185,7 @@ private suspend fun RoutingContext.receiveSingleFilePart(limit: BodyLimit): File
     return result
 }
 
+@Suppress("RedundantSuspendModifier") // ByteReadChannel.readAvailable suspends while consuming the request body.
 private suspend fun readBoundedFilePart(
     part: PartData.FileItem,
     remaining: Long,

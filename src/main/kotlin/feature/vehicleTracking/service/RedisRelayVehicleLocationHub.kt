@@ -1,16 +1,18 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleTracking.service
 
 import com.mozgobolt.core.domain.messaging.MessageRelay
+import com.mozgobolt.core.utility.ApplicationBackgroundScope
 import com.mozgobolt.core.utility.functions.runSuspendCatching
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationHub
 import com.mozgobolt.feature.vehicleTracking.domain.model.CellId
 import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationUpdate
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -40,11 +42,13 @@ private sealed interface VehicleLocationRelayMessage {
         val recordedAt: String,
         val cellId: String,
         val assignmentId: Int? = null,
+        val sharesLocationWithCustomers: Boolean = false,
     ) : VehicleLocationRelayMessage
 
     @Serializable
     data class Offline(
         val vehicleId: Int,
+        val assignmentId: Int? = null,
     ) : VehicleLocationRelayMessage
 }
 
@@ -57,6 +61,7 @@ private fun VehicleLocationUpdate.toRelayMessage() =
         recordedAt = recordedAt.toString(),
         cellId = cellId.value,
         assignmentId = assignmentId,
+        sharesLocationWithCustomers = sharesLocationWithCustomers,
     )
 
 private fun VehicleLocationRelayMessage.Position.toDomain() =
@@ -68,6 +73,7 @@ private fun VehicleLocationRelayMessage.Position.toDomain() =
         recordedAt = Instant.parse(recordedAt),
         cellId = CellId(cellId),
         assignmentId = assignmentId,
+        sharesLocationWithCustomers = sharesLocationWithCustomers,
     )
 
 /**
@@ -81,24 +87,25 @@ private fun VehicleLocationRelayMessage.Position.toDomain() =
  * With a [com.mozgobolt.core.data.messaging.NoOpMessageRelay] (the single-instance default), the
  * relay side of both operations is a no-op, so this behaves exactly like the undecorated [delegate].
  *
- * [start]/[stop] are separate from the [VehicleLocationHub] interface (mirroring
- * [VehicleLocationBatchWriter]'s own shape) since they're a process lifecycle concern, not
- * something a route or service consuming [VehicleLocationHub] needs to know about.
+ * [start]/[stop] are separate from the [VehicleLocationHub] interface. The collector job belongs
+ * to the application's shared background scope, while [stop] remains available for explicitly
+ * stopping this relay consumer.
  */
 class RedisRelayVehicleLocationHub(
     private val delegate: VehicleLocationHub,
     private val relay: MessageRelay,
+    private val backgroundScope: ApplicationBackgroundScope,
 ) : VehicleLocationHub by delegate {
-    private val exceptionHandler =
-        CoroutineExceptionHandler { _, failure ->
-            logger.error(failure) { "RedisRelayVehicleLocationHub's relay-consuming loop terminated unexpectedly" }
-        }
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + exceptionHandler)
     private var job: Job? = null
 
     override fun publish(update: VehicleLocationUpdate) {
-        delegate.publish(update)
+        publishIfCurrent(update)
+    }
+
+    override fun publishIfCurrent(update: VehicleLocationUpdate): Boolean {
+        if (!delegate.publishIfCurrent(update)) return false
         relayMessage(update.toRelayMessage(), failureContext = "a vehicle location update")
+        return true
     }
 
     override fun markOffline(vehicleId: Int) {
@@ -106,35 +113,59 @@ class RedisRelayVehicleLocationHub(
         relayMessage(VehicleLocationRelayMessage.Offline(vehicleId), failureContext = "a vehicle offline signal")
     }
 
+    override fun markOffline(
+        vehicleId: Int,
+        assignmentId: Int,
+    ): Boolean {
+        if (!delegate.markOffline(vehicleId, assignmentId)) return false
+        relayMessage(
+            VehicleLocationRelayMessage.Offline(vehicleId, assignmentId),
+            failureContext = "a vehicle offline signal",
+        )
+        return true
+    }
+
     private fun relayMessage(
         message: VehicleLocationRelayMessage,
         failureContext: String,
     ) {
-        scope.launch {
+        backgroundScope.launch(CoroutineName("vehicle-location-relay-publisher")) {
             runSuspendCatching { relay.publish(VEHICLE_LOCATION_CHANNEL, Json.encodeToString(message)) }
                 .onFailure { logger.warn(it) { "Failed to relay $failureContext; other instances may miss it" } }
         }
     }
 
+    @Synchronized
     fun start() {
+        if (job?.isActive == true) return
+
         job =
-            scope.launch {
+            backgroundScope.launch(CoroutineName("vehicle-location-relay-subscriber")) {
                 relay.subscribe(VEHICLE_LOCATION_CHANNEL).collect { raw ->
-                    runSuspendCatching { Json.decodeFromString<VehicleLocationRelayMessage>(raw) }
-                        .onSuccess { message ->
-                            when (message) {
-                                is VehicleLocationRelayMessage.Position -> delegate.publish(message.toDomain())
-                                is VehicleLocationRelayMessage.Offline -> delegate.markOffline(message.vehicleId)
+                    val decodeResult = runSuspendCatching { Json.decodeFromString<VehicleLocationRelayMessage>(raw) }
+                    decodeResult.onSuccess { message ->
+                        when (message) {
+                            is VehicleLocationRelayMessage.Position -> {
+                                delegate.publishIfCurrent(message.toDomain())
                             }
-                        }.onFailure {
-                            logger.warn(
-                                it,
-                            ) { "Failed to process a relayed vehicle location update; skipping" }
+
+                            is VehicleLocationRelayMessage.Offline -> {
+                                message.assignmentId?.let { assignmentId ->
+                                    delegate.markOffline(message.vehicleId, assignmentId)
+                                } ?: delegate.markOffline(message.vehicleId)
+                            }
                         }
+                    }
+                    decodeResult.onFailure {
+                        logger.warn(
+                            it,
+                        ) { "Failed to process a relayed vehicle location update; skipping" }
+                    }
                 }
             }
     }
 
+    @Synchronized
     fun stop() {
         job?.cancel()
         job = null

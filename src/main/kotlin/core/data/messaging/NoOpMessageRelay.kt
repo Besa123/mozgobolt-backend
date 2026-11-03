@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.messaging
 
 import com.mozgobolt.core.domain.messaging.MessageRelay

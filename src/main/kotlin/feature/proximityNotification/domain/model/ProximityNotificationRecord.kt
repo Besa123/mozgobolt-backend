@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.proximityNotification.domain.model
 
 import java.time.Instant
@@ -8,5 +12,5 @@ data class ProximityNotificationRecord(
     val savedLocationId: Int,
     val vehicleId: Int,
     val currentlyInside: Boolean,
-    val lastNotifiedAt: Instant,
+    val lastAttemptedAt: Instant,
 )

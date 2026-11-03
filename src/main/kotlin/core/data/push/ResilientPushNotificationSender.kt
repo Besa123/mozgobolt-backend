@@ -1,12 +1,16 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.push
 
 import com.mozgobolt.core.domain.push.PushNotificationSender
-import com.mozgobolt.core.modules.plugin.ResiliencePolicy
-import com.mozgobolt.core.modules.plugin.ResilienceRegistry
-import com.mozgobolt.core.modules.plugin.withPushResilience
+import com.mozgobolt.core.resilience.ResiliencePolicy
 import com.mozgobolt.core.utility.functions.runSuspendCatching
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.github.resilience4j.bulkhead.BulkheadFullException
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException
+import java.util.concurrent.TimeoutException
 
 private val logger = KotlinLogging.logger {}
 
@@ -20,20 +24,44 @@ private val logger = KotlinLogging.logger {}
  */
 class ResilientPushNotificationSender(
     private val delegate: PushNotificationSender,
-    private val resilience: ResiliencePolicy = ResilienceRegistry.push,
+    private val resilience: ResiliencePolicy,
 ) : PushNotificationSender {
     override suspend fun send(
         installationId: String,
         data: Map<String, String>,
     ) = runSuspendCatching {
-        withPushResilience(resilience) { delegate.send(installationId, data) }
+        resilience.execute { delegate.send(installationId, data) }
     }.onFailure { logDeliveryFailure(it) }.getOrThrow()
 
     private fun logDeliveryFailure(throwable: Throwable) {
         when (throwable) {
-            is CallNotPermittedException -> logger.warn(throwable) { "Push delivery skipped — circuit open" }
-            is InvalidPushTargetException -> logger.info(throwable) { "Push target installation is stale" }
-            else -> logger.error(throwable) { "Push delivery failed after retries and circuit-breaker" }
+            is CallNotPermittedException -> {
+                logger.warn { "Push delivery skipped — circuit open" }
+            }
+
+            is BulkheadFullException -> {
+                logger.warn { "Push delivery rejected — concurrency limit reached" }
+            }
+
+            is TimeoutException -> {
+                logger.warn { "Push delivery timed out" }
+            }
+
+            is InvalidPushTargetException -> {
+                logger.info { "Push target installation is stale" }
+            }
+
+            is TransientPushDeliveryException -> {
+                logger.warn { "Push delivery failed after retries (${throwable.javaClass.simpleName})" }
+            }
+
+            is PermanentPushDeliveryException -> {
+                logger.error { "Push delivery failed permanently (${throwable.javaClass.simpleName})" }
+            }
+
+            else -> {
+                logger.error { "Push delivery failed after retries (${throwable.javaClass.simpleName})" }
+            }
         }
     }
 }

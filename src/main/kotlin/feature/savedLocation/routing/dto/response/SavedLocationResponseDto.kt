@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.savedLocation.routing.dto.response
 
 import com.mozgobolt.feature.savedLocation.domain.model.UserSavedLocation

@@ -1,5 +1,10 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicle.data.database
 
+import com.mozgobolt.core.domain.media.IMAGE_STORAGE_KEY_MAX_LENGTH
 import com.mozgobolt.core.domain.validation.DISPLAY_NAME_MAX_LENGTH
 import com.mozgobolt.feature.company.data.database.CompaniesTable
 import com.mozgobolt.feature.vehicle.domain.model.VehicleConstraints
@@ -21,6 +26,7 @@ data object VehiclesTable : IntIdTable("vehicles") {
     val label = varchar("label", DISPLAY_NAME_MAX_LENGTH)
     val licensePlate = varchar("license_plate", VehicleConstraints.LICENSE_PLATE_MAX_LENGTH)
     val pictureUrl = text("picture_url").nullable()
+    val pictureStorageKey = varchar("picture_storage_key", IMAGE_STORAGE_KEY_MAX_LENGTH).nullable()
     val createdAt = timestamp("created_at")
     val archivedAt = timestamp("archived_at").nullable()
 
@@ -36,6 +42,7 @@ class VehicleEntity(
     var label by VehiclesTable.label
     var licensePlate by VehiclesTable.licensePlate
     var pictureUrl by VehiclesTable.pictureUrl
+    var pictureStorageKey by VehiclesTable.pictureStorageKey
     var createdAt by VehiclesTable.createdAt
     var archivedAt by VehiclesTable.archivedAt
 

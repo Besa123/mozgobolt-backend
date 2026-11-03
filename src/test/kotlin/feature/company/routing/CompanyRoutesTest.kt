@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.company.routing
 
 import com.mozgobolt.core.configureTestEnvironment
@@ -14,9 +18,12 @@ import com.mozgobolt.feature.company.domain.model.CompanyMembershipSummary
 import com.mozgobolt.feature.company.domain.model.CompanyRole
 import com.mozgobolt.feature.company.routing.dto.response.CompanyMembershipResponseDto
 import com.mozgobolt.feature.company.routing.dto.response.CompanyResponseDto
+import com.mozgobolt.feature.company.routing.dto.response.InviteCodeResponseDto
 import com.mozgobolt.feature.company.routing.dto.response.MyCompanyResponseDto
+import com.mozgobolt.feature.user.routing.patchJson
 import com.mozgobolt.feature.user.routing.postJson
 import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -37,6 +44,7 @@ class CompanyRoutesTest {
 
         var listMembersResult: AppResult<List<CompanyMemberSummary>, CompanyError> =
             AppResult.Success(emptyList())
+        var lastListMembersCall: Pair<Int, Int>? = null
         var joinCompanyCallCount = 0
             private set
         var joinCompanyResult: AppResult<Company, CompanyError> =
@@ -60,6 +68,32 @@ class CompanyRoutesTest {
                     createdAt = Instant.now(),
                 ),
             )
+        var renameCompanyResult: AppResult<Company, CompanyError> =
+            AppResult.Success(
+                Company(
+                    id = 1,
+                    name = "Renamed Company",
+                    inviteCode = "abc123",
+                    createdAt = Instant.now(),
+                ),
+            )
+        var lastRenameCompanyCall: Triple<Int, Int, String>? = null
+            private set
+        var deleteCompanyResult: AppResult<Unit, CompanyError> = AppResult.Success(Unit)
+        var lastDeleteCompanyCall: Pair<Int, Int>? = null
+            private set
+        var promoteMemberResult: AppResult<Unit, CompanyError> = AppResult.Success(Unit)
+        var lastPromoteMemberCall: Triple<Int, Int, Int>? = null
+            private set
+        var demoteMemberResult: AppResult<Unit, CompanyError> = AppResult.Success(Unit)
+        var lastDemoteMemberCall: Triple<Int, Int, Int>? = null
+            private set
+        var removeMemberResult: AppResult<Unit, CompanyError> = AppResult.Success(Unit)
+        var lastRemoveMemberCall: Triple<Int, Int, Int>? = null
+            private set
+        var leaveCompanyResult: AppResult<Unit, CompanyError> = AppResult.Success(Unit)
+        var lastLeaveCompanyCall: Pair<Int, Int>? = null
+            private set
 
         var regenerateInviteCodeCallCount = 0
             private set
@@ -72,6 +106,8 @@ class CompanyRoutesTest {
                     createdAt = Instant.now(),
                 ),
             )
+        var currentInviteCodeResult: AppResult<String, CompanyError> = AppResult.Success("current1")
+        var lastCurrentInviteCodeCall: Pair<Int, Int>? = null
 
         override suspend fun createCompany(
             creatorUserId: Int,
@@ -93,12 +129,18 @@ class CompanyRoutesTest {
             adminUserId: Int,
             companyId: Int,
             newName: String,
-        ): AppResult<Company, CompanyError> = error("not exercised by this test")
+        ): AppResult<Company, CompanyError> {
+            lastRenameCompanyCall = Triple(adminUserId, companyId, newName)
+            return renameCompanyResult
+        }
 
         override suspend fun deleteCompany(
             adminUserId: Int,
             companyId: Int,
-        ): AppResult<Unit, CompanyError> = error("not exercised by this test")
+        ): AppResult<Unit, CompanyError> {
+            lastDeleteCompanyCall = adminUserId to companyId
+            return deleteCompanyResult
+        }
 
         override suspend fun regenerateInviteCode(
             adminUserId: Int,
@@ -108,10 +150,21 @@ class CompanyRoutesTest {
             return regenerateInviteCodeResult
         }
 
+        override suspend fun getCurrentInviteCode(
+            adminUserId: Int,
+            companyId: Int,
+        ): AppResult<String, CompanyError> {
+            lastCurrentInviteCodeCall = adminUserId to companyId
+            return currentInviteCodeResult
+        }
+
         override suspend fun listMembers(
             userId: Int,
             companyId: Int,
-        ): AppResult<List<CompanyMemberSummary>, CompanyError> = listMembersResult
+        ): AppResult<List<CompanyMemberSummary>, CompanyError> {
+            lastListMembersCall = userId to companyId
+            return listMembersResult
+        }
 
         override suspend fun listCompaniesForUser(
             userId: Int,
@@ -124,24 +177,36 @@ class CompanyRoutesTest {
             adminUserId: Int,
             companyId: Int,
             targetUserId: Int,
-        ): AppResult<Unit, CompanyError> = error("not exercised by this test")
+        ): AppResult<Unit, CompanyError> {
+            lastPromoteMemberCall = Triple(adminUserId, companyId, targetUserId)
+            return promoteMemberResult
+        }
 
         override suspend fun demoteMember(
             adminUserId: Int,
             companyId: Int,
             targetUserId: Int,
-        ): AppResult<Unit, CompanyError> = error("not exercised by this test")
+        ): AppResult<Unit, CompanyError> {
+            lastDemoteMemberCall = Triple(adminUserId, companyId, targetUserId)
+            return demoteMemberResult
+        }
 
         override suspend fun removeMember(
             adminUserId: Int,
             companyId: Int,
             targetUserId: Int,
-        ): AppResult<Unit, CompanyError> = error("not exercised by this test")
+        ): AppResult<Unit, CompanyError> {
+            lastRemoveMemberCall = Triple(adminUserId, companyId, targetUserId)
+            return removeMemberResult
+        }
 
         override suspend fun leaveCompany(
             userId: Int,
             companyId: Int,
-        ): AppResult<Unit, CompanyError> = error("not exercised by this test")
+        ): AppResult<Unit, CompanyError> {
+            lastLeaveCompanyCall = userId to companyId
+            return leaveCompanyResult
+        }
     }
 
     @Test
@@ -411,6 +476,50 @@ class CompanyRoutesTest {
         }
 
     @Test
+    fun `reading the current invite code returns only the code for the company admin`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeCompanyService()
+            service.currentInviteCodeResult = AppResult.Success("current1")
+            application {
+                installTestModules()
+                routing { apiV1 { companyRoutes(service, FakeIdempotencyStore()) } }
+            }
+
+            val response =
+                client.get("/api/v1/companies/7/invite-code") {
+                    bearerAuth(testAccessTokenFor(userId = 42, role = "VENDOR"))
+                }
+
+            assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals(
+                InviteCodeResponseDto("current1"),
+                Json.decodeFromString<InviteCodeResponseDto>(response.bodyAsText()),
+            )
+            assertEquals(42 to 7, service.lastCurrentInviteCodeCall)
+            assertEquals("no-store", response.headers["Cache-Control"])
+        }
+
+    @Test
+    fun `reading the current invite code maps a non-admin to forbidden`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeCompanyService()
+            service.currentInviteCodeResult = AppResult.Error(CompanyError.NOT_ADMIN)
+            application {
+                installTestModules()
+                routing { apiV1 { companyRoutes(service, FakeIdempotencyStore()) } }
+            }
+
+            val response =
+                client.get("/api/v1/companies/7/invite-code") {
+                    bearerAuth(testAccessTokenFor(userId = 42, role = "VENDOR"))
+                }
+
+            assertEquals(HttpStatusCode.Forbidden, response.status)
+        }
+
+    @Test
     fun `regenerating an invite code as a non-admin is rejected`() =
         testApplication {
             configureTestEnvironment()
@@ -444,5 +553,111 @@ class CompanyRoutesTest {
                 client.post("/api/v1/companies/999/invite-code/regenerate") { bearerAuth(token) }
 
             assertEquals(HttpStatusCode.NotFound, response.status)
+        }
+
+    @Test
+    fun `company and membership mutation routes forward ids and return success statuses`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeCompanyService()
+            application {
+                installTestModules()
+                routing { apiV1 { companyRoutes(service, FakeIdempotencyStore()) } }
+            }
+            val token = testAccessTokenFor(userId = 42, role = "VENDOR")
+
+            val renamed =
+                patchJson("/api/v1/companies/7", """{"name":"Renamed Company"}""") {
+                    bearerAuth(token)
+                }
+            val deleted = client.delete("/api/v1/companies/7") { bearerAuth(token) }
+            val promoted = client.post("/api/v1/companies/7/members/9/promote") { bearerAuth(token) }
+            val demoted = client.post("/api/v1/companies/7/members/10/demote") { bearerAuth(token) }
+            val removed = client.delete("/api/v1/companies/7/members/11") { bearerAuth(token) }
+            val left = client.delete("/api/v1/companies/7/members/me") { bearerAuth(token) }
+
+            assertEquals(HttpStatusCode.OK, renamed.status)
+            assertEquals(HttpStatusCode.NoContent, deleted.status)
+            assertEquals(HttpStatusCode.OK, promoted.status)
+            assertEquals(HttpStatusCode.OK, demoted.status)
+            assertEquals(HttpStatusCode.NoContent, removed.status)
+            assertEquals(HttpStatusCode.NoContent, left.status)
+            assertEquals(Triple(42, 7, "Renamed Company"), service.lastRenameCompanyCall)
+            assertEquals(42 to 7, service.lastDeleteCompanyCall)
+            assertEquals(Triple(42, 7, 9), service.lastPromoteMemberCall)
+            assertEquals(Triple(42, 7, 10), service.lastDemoteMemberCall)
+            assertEquals(Triple(42, 7, 11), service.lastRemoveMemberCall)
+            assertEquals(42 to 7, service.lastLeaveCompanyCall)
+        }
+
+    @Test
+    fun `company routes map each domain error to its public HTTP status`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeCompanyService()
+            application {
+                installTestModules()
+                routing { apiV1 { companyRoutes(service, FakeIdempotencyStore()) } }
+            }
+            val token = testAccessTokenFor(userId = 42, role = "VENDOR")
+            service.createCompanyResult = AppResult.Error(CompanyError.ALREADY_MEMBER)
+            service.joinCompanyResult = AppResult.Error(CompanyError.INVALID_INVITE_CODE)
+            service.renameCompanyResult = AppResult.Error(CompanyError.COMPANY_NOT_FOUND)
+            service.regenerateInviteCodeResult = AppResult.Error(CompanyError.NOT_ADMIN)
+            service.deleteCompanyResult = AppResult.Error(CompanyError.NOT_A_MEMBER)
+            service.listMembersResult = AppResult.Error(CompanyError.TARGET_NOT_A_MEMBER)
+            service.demoteMemberResult = AppResult.Error(CompanyError.LAST_ADMIN)
+
+            val create =
+                postJson("/api/v1/companies", """{"name":"New Company"}""") { bearerAuth(token) }
+            val join =
+                postJson("/api/v1/companies/join", """{"inviteCode":"invalid"}""") { bearerAuth(token) }
+            val rename =
+                patchJson("/api/v1/companies/1", """{"name":"Renamed"}""") { bearerAuth(token) }
+            val regenerate = client.post("/api/v1/companies/1/invite-code/regenerate") { bearerAuth(token) }
+            val delete = client.delete("/api/v1/companies/1") { bearerAuth(token) }
+            val members = client.get("/api/v1/companies/1/members") { bearerAuth(token) }
+            val demote = client.post("/api/v1/companies/1/members/2/demote") { bearerAuth(token) }
+
+            assertEquals(HttpStatusCode.Conflict, create.status)
+            assertEquals(HttpStatusCode.BadRequest, join.status)
+            assertEquals(HttpStatusCode.NotFound, rename.status)
+            assertEquals(HttpStatusCode.Forbidden, regenerate.status)
+            assertEquals(HttpStatusCode.Forbidden, delete.status)
+            assertEquals(HttpStatusCode.NotFound, members.status)
+            assertEquals(HttpStatusCode.Conflict, demote.status)
+        }
+
+    @Test
+    fun `invalid company and member path ids are rejected before calling services`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeCompanyService()
+            application {
+                installTestModules()
+                routing { apiV1 { companyRoutes(service, FakeIdempotencyStore()) } }
+            }
+            val token = testAccessTokenFor(userId = 42, role = "VENDOR")
+
+            val members = client.get("/api/v1/companies/not-an-id/members") { bearerAuth(token) }
+            val rename =
+                patchJson("/api/v1/companies/not-an-id", """{"name":"Renamed"}""") { bearerAuth(token) }
+            val regenerate =
+                client.post("/api/v1/companies/not-an-id/invite-code/regenerate") { bearerAuth(token) }
+            val delete = client.delete("/api/v1/companies/not-an-id") { bearerAuth(token) }
+            val promote = client.post("/api/v1/companies/1/members/not-an-id/promote") { bearerAuth(token) }
+            val remove = client.delete("/api/v1/companies/1/members/not-an-id") { bearerAuth(token) }
+            val leave = client.delete("/api/v1/companies/not-an-id/members/me") { bearerAuth(token) }
+
+            listOf(members, rename, regenerate, delete, promote, remove, leave).forEach { response ->
+                assertEquals(HttpStatusCode.BadRequest, response.status)
+            }
+            assertEquals(null, service.lastListMembersCall)
+            assertEquals(null, service.lastRenameCompanyCall)
+            assertEquals(null, service.lastDeleteCompanyCall)
+            assertEquals(null, service.lastPromoteMemberCall)
+            assertEquals(null, service.lastRemoveMemberCall)
+            assertEquals(null, service.lastLeaveCompanyCall)
+            assertEquals(0, service.regenerateInviteCodeCallCount)
         }
 }

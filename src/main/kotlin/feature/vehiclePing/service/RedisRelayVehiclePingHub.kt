@@ -1,15 +1,17 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehiclePing.service
 
 import com.mozgobolt.core.domain.messaging.MessageRelay
+import com.mozgobolt.core.utility.ApplicationBackgroundScope
 import com.mozgobolt.core.utility.functions.runSuspendCatching
 import com.mozgobolt.feature.vehiclePing.domain.VehiclePingHub
 import com.mozgobolt.feature.vehiclePing.domain.model.VehiclePingNotification
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -41,12 +43,8 @@ private data class VehiclePingRelayMessage(
 class RedisRelayVehiclePingHub(
     private val delegate: VehiclePingHub,
     private val relay: MessageRelay,
+    private val backgroundScope: ApplicationBackgroundScope,
 ) : VehiclePingHub by delegate {
-    private val exceptionHandler =
-        CoroutineExceptionHandler { _, failure ->
-            logger.error(failure) { "RedisRelayVehiclePingHub's relay-consuming loop terminated unexpectedly" }
-        }
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + exceptionHandler)
     private var job: Job? = null
 
     override fun publish(
@@ -63,32 +61,37 @@ class RedisRelayVehiclePingHub(
                 latitude = notification.latitude,
                 longitude = notification.longitude,
             )
-        scope.launch {
+        backgroundScope.launch(CoroutineName("vehicle-ping-relay-publisher")) {
             runSuspendCatching { relay.publish(VEHICLE_PING_CHANNEL, Json.encodeToString(relayMessage)) }
                 .onFailure { logger.warn(it) { "Failed to relay a ping; other instances may miss it" } }
         }
     }
 
+    @Synchronized
     fun start() {
+        if (job?.isActive == true) return
+
         job =
-            scope.launch {
+            backgroundScope.launch(CoroutineName("vehicle-ping-relay-subscriber")) {
                 relay.subscribe(VEHICLE_PING_CHANNEL).collect { raw ->
-                    runSuspendCatching { Json.decodeFromString<VehiclePingRelayMessage>(raw) }
-                        .onSuccess {
-                            delegate.publish(
-                                it.vendorUserId,
-                                VehiclePingNotification(
-                                    vehicleId = it.vehicleId,
-                                    sentAt = Instant.parse(it.sentAt),
-                                    latitude = it.latitude,
-                                    longitude = it.longitude,
-                                ),
-                            )
-                        }.onFailure { logger.warn(it) { "Failed to process a relayed ping; skipping" } }
+                    val decodeResult = runSuspendCatching { Json.decodeFromString<VehiclePingRelayMessage>(raw) }
+                    decodeResult.onSuccess {
+                        delegate.publish(
+                            it.vendorUserId,
+                            VehiclePingNotification(
+                                vehicleId = it.vehicleId,
+                                sentAt = Instant.parse(it.sentAt),
+                                latitude = it.latitude,
+                                longitude = it.longitude,
+                            ),
+                        )
+                    }
+                    decodeResult.onFailure { logger.warn(it) { "Failed to process a relayed ping; skipping" } }
                 }
             }
     }
 
+    @Synchronized
     fun stop() {
         job?.cancel()
         job = null

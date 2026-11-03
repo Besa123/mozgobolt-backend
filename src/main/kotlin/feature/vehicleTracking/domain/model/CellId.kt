@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleTracking.domain.model
 
 /** A spatial index's cell address (an H3 cell today) — opaque outside [CellIndexer]. */

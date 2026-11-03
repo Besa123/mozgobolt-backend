@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.push
 
 import com.google.firebase.messaging.AndroidConfig
@@ -5,11 +9,14 @@ import com.google.firebase.messaging.FirebaseMessagingException
 import com.google.firebase.messaging.Message
 import com.google.firebase.messaging.MessagingErrorCode
 import com.mozgobolt.core.domain.push.PushNotificationSender
-import com.mozgobolt.core.utility.functions.runSuspendCatching
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runInterruptible
+import java.io.IOException
 
-private val INVALID_TARGET_CODES = setOf(MessagingErrorCode.UNREGISTERED, MessagingErrorCode.SENDER_ID_MISMATCH)
+// Only UNREGISTERED proves the FID is dead. SENDER_ID_MISMATCH can indicate a server/project
+// credential mismatch and must not trigger bulk registration deletion.
+private val INVALID_TARGET_CODES = setOf(MessagingErrorCode.UNREGISTERED)
 private val TRANSIENT_CODES =
     setOf(MessagingErrorCode.UNAVAILABLE, MessagingErrorCode.INTERNAL, MessagingErrorCode.QUOTA_EXCEEDED)
 
@@ -43,6 +50,7 @@ private val HIGH_PRIORITY_ANDROID_CONFIG = AndroidConfig.builder().setPriority(A
  */
 class FcmPushNotificationSender(
     private val messageSender: FcmMessageSender,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : PushNotificationSender {
     override suspend fun send(
         installationId: String,
@@ -56,23 +64,39 @@ class FcmPushNotificationSender(
                 .setAndroidConfig(HIGH_PRIORITY_ANDROID_CONFIG)
                 .build()
 
-        withContext(Dispatchers.IO) { runSuspendCatching { messageSender.send(message) } }
-            .getOrElse { throw it.toPushDeliveryException() }
+        try {
+            runInterruptible(ioDispatcher) { messageSender.send(message) }
+        } catch (failure: FirebaseMessagingException) {
+            throw failure.toPushDeliveryException()
+        } catch (failure: IOException) {
+            throw TransientPushDeliveryException("Network failure sending FCM push", failure)
+        }
     }
 }
 
-private fun Throwable.toPushDeliveryException(): PushDeliveryException =
-    when (this) {
-        is FirebaseMessagingException -> messagingErrorCode.toPushDeliveryException(message ?: toString(), this)
-        else -> TransientPushDeliveryException("Failure sending FCM push via firebase-admin", this)
-    }
+private fun FirebaseMessagingException.toPushDeliveryException(): PushDeliveryException =
+    messagingErrorCode.toPushDeliveryException(message ?: toString(), this)
 
 internal fun MessagingErrorCode?.toPushDeliveryException(
     message: String,
     cause: Throwable? = null,
 ): PushDeliveryException =
-    when (this) {
-        in INVALID_TARGET_CODES -> InvalidPushTargetException("FCM reported installation as $this: $message", cause)
-        in TRANSIENT_CODES -> TransientPushDeliveryException("FCM send failed transiently ($this): $message", cause)
-        else -> PermanentPushDeliveryException("FCM send failed permanently ($this): $message", cause)
+    when {
+        this in INVALID_TARGET_CODES -> {
+            InvalidPushTargetException(
+                "FCM reported installation as $this: $message",
+                cause,
+            )
+        }
+
+        this in TRANSIENT_CODES -> {
+            TransientPushDeliveryException(
+                "FCM send failed transiently ($this): $message",
+                cause,
+            )
+        }
+
+        else -> {
+            PermanentPushDeliveryException("FCM send failed permanently ($this): $message", cause)
+        }
     }

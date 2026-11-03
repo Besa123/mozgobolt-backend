@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.modules.plugin
 
 import io.ktor.http.ContentType
@@ -16,13 +20,13 @@ fun Application.configureSwagger() {
     routing {
         get("/openapi.json") {
             val specFile = this.javaClass.classLoader.getResourceAsStream("openapi/documentation.json")
-            val spec = specFile?.bufferedReader()?.use { it.readText() } ?: "{}"
+            val spec = specFile?.run { bufferedReader().use { it.readText() } } ?: "{}"
             call.respondText(spec, ContentType.Application.Json)
         }
 
         get("/swagger-ui") {
             val htmlFile = this.javaClass.classLoader.getResourceAsStream("swagger-ui.html")
-            val html = htmlFile?.bufferedReader()?.use { it.readText() } ?: ""
+            val html = htmlFile?.run { bufferedReader().use { it.readText() } }.orEmpty()
             call.respondText(html, ContentType.Text.Html)
         }
     }

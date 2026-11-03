@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleTracking.domain.model
 
 /** Shared by telemetry ingestion and live-viewport request validation. */

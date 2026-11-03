@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.utility
 
 import kotlinx.coroutines.async
@@ -14,8 +18,6 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
-/** Same safety-net reasoning as the vehicle-tracking/ping hub tests' identical constant: a bug
- * here should fail this test in 2 seconds with a clear message, not hang the suite. */
 private val TEST_AWAIT_TIMEOUT = 2.seconds
 
 private fun newFlow() =
@@ -28,7 +30,7 @@ class IdleSharedFlowSweeperTest {
             val flows = ConcurrentHashMap<String, MutableSharedFlow<String>>()
             val flow = newFlow()
             flows["key"] = flow
-            val sweeper = IdleSharedFlowSweeper(flows)
+            val sweeper = IdleSharedFlowSweeper(flows, ApplicationBackgroundScope())
 
             val collected = async { withTimeout(TEST_AWAIT_TIMEOUT) { flow.first() } }
             yield() // one collector, one flow — a single scheduler turn is enough to attach.
@@ -46,7 +48,7 @@ class IdleSharedFlowSweeperTest {
     fun `a flow with zero subscribers is evicted by a sweep`() {
         val flows = ConcurrentHashMap<String, MutableSharedFlow<String>>()
         flows["key"] = newFlow()
-        val sweeper = IdleSharedFlowSweeper(flows)
+        val sweeper = IdleSharedFlowSweeper(flows, ApplicationBackgroundScope())
 
         sweeper.sweepOnce()
 
@@ -56,11 +58,26 @@ class IdleSharedFlowSweeperTest {
     @Test
     fun `sweeping an empty map is a safe no-op`() {
         val flows = ConcurrentHashMap<String, MutableSharedFlow<String>>()
-        val sweeper = IdleSharedFlowSweeper(flows)
+        val sweeper = IdleSharedFlowSweeper(flows, ApplicationBackgroundScope())
 
         sweeper.sweepOnce()
 
         assertTrue(flows.isEmpty())
+    }
+
+    @Test
+    fun `additional maintenance runs after every sweep`() {
+        var additionalSweepCount = 0
+        val sweeper =
+            IdleSharedFlowSweeper(
+                flows = ConcurrentHashMap<String, MutableSharedFlow<String>>(),
+                backgroundScope = ApplicationBackgroundScope(),
+                additionalSweep = { additionalSweepCount++ },
+            )
+
+        repeat(2) { sweeper.sweepOnce() }
+
+        assertEquals(2, additionalSweepCount)
     }
 
     @Test
@@ -69,7 +86,7 @@ class IdleSharedFlowSweeperTest {
             val flows = ConcurrentHashMap<String, MutableSharedFlow<String>>()
             val flow = newFlow()
             flows["key"] = flow
-            val sweeper = IdleSharedFlowSweeper(flows)
+            val sweeper = IdleSharedFlowSweeper(flows, ApplicationBackgroundScope())
 
             val collected = async { withTimeout(TEST_AWAIT_TIMEOUT) { flow.first() } }
             yield()
@@ -86,7 +103,7 @@ class IdleSharedFlowSweeperTest {
         val flows = ConcurrentHashMap<String, MutableSharedFlow<String>>()
         flows["a"] = newFlow()
         flows["b"] = newFlow()
-        val sweeper = IdleSharedFlowSweeper(flows)
+        val sweeper = IdleSharedFlowSweeper(flows, ApplicationBackgroundScope())
 
         sweeper.sweepOnce()
 

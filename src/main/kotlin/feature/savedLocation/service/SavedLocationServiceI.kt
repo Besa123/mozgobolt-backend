@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.savedLocation.service
 
 import com.mozgobolt.core.database.TransactionalRunner
@@ -34,10 +38,10 @@ class SavedLocationServiceI(
                     radiusKm = radiusKm,
                 )
             syncService.recordChange(
-                userId,
-                SyncEntityType.USER_SAVED_LOCATION,
-                savedLocation.id,
-                SyncOperation.UPSERT,
+                userId = userId,
+                entityType = SyncEntityType.USER_SAVED_LOCATION,
+                entityId = savedLocation.id,
+                operation = SyncOperation.UPSERT,
             )
 
             savedLocation
@@ -60,13 +64,14 @@ class SavedLocationServiceI(
             // reason to confirm to a caller that a given id belongs to another user at all.
             if (existing.userId != userId) return@transactional AppResult.Error(SavedLocationError.NOT_FOUND)
 
-            savedLocationRepository.delete(savedLocationId)
-            syncService.recordChange(
-                userId,
-                SyncEntityType.USER_SAVED_LOCATION,
-                savedLocationId,
-                SyncOperation.DELETE,
-            )
+            if (savedLocationRepository.delete(savedLocationId)) {
+                syncService.recordChange(
+                    userId = userId,
+                    entityType = SyncEntityType.USER_SAVED_LOCATION,
+                    entityId = savedLocationId,
+                    operation = SyncOperation.DELETE,
+                )
+            }
 
             AppResult.Success(Unit)
         }

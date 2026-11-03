@@ -1,79 +1,112 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.validator
 
+import com.mozgobolt.core.domain.AppResult
+import com.mozgobolt.core.domain.security.PasswordBreachCheckError
+import com.mozgobolt.core.domain.security.PasswordBreachChecker
+import com.mozgobolt.core.domain.validation.PasswordValidationError
+import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import com.mozgobolt.core.domain.security.PasswordPolicy.MAX_LENGTH as MAX_PASSWORD_LENGTH
+import com.mozgobolt.core.domain.security.PasswordPolicy.MIN_LENGTH as MIN_PASSWORD_LENGTH
 
 class StandardPasswordValidatorTest {
-    private val validator = StandardPasswordValidator()
+    private val validator =
+        StandardPasswordValidator(
+            PasswordBreachChecker { AppResult.Success(false) },
+        )
+
+    private fun isValid(password: String): Boolean =
+        runBlocking {
+            validator.validate(password) is AppResult.Success
+        }
 
     @Test
-    fun `accepts a password with upper, lower, digit and minimum length`() {
-        assertTrue(validator.isValid("Abcdefg1"))
+    fun `accepts a passphrase at the minimum length without composition rules`() {
+        assertTrue(isValid("a".repeat(MIN_PASSWORD_LENGTH)))
     }
 
     @Test
     fun `rejects a password shorter than the minimum length`() {
-        assertFalse(validator.isValid("Ab1"))
+        assertFalse(isValid("a".repeat(MIN_PASSWORD_LENGTH - 1)))
     }
 
     @Test
     fun `rejects a password longer than the maximum length`() {
-        assertFalse(validator.isValid("Ab1" + "a".repeat(MAX_PASSWORD_LENGTH)))
+        assertFalse(isValid("a".repeat(MAX_PASSWORD_LENGTH + 1)))
     }
 
     @Test
-    fun `rejects passwords missing one required character class`() {
-        val missingOneClass =
-            listOf(
-                "abcdefg1" to "missing an uppercase letter",
-                "ABCDEFG1" to "missing a lowercase letter",
-                "Abcdefgh" to "missing a digit",
-            )
-
-        missingOneClass.forEach { (password, description) ->
-            assertFalse(validator.isValid(password), "expected '$password' ($description) to be rejected")
-        }
-    }
-
-    @Test
-    fun `rejects a password at exactly the maximum length that is also missing a digit`() {
-        assertFalse(validator.isValid("Ab" + "a".repeat(MAX_PASSWORD_LENGTH - 2)))
-    }
-
-    @Test
-    fun `accepts a password exactly at the maximum length`() {
-        assertTrue(validator.isValid("Ab1" + "a".repeat(MAX_PASSWORD_LENGTH - 3)))
+    fun `accepts a passphrase at exactly the maximum length`() {
+        assertTrue(isValid("a".repeat(MAX_PASSWORD_LENGTH)))
     }
 
     @Test
     fun `rejects a password one character below the minimum length`() {
-        assertFalse(validator.isValid("Abcdef1"))
+        assertFalse(isValid("a".repeat(MIN_PASSWORD_LENGTH - 1)))
     }
 
     @Test
     fun `accepts a password at exactly the minimum length`() {
-        assertTrue(validator.isValid("Abcdefg1"))
+        assertTrue(isValid("a".repeat(MIN_PASSWORD_LENGTH)))
     }
 
     @Test
     fun `rejects an empty password`() {
-        assertFalse(validator.isValid(""))
+        assertFalse(isValid(""))
     }
 
     @Test
-    fun `rejects a password with only special characters`() {
-        assertFalse(validator.isValid("!@#$%^&*"))
+    fun `allows a password made only of special characters`() {
+        assertTrue(isValid("!@#$%^&*".repeat(2)))
     }
 
     @Test
     fun `allows internal whitespace since no character-set restriction excludes it`() {
-        assertTrue(validator.isValid("Abc def1"))
+        assertTrue(isValid("a phrase with spaces"))
     }
 
     @Test
-    fun `a unicode digit satisfies the digit requirement`() {
-        assertTrue(validator.isValid("Abcdefg٣"))
+    fun `allows a unicode passphrase without character class requirements`() {
+        assertTrue(isValid("abcdefghijklmn٣"))
+    }
+
+    @Test
+    fun `rejects a common password regardless of letter casing`() {
+        assertFalse(isValid("PASSWORD1234567"))
+    }
+
+    @Test
+    fun `fails closed when the breached-password check is unavailable`() {
+        runBlocking {
+            val validator =
+                StandardPasswordValidator {
+                    AppResult.Error(PasswordBreachCheckError.UNAVAILABLE)
+                }
+
+            assertEquals(
+                AppResult.Error(PasswordValidationError.BREACH_CHECK_UNAVAILABLE),
+                validator.validate("a long passphrase"),
+            )
+        }
+    }
+
+    @Test
+    fun `reports compromised passphrases as invalid`() {
+        runBlocking {
+            val compromisedChecker = PasswordBreachChecker { AppResult.Success(true) }
+            val breachAwareValidator = StandardPasswordValidator(compromisedChecker)
+
+            assertEquals(
+                AppResult.Error(PasswordValidationError.INVALID),
+                breachAwareValidator.validate("A long compromised passphrase"),
+            )
+        }
     }
 }

@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleTracking.data.repository
 
 import com.mozgobolt.core.skipIfNoDocker
@@ -87,6 +91,32 @@ class VehicleLocationRetentionRealDatabaseTest {
             val deleted = harness.tx.transactional { harness.locationRepository.purgeOlderThan(cutoff) }
 
             assertEquals(1, deleted, "a defensive assignment_id IS NULL row must still fall back to recordedAt")
+            assertEquals(0, harness.countLocationsForAssignment(null))
+        }
+    }
+
+    @Test
+    fun `points at the exact retention cutoff survive until the cutoff advances`() {
+        skipIfNoDocker()
+
+        withRealVehicleTrackingDatabase { harness ->
+            val vehicleId = harness.seedVehicle()
+            val cutoff = Instant.parse("2026-01-01T00:00:00Z")
+            val assignmentId = harness.seedEndedAssignment(vehicleId, cutoff)
+            harness.seedLocation(vehicleId, assignmentId, cutoff.plusSeconds(5))
+            harness.seedLocation(vehicleId, assignmentId = null, recordedAt = cutoff)
+
+            val atCutoff = harness.tx.transactional { harness.locationRepository.purgeOlderThan(cutoff) }
+            assertEquals(0, atCutoff, "the purge boundary is exclusive")
+            assertEquals(1, harness.countLocationsForAssignment(assignmentId))
+            assertEquals(1, harness.countLocationsForAssignment(null))
+
+            val justPastCutoff =
+                harness.tx.transactional {
+                    harness.locationRepository.purgeOlderThan(cutoff.plusMillis(1))
+                }
+            assertEquals(2, justPastCutoff)
+            assertEquals(0, harness.countLocationsForAssignment(assignmentId))
             assertEquals(0, harness.countLocationsForAssignment(null))
         }
     }

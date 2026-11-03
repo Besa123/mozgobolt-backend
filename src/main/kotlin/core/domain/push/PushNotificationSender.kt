@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.domain.push
 
 /**
@@ -13,6 +17,7 @@ package com.mozgobolt.core.domain.push
  * the keys/values a caller builds it from.
  */
 interface PushNotificationSender {
+    /** Sends [data] to the specified device installation. */
     suspend fun send(
         installationId: String,
         data: Map<String, String>,

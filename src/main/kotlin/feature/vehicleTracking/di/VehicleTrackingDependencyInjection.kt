@@ -1,9 +1,14 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleTracking.di
 
 import com.mozgobolt.core.database.TransactionalRunner
 import com.mozgobolt.core.domain.messaging.MessageRelay
 import com.mozgobolt.core.modules.plugin.exemptFromRequestTimeout
 import com.mozgobolt.core.routing.API_V1_PREFIX
+import com.mozgobolt.core.utility.ApplicationBackgroundScope
 import com.mozgobolt.core.utility.IdleSharedFlowSweeper
 import com.mozgobolt.feature.proximityNotification.domain.ProximityAlertService
 import com.mozgobolt.feature.vehicle.domain.VehicleRepository
@@ -23,10 +28,10 @@ import com.mozgobolt.feature.vehicleTracking.service.VehicleLocationBatchWriter
 import com.mozgobolt.feature.vehicleTracking.service.VehicleLocationRetentionPurger
 import com.mozgobolt.feature.vehicleTracking.service.VehicleTrackingServiceI
 import io.ktor.server.application.Application
-import io.ktor.server.application.ApplicationStopped
 import io.ktor.server.plugins.di.dependencies
 import io.ktor.server.plugins.di.provide
 import io.ktor.server.plugins.di.resolve
+import kotlin.time.Duration.Companion.minutes
 
 fun Application.configureVehicleTrackingDependencyInjection() {
     exemptFromRequestTimeout("$API_V1_PREFIX$VEHICLE_TRACKING_LIVE_PATH")
@@ -42,10 +47,14 @@ fun Application.configureVehicleTrackingDependencyInjection() {
         provide<InMemoryVehicleLocationHub> { InMemoryVehicleLocationHub(resolve<CellIndexer>()) }
 
         // Provided under its own concrete type too (not just VehicleLocationHub) purely so
-        // configureVehicleLocationRelay() below can resolve it and call start()/stop() — the
-        // relay's cross-instance fanout is a process lifecycle concern routes/services never see.
+        // configureVehicleLocationRelay() below starts its collector; the shared background scope
+        // cancels that job when the application stops.
         provide<RedisRelayVehicleLocationHub> {
-            RedisRelayVehicleLocationHub(resolve<InMemoryVehicleLocationHub>(), resolve<MessageRelay>())
+            RedisRelayVehicleLocationHub(
+                delegate = resolve<InMemoryVehicleLocationHub>(),
+                relay = resolve<MessageRelay>(),
+                backgroundScope = resolve<ApplicationBackgroundScope>(),
+            )
         }
         provide<VehicleLocationHub> { resolve<RedisRelayVehicleLocationHub>() }
         provide<VehicleLocationBuffer> { InMemoryVehicleLocationBuffer() }
@@ -58,6 +67,7 @@ fun Application.configureVehicleTrackingDependencyInjection() {
                 hub = resolve<VehicleLocationHub>(),
                 buffer = resolve<VehicleLocationBuffer>(),
                 proximityAlertService = resolve<ProximityAlertService>(),
+                tx = resolve<TransactionalRunner>(),
             )
         }
 
@@ -66,6 +76,7 @@ fun Application.configureVehicleTrackingDependencyInjection() {
                 buffer = resolve<VehicleLocationBuffer>(),
                 repository = resolve<VehicleLocationRepository>(),
                 tx = resolve<TransactionalRunner>(),
+                backgroundScope = resolve<ApplicationBackgroundScope>(),
             )
         }
 
@@ -73,6 +84,7 @@ fun Application.configureVehicleTrackingDependencyInjection() {
             VehicleLocationRetentionPurger(
                 repository = resolve<VehicleLocationRepository>(),
                 tx = resolve<TransactionalRunner>(),
+                backgroundScope = resolve<ApplicationBackgroundScope>(),
             )
         }
     }
@@ -81,36 +93,30 @@ fun Application.configureVehicleTrackingDependencyInjection() {
 fun Application.configureVehicleLocationBatchWriter() {
     val writer: VehicleLocationBatchWriter by dependencies
     writer.start()
-
-    monitor.subscribe(ApplicationStopped) {
-        writer.stop()
-    }
 }
 
 fun Application.configureVehicleLocationRetentionPurger() {
     val purger: VehicleLocationRetentionPurger by dependencies
     purger.start()
-
-    monitor.subscribe(ApplicationStopped) {
-        purger.stop()
-    }
 }
 
 fun Application.configureVehicleLocationRelay() {
     val hub: RedisRelayVehicleLocationHub by dependencies
     hub.start()
-
-    monitor.subscribe(ApplicationStopped) {
-        hub.stop()
-    }
 }
 
 fun Application.configureVehicleLocationIdleFlowSweeper() {
     val hub: InMemoryVehicleLocationHub by dependencies
-    val sweeper = IdleSharedFlowSweeper(hub.flowsByCell)
+    val backgroundScope: ApplicationBackgroundScope by dependencies
+    val sweeper =
+        IdleSharedFlowSweeper(
+            flows = hub.flowsByCell,
+            backgroundScope = backgroundScope,
+            sweepInterval = 1.minutes,
+            additionalSweep = {
+                hub.sweepExpiredAssignmentFences()
+                hub.sweepStaleLocations()
+            },
+        )
     sweeper.start()
-
-    monitor.subscribe(ApplicationStopped) {
-        sweeper.stop()
-    }
 }

@@ -1,8 +1,13 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.routing
 
 object AuthPaths {
     private const val BASE = "/api/v1/auth"
     const val CURRENT_USER = "$BASE/me"
+    const val DELETE_ACCOUNT = "$BASE/delete-account"
     const val REGISTER = "$BASE/register"
     const val LOGIN = "$BASE/login"
     const val REFRESH = "$BASE/refresh"

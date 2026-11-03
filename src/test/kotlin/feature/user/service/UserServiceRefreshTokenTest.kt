@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.service
 
 import com.mozgobolt.feature.user.domain.model.RefreshError
@@ -77,6 +81,19 @@ class UserServiceRefreshTokenTest {
             val harness = newHarness()
 
             val result = harness.service.refreshToken("not-a-real-token")
+
+            assertError(RefreshError.INVALID_CREDENTIALS, result)
+        }
+    }
+
+    @Test
+    fun `a validly signed refresh token without a stored session is rejected`() {
+        runBlocking {
+            val harness = newHarness()
+            val user = harness.repository.seedVerifiedUser(email = "user@example.com", password = "Str0ngPass")
+            val tokenWithoutSession = harness.tokenManager.generateRefreshToken(user.id)
+
+            val result = harness.service.refreshToken(tokenWithoutSession)
 
             assertError(RefreshError.INVALID_CREDENTIALS, result)
         }

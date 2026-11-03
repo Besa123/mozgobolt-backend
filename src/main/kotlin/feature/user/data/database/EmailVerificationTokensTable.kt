@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.data.database
 
 import org.jetbrains.exposed.v1.core.ReferenceOption
@@ -16,7 +20,7 @@ object EmailVerificationTokensTable : IntIdTable("email_verification_tokens") {
             onUpdate = ReferenceOption.RESTRICT,
         ).index()
     val token = varchar("token", 64).uniqueIndex()
-    val expiresAt = timestamp("expires_at")
+    val expiresAt = timestamp("expires_at").index()
     val used = bool("used").default(false)
     val createdAt = timestamp("created_at")
 }

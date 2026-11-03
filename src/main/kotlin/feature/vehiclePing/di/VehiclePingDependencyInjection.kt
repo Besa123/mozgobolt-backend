@@ -1,9 +1,14 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehiclePing.di
 
 import com.mozgobolt.core.database.TransactionalRunner
 import com.mozgobolt.core.domain.messaging.MessageRelay
 import com.mozgobolt.core.modules.plugin.exemptFromRequestTimeout
 import com.mozgobolt.core.routing.API_V1_PREFIX
+import com.mozgobolt.core.utility.ApplicationBackgroundScope
 import com.mozgobolt.core.utility.IdleSharedFlowSweeper
 import com.mozgobolt.feature.deviceInstallation.domain.DeviceInstallationService
 import com.mozgobolt.feature.vehicle.domain.VehicleRepository
@@ -16,10 +21,10 @@ import com.mozgobolt.feature.vehiclePing.routing.VEHICLE_PING_LIVE_PATH
 import com.mozgobolt.feature.vehiclePing.service.InMemoryVehiclePingHub
 import com.mozgobolt.feature.vehiclePing.service.PING_LOCATION_RESOLUTION
 import com.mozgobolt.feature.vehiclePing.service.RedisRelayVehiclePingHub
+import com.mozgobolt.feature.vehiclePing.service.VehiclePingRetentionPurger
 import com.mozgobolt.feature.vehiclePing.service.VehiclePingServiceI
 import com.mozgobolt.feature.vehicleTracking.service.H3CellIndexer
 import io.ktor.server.application.Application
-import io.ktor.server.application.ApplicationStopped
 import io.ktor.server.plugins.di.dependencies
 import io.ktor.server.plugins.di.provide
 import io.ktor.server.plugins.di.resolve
@@ -35,12 +40,24 @@ fun Application.configureVehiclePingDependencyInjection() {
 
         // Provided under its own concrete type too, same reasoning as
         // feature.vehicleTracking.di's RedisRelayVehicleLocationHub: only
-        // configureVehiclePingRelay() below needs it, to call start()/stop().
+        // configureVehiclePingRelay() below starts its collector; the shared background scope
+        // cancels that job when the application stops.
         provide<RedisRelayVehiclePingHub> {
-            RedisRelayVehiclePingHub(resolve<InMemoryVehiclePingHub>(), resolve<MessageRelay>())
+            RedisRelayVehiclePingHub(
+                delegate = resolve<InMemoryVehiclePingHub>(),
+                relay = resolve<MessageRelay>(),
+                backgroundScope = resolve<ApplicationBackgroundScope>(),
+            )
         }
         provide<VehiclePingHub> { resolve<RedisRelayVehiclePingHub>() }
         provide<VehiclePingRepository> { VehiclePingRepositoryI() }
+        provide<VehiclePingRetentionPurger> {
+            VehiclePingRetentionPurger(
+                repository = resolve<VehiclePingRepository>(),
+                tx = resolve<TransactionalRunner>(),
+                backgroundScope = resolve<ApplicationBackgroundScope>(),
+            )
+        }
         provide<VehiclePingService> {
             VehiclePingServiceI(
                 pingRepository = resolve<VehiclePingRepository>(),
@@ -58,21 +75,19 @@ fun Application.configureVehiclePingDependencyInjection() {
     }
 }
 
+fun Application.configureVehiclePingRetentionPurger() {
+    val purger: VehiclePingRetentionPurger by dependencies
+    purger.start()
+}
+
 fun Application.configureVehiclePingRelay() {
     val hub: RedisRelayVehiclePingHub by dependencies
     hub.start()
-
-    monitor.subscribe(ApplicationStopped) {
-        hub.stop()
-    }
 }
 
 fun Application.configureVehiclePingIdleFlowSweeper() {
     val hub: InMemoryVehiclePingHub by dependencies
-    val sweeper = IdleSharedFlowSweeper(hub.flowsByVendorUserId)
+    val backgroundScope: ApplicationBackgroundScope by dependencies
+    val sweeper = IdleSharedFlowSweeper(hub.flowsByVendorUserId, backgroundScope)
     sweeper.start()
-
-    monitor.subscribe(ApplicationStopped) {
-        sweeper.stop()
-    }
 }

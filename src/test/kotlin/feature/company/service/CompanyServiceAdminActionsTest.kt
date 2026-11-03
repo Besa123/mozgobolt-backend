@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.company.service
 
 import com.mozgobolt.feature.company.domain.model.CompanyError
@@ -80,6 +84,8 @@ class CompanyServiceAdminActionsTest {
             val fx = CompanyServiceFixture()
             val created = fx.service.createCompany(1, "FamilyFrost").fold(onSuccess = { it }, onError = { fail("$it") })
             fx.service.joinCompany(2, created.inviteCode).fold(onSuccess = {}, onError = { fail("$it") })
+            val vehicle = fx.vehicleRepository.seed(created.id)
+            val assignment = fx.assignmentRepository.seedActive(vehicle.id, vendorUserId = 2)
             fx.syncService.recorded.clear()
 
             val result = fx.service.deleteCompany(adminUserId = 1, companyId = created.id)
@@ -100,6 +106,34 @@ class CompanyServiceAdminActionsTest {
                     .map { it.userId }
                     .toSet(),
             )
+            val assignmentDelete = fx.syncService.recorded.single { it.entityType == SyncEntityType.VEHICLE_ASSIGNMENT }
+            assertEquals(2, assignmentDelete.userId)
+            assertEquals(assignment.id, assignmentDelete.entityId)
+            assertEquals(SyncOperation.DELETE, assignmentDelete.operation)
+            val recordedUserIds = fx.syncService.recorded.map { it.userId }
+            assertEquals(
+                recordedUserIds.sorted(),
+                recordedUserIds,
+                "multi-user deletion must acquire sync locks in stable user-id order",
+            )
+        }
+    }
+
+    @Test
+    fun `company deletion syncs favorite removal to users outside the company`() {
+        runBlocking {
+            val fx = CompanyServiceFixture()
+            val created = fx.service.createCompany(1, "FamilyFrost").fold(onSuccess = { it }, onError = { fail("$it") })
+            fx.companyFavoriteRepository.seed(userId = 3, companyId = created.id)
+            fx.syncService.recorded.clear()
+
+            val result = fx.service.deleteCompany(adminUserId = 1, companyId = created.id)
+
+            result.fold(onSuccess = {}, onError = { fail("expected success but got $it") })
+            val favoriteDelete = fx.syncService.recorded.single { it.entityType == SyncEntityType.COMPANY_FAVORITE }
+            assertEquals(3, favoriteDelete.userId)
+            assertEquals(created.id, favoriteDelete.entityId)
+            assertEquals(SyncOperation.DELETE, favoriteDelete.operation)
         }
     }
 

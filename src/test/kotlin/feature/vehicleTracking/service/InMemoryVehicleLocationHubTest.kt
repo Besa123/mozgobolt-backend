@@ -1,5 +1,10 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleTracking.service
 
+import com.mozgobolt.core.utility.ApplicationBackgroundScope
 import com.mozgobolt.core.utility.IdleSharedFlowSweeper
 import com.mozgobolt.feature.vehicleTracking.domain.CellIndexer
 import com.mozgobolt.feature.vehicleTracking.domain.model.CellId
@@ -16,37 +21,24 @@ import kotlinx.coroutines.yield
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
-/**
- * A test-suite safety net, not a production timing guarantee: every test below that waits on a
- * Flow wraps the wait in this. `subscribeNear` fans out into one collector coroutine per matching
- * cell (via `merge`), so — unlike subscribing to a single flow directly — a bug that breaks that
- * fan-out could leave `.first()` waiting forever with nothing to time it out. This turns "the
- * whole suite hangs" into "this one test fails in 2 seconds with a clear message."
- */
 private val TEST_AWAIT_TIMEOUT = 2.seconds
 
 private suspend fun <T> Flow<T>.firstWithTimeout(): T = withTimeout(TEST_AWAIT_TIMEOUT) { first() }
 
-// A single yield() is enough when a test subscribes to one flow directly (subscribeAll), because
-// there's exactly one coroutine that needs to reach its collect point. subscribeNear fans out
-// through `merge`, which launches one additional child coroutine per matching cell — each of
-// those needs its own scheduler turn to actually attach before a publish can be seen. Repeating
-// yield() a generous number of times is the standard, deterministic-in-practice fix for this
-// (this is exactly how kotlinx.coroutines' own test suite waits out this class of fan-out); the
-// firstWithTimeout() safety net above is what actually protects against this silently regressing
-// into a hang again rather than a fast, clear test failure.
+// subscribeNear fans out through `merge`, which launches one child coroutine per matching cell —
+// each needs a scheduler turn to attach before a publish can be seen. Repeating yield() a generous
+// number of times is deterministic in practice; firstWithTimeout() protects against a hang.
 private const val COLLECTOR_ATTACHMENT_YIELDS = 100
 
 private suspend fun awaitAllCollectorsAttached() {
     repeat(COLLECTOR_ATTACHMENT_YIELDS) { yield() }
 }
 
-/** Every existing test in this file only ever expects a position, never an offline event — this
- * unwraps that expectation instead of every test doing an unchecked cast itself. */
 private fun VehicleLiveEvent.expectPosition(): VehicleLocationUpdate =
     when (this) {
         is VehicleLiveEvent.Position -> update
@@ -58,7 +50,7 @@ class InMemoryVehicleLocationHubTest {
     // treats radiusKm as "how many whole-degree buckets to reach in each direction." Real
     // geospatial correctness (k-ring coverage, boundary handling) is H3CellIndexerTest's job —
     // this hub's own tests only need *some* partitioning scheme to exercise cell-scoped vs.
-    // unfiltered subscription/snapshot behavior.
+    // nearby subscription/snapshot behavior.
     private class FakeCellIndexer : CellIndexer {
         override fun cellFor(
             latitude: Double,
@@ -98,6 +90,7 @@ class InMemoryVehicleLocationHubTest {
         vehicleId: Int,
         latitude: Double,
         longitude: Double,
+        assignmentId: Int? = null,
     ) = VehicleLocationUpdate(
         vehicleId = vehicleId,
         vendorUserId = vehicleId,
@@ -105,6 +98,8 @@ class InMemoryVehicleLocationHubTest {
         longitude = longitude,
         recordedAt = Instant.now(),
         cellId = cellIndexerForFixtures.cellFor(latitude, longitude),
+        assignmentId = assignmentId,
+        sharesLocationWithCustomers = true,
     )
 
     @Test
@@ -134,18 +129,6 @@ class InMemoryVehicleLocationHubTest {
             // If the far-away publish had leaked into this subscription, .first() would have
             // resolved to vehicle 99 instead — proving the partition actually isolates traffic.
             assertEquals(1, nearby.await().expectPosition().vehicleId)
-        }
-
-    @Test
-    fun `subscribeAll receives an update regardless of where it was published`() =
-        runBlocking {
-            val hub = InMemoryVehicleLocationHub(FakeCellIndexer())
-            val received = async { hub.subscribeAll().firstWithTimeout() }
-            awaitAllCollectorsAttached()
-
-            hub.publish(update(vehicleId = 42, latitude = 50.0, longitude = 50.0))
-
-            assertEquals(42, received.await().expectPosition().vehicleId)
         }
 
     @Test
@@ -183,25 +166,111 @@ class InMemoryVehicleLocationHubTest {
     }
 
     @Test
-    fun `snapshotAll includes every published vehicle regardless of location`() {
+    fun `an unconsented location remains private to movement validation`() {
         val hub = InMemoryVehicleLocationHub(FakeCellIndexer())
-        hub.publish(update(vehicleId = 1, latitude = 10.0, longitude = 10.0))
-        hub.publish(update(vehicleId = 2, latitude = 50.0, longitude = 50.0))
+        val privateUpdate =
+            update(vehicleId = 1, latitude = 10.0, longitude = 10.0)
+                .copy(sharesLocationWithCustomers = false)
 
-        val snapshot = hub.snapshotAll()
+        assertTrue(hub.publishIfCurrent(privateUpdate))
 
-        assertEquals(setOf(1, 2), snapshot.map { it.vehicleId }.toSet())
+        assertTrue(hub.snapshotNear(10.0, 10.0, 1.0).isEmpty())
+        assertEquals(privateUpdate, hub.lastKnownLocation(vehicleId = 1))
     }
 
     @Test
-    fun `a later publish for the same vehicle replaces the earlier one in both snapshots`() {
+    fun `withdrawing location consent removes the public position and emits offline`() =
+        runBlocking {
+            val hub = InMemoryVehicleLocationHub(FakeCellIndexer())
+            val publicUpdate = update(vehicleId = 1, latitude = 10.0, longitude = 10.0, assignmentId = 10)
+            assertTrue(hub.publishIfCurrent(publicUpdate))
+
+            val offline =
+                async { hub.subscribeNear(latitude = 10.0, longitude = 10.0, radiusKm = 1.0).firstWithTimeout() }
+            awaitAllCollectorsAttached()
+            val privateUpdate = publicUpdate.copy(sharesLocationWithCustomers = false)
+
+            assertTrue(hub.publishIfCurrent(privateUpdate))
+
+            assertEquals(VehicleLiveEvent.Offline(vehicleId = 1), offline.await())
+            assertTrue(hub.snapshotNear(10.0, 10.0, 1.0).isEmpty())
+            assertEquals(privateUpdate, hub.lastKnownLocation(1))
+        }
+
+    @Test
+    fun `a legacy unassigned point cannot resurrect an ended assignment`() {
+        val hub = InMemoryVehicleLocationHub(FakeCellIndexer())
+        val endedAssignment = update(vehicleId = 1, latitude = 10.0, longitude = 10.0, assignmentId = 10)
+        assertTrue(hub.publishIfCurrent(endedAssignment))
+        assertTrue(hub.markOffline(vehicleId = 1, assignmentId = 10))
+
+        assertFalse(
+            hub.publishIfCurrent(
+                endedAssignment.copy(
+                    assignmentId = null,
+                    recordedAt = Instant.now().plusSeconds(1),
+                ),
+            ),
+        )
+        assertNull(hub.lastKnownLocation(1))
+    }
+
+    @Test
+    fun `repeated offline signals for the ended assignment are idempotently accepted`() {
+        val hub = InMemoryVehicleLocationHub(FakeCellIndexer())
+        assertTrue(hub.publishIfCurrent(update(vehicleId = 1, latitude = 10.0, longitude = 10.0, assignmentId = 10)))
+
+        assertTrue(hub.markOffline(vehicleId = 1, assignmentId = 10))
+        assertTrue(hub.markOffline(vehicleId = 1, assignmentId = 10))
+
+        assertNull(hub.lastKnownLocation(1))
+    }
+
+    @Test
+    fun `stale private location is removed without publishing an offline event`() =
+        runBlocking {
+            val hub = InMemoryVehicleLocationHub(FakeCellIndexer())
+            val privateUpdate =
+                update(vehicleId = 1, latitude = 10.0, longitude = 10.0, assignmentId = 10)
+                    .copy(sharesLocationWithCustomers = false)
+            assertTrue(hub.publishIfCurrent(privateUpdate))
+            val nextPosition =
+                async { hub.subscribeNear(latitude = 10.0, longitude = 10.0, radiusKm = 1.0).firstWithTimeout() }
+            awaitAllCollectorsAttached()
+
+            hub.sweepStaleLocations(System.currentTimeMillis() + 6 * 60 * 1000)
+            hub.publish(update(vehicleId = 2, latitude = 10.0, longitude = 10.0))
+
+            assertEquals(2, nextPosition.await().expectPosition().vehicleId)
+            assertNull(hub.lastKnownLocation(1))
+        }
+
+    @Test
+    fun `a live location expires and notifies nearby subscribers after five minutes`() =
+        runBlocking {
+            val hub = InMemoryVehicleLocationHub(FakeCellIndexer())
+            val update = update(vehicleId = 1, latitude = 10.0, longitude = 10.0)
+            hub.publish(update)
+            val offline =
+                async { hub.subscribeNear(latitude = 10.0, longitude = 10.0, radiusKm = 1.0).firstWithTimeout() }
+            awaitAllCollectorsAttached()
+
+            hub.sweepStaleLocations(System.currentTimeMillis() + 6 * 60 * 1000)
+
+            assertEquals(VehicleLiveEvent.Offline(vehicleId = 1), offline.await())
+            assertTrue(hub.snapshotNear(10.0, 10.0, 1.0).isEmpty())
+            assertNull(hub.lastKnownLocation(1))
+        }
+
+    @Test
+    fun `a later publish for the same vehicle replaces its nearby snapshot position`() {
         val hub = InMemoryVehicleLocationHub(FakeCellIndexer())
         hub.publish(update(vehicleId = 1, latitude = 10.0, longitude = 10.0))
         hub.publish(update(vehicleId = 1, latitude = 10.1, longitude = 10.1))
 
-        assertEquals(1, hub.snapshotAll().size)
-        assertEquals(10.1, hub.snapshotAll().single().latitude)
-        assertEquals(10.1, hub.snapshotNear(10.0, 10.0, 1.0).single().latitude)
+        val snapshot = hub.snapshotNear(10.0, 10.0, 1.0)
+        assertEquals(1, snapshot.size)
+        assertEquals(10.1, snapshot.single().latitude)
     }
 
     @Test
@@ -212,7 +281,7 @@ class InMemoryVehicleLocationHubTest {
         // No assertion beyond "this doesn't throw" — nobody has subscribed to this cell yet, so
         // there's no flow to emit into and nothing to observe.
 
-        assertTrue(hub.snapshotAll().isNotEmpty())
+        assertTrue(hub.snapshotNear(10.0, 10.0, 1.0).isNotEmpty())
     }
 
     @Test
@@ -234,16 +303,49 @@ class InMemoryVehicleLocationHubTest {
     }
 
     @Test
-    fun `markOffline removes the vehicle from both snapshots`() {
+    fun `markOffline removes the vehicle from nearby snapshots`() {
         val hub = InMemoryVehicleLocationHub(FakeCellIndexer())
         hub.publish(update(vehicleId = 1, latitude = 10.0, longitude = 10.0))
         hub.publish(update(vehicleId = 2, latitude = 20.0, longitude = 20.0))
 
         hub.markOffline(vehicleId = 1)
 
-        assertEquals(setOf(2), hub.snapshotAll().map { it.vehicleId }.toSet())
+        assertEquals(listOf(2), hub.snapshotNear(20.0, 20.0, 1.0).map { it.vehicleId })
         assertTrue(hub.snapshotNear(10.0, 10.0, 1.0).isEmpty())
         assertNull(hub.lastKnownLocation(vehicleId = 1))
+    }
+
+    @Test
+    fun `late points and offline signals from an ended assignment cannot affect a newer shift`() {
+        val hub = InMemoryVehicleLocationHub(FakeCellIndexer())
+        val oldAssignment = update(vehicleId = 1, latitude = 10.0, longitude = 10.0, assignmentId = 10)
+        val newAssignment = update(vehicleId = 1, latitude = 20.0, longitude = 20.0, assignmentId = 11)
+
+        assertTrue(hub.publishIfCurrent(oldAssignment))
+        assertTrue(hub.markOffline(vehicleId = 1, assignmentId = 10))
+        assertNull(hub.lastKnownLocation(vehicleId = 1))
+
+        assertTrue(hub.publishIfCurrent(newAssignment))
+        assertFalse(hub.publishIfCurrent(oldAssignment.copy(recordedAt = Instant.now().plusSeconds(1))))
+        assertFalse(hub.markOffline(vehicleId = 1, assignmentId = 10))
+
+        assertEquals(newAssignment, hub.lastKnownLocation(vehicleId = 1))
+    }
+
+    @Test
+    fun `expired ended-assignment fences can be reclaimed`() {
+        val hub = InMemoryVehicleLocationHub(FakeCellIndexer())
+        val oldAssignment = update(vehicleId = 1, latitude = 10.0, longitude = 10.0, assignmentId = 10)
+
+        assertTrue(hub.publishIfCurrent(oldAssignment))
+        assertTrue(hub.markOffline(vehicleId = 1, assignmentId = 10))
+        assertFalse(hub.publishIfCurrent(oldAssignment))
+
+        hub.pruneExpiredAssignmentFences(
+            Instant.now().plusSeconds(ASSIGNMENT_FENCE_RETENTION_SECONDS + 1),
+        )
+
+        assertTrue(hub.publishIfCurrent(oldAssignment.copy(recordedAt = Instant.now().plusSeconds(1))))
     }
 
     @Test
@@ -252,24 +354,22 @@ class InMemoryVehicleLocationHubTest {
 
         hub.markOffline(vehicleId = 999)
 
-        assertTrue(hub.snapshotAll().isEmpty())
+        assertTrue(hub.snapshotNear(0.0, 0.0, 1.0).isEmpty())
     }
 
     @Test
-    fun `markOffline emits an Offline event to subscribers of the vehicle's last-known cell and to subscribeAll`() =
+    fun `markOffline emits an Offline event to subscribers near the vehicle's last-known cell`() =
         runBlocking {
             val hub = InMemoryVehicleLocationHub(FakeCellIndexer())
             hub.publish(update(vehicleId = 1, latitude = 10.0, longitude = 10.0))
 
             val nearReceived =
                 async { hub.subscribeNear(latitude = 10.0, longitude = 10.0, radiusKm = 1.0).firstWithTimeout() }
-            val allReceived = async { hub.subscribeAll().firstWithTimeout() }
             awaitAllCollectorsAttached()
 
             hub.markOffline(vehicleId = 1)
 
             assertEquals(VehicleLiveEvent.Offline(vehicleId = 1), nearReceived.await())
-            assertEquals(VehicleLiveEvent.Offline(vehicleId = 1), allReceived.await())
         }
 
     @Test
@@ -299,7 +399,7 @@ class InMemoryVehicleLocationHubTest {
                 async { hub.subscribeNear(latitude = 10.0, longitude = 10.0, radiusKm = 1.0).firstWithTimeout() }
             awaitAllCollectorsAttached()
 
-            IdleSharedFlowSweeper(hub.flowsByCell).sweepOnce()
+            IdleSharedFlowSweeper(hub.flowsByCell, ApplicationBackgroundScope()).sweepOnce()
             hub.publish(update(vehicleId = 1, latitude = 10.0, longitude = 10.0))
 
             assertEquals(1, received.await().expectPosition().vehicleId)
@@ -317,7 +417,7 @@ class InMemoryVehicleLocationHubTest {
 
             // Nobody is subscribed right now (the collector above already completed on its
             // first element) — the cell's flow is genuinely idle and should be evicted.
-            IdleSharedFlowSweeper(hub.flowsByCell).sweepOnce()
+            IdleSharedFlowSweeper(hub.flowsByCell, ApplicationBackgroundScope()).sweepOnce()
 
             val secondReceived =
                 async { hub.subscribeNear(latitude = 10.0, longitude = 10.0, radiusKm = 1.0).firstWithTimeout() }

@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.media
 
 import com.mozgobolt.core.domain.AppResult
@@ -6,6 +10,7 @@ import com.mozgobolt.core.domain.media.ImageSanitizer
 import com.mozgobolt.core.domain.media.SanitizedImage
 import com.mozgobolt.core.modules.AppConfig
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import net.coobird.thumbnailator.Thumbnails
@@ -26,9 +31,10 @@ private val ALLOWED_FORMATS = setOf("JPEG", "PNG")
 @Suppress("TooGenericExceptionCaught")
 class JavaImageSanitizer(
     private val config: AppConfig.Media,
+    private val processingDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ImageSanitizer {
     override suspend fun sanitize(rawBytes: ByteArray): AppResult<SanitizedImage, ImageSanitizationError> =
-        withContext(Dispatchers.IO) {
+        withContext(processingDispatcher) {
             val inputStream =
                 ImageIO.createImageInputStream(ByteArrayInputStream(rawBytes))
                     ?: return@withContext AppResult.Error(ImageSanitizationError.UNSUPPORTED_FORMAT)
@@ -73,7 +79,18 @@ class JavaImageSanitizer(
         }
 
         return try {
-            AppResult.Success(reader.read(0))
+            val maxDecodeDimension = config.maxImageDimensionPixels.coerceAtLeast(1).toLong() * 2
+            val longestEdge = maxOf(width, height).toLong()
+            val sourceSubsampling =
+                ((longestEdge + maxDecodeDimension - 1) / maxDecodeDimension)
+                    .coerceAtLeast(1)
+                    .toInt()
+            val readParameters =
+                reader.defaultReadParam.apply {
+                    setSourceSubsampling(sourceSubsampling, sourceSubsampling, 0, 0)
+                }
+
+            AppResult.Success(reader.read(0, readParameters))
         } catch (e: Exception) {
             logger.debug(e) { "Failed to decode image — treating as corrupt" }
             AppResult.Error(ImageSanitizationError.CORRUPT)
@@ -93,12 +110,12 @@ class JavaImageSanitizer(
 
         val resized =
             Thumbnails
-                .of(flattenToOpaqueRgb(decoded))
+                .of(decoded)
                 .size(targetWidth, targetHeight)
                 .asBufferedImage()
 
         return SanitizedImage(
-            bytes = encodeAsJpeg(resized, config.jpegQuality),
+            bytes = encodeAsJpeg(flattenToOpaqueRgb(resized), config.jpegQuality),
             width = resized.width,
             height = resized.height,
             contentType = "image/jpeg",

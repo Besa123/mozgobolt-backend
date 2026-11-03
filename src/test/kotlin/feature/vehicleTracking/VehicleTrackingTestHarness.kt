@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleTracking
 
 import com.mozgobolt.core.database.TransactionalRunner
@@ -62,20 +66,22 @@ data class VehicleTrackingTestHarness(
         vehicleId: Int,
         assignmentId: Int?,
         recordedAt: Instant,
-    ) = tx.transactional {
-        locationRepository.insertAll(
-            listOf(
-                VehicleLocationUpdate(
-                    vehicleId = vehicleId,
-                    vendorUserId = 1,
-                    latitude = 47.4979,
-                    longitude = 19.0402,
-                    recordedAt = recordedAt,
-                    cellId = CellId("irrelevant"),
-                    assignmentId = assignmentId,
+    ) {
+        tx.transactional {
+            locationRepository.insertAll(
+                listOf(
+                    VehicleLocationUpdate(
+                        vehicleId = vehicleId,
+                        vendorUserId = 1,
+                        latitude = 47.4979,
+                        longitude = 19.0402,
+                        recordedAt = recordedAt,
+                        cellId = CellId("irrelevant"),
+                        assignmentId = assignmentId,
+                    ),
                 ),
-            ),
-        )
+            )
+        }
     }
 
     suspend fun countLocationsForAssignment(assignmentId: Int?): Int =
@@ -84,6 +90,8 @@ data class VehicleTrackingTestHarness(
                 .selectAll()
                 .count { it[VehicleLocationsTable.assignmentId] == assignmentId }
         }
+
+    suspend fun countLocations(): Long = tx.transactional { VehicleLocationsTable.selectAll().count() }
 }
 
 fun withRealVehicleTrackingDatabase(block: suspend (VehicleTrackingTestHarness) -> Unit) {

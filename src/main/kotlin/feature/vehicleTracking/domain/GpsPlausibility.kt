@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleTracking.domain
 
 import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationUpdate
@@ -15,6 +19,7 @@ private const val MILLIS_PER_HOUR = 3_600_000.0
  * genuine fast driving, only outright teleports.
  */
 object GpsPlausibility {
+    /** Maximum accepted vehicle speed in kilometers per hour. */
     const val MAX_PLAUSIBLE_SPEED_KMH = 200.0
 
     // How far apart two points may be when their ordering is ambiguous (a non-positive elapsed
@@ -22,8 +27,11 @@ object GpsPlausibility {
     // around the same real position, not a genuinely different one. Deliberately generous, same
     // spirit as MAX_PLAUSIBLE_SPEED_KMH — this only needs to catch outright teleports, not
     // second-guess ordinary GPS noise.
+
+    /** Maximum tolerated movement in kilometers when timestamp ordering is ambiguous. */
     const val MAX_PLAUSIBLE_JITTER_DISTANCE_KM = 0.5
 
+    /** Reports whether a candidate point is plausible relative to the preceding point. */
     fun isPlausibleMovement(
         previous: VehicleLocationUpdate?,
         candidateLatitude: Double,
@@ -32,7 +40,13 @@ object GpsPlausibility {
     ): Boolean {
         if (previous == null) return true // nothing to compare a vehicle's first-ever ping against
 
-        val distanceKm = haversineKm(previous.latitude, previous.longitude, candidateLatitude, candidateLongitude)
+        val distanceKm =
+            haversineKm(
+                lat1 = previous.latitude,
+                lon1 = previous.longitude,
+                lat2 = candidateLatitude,
+                lon2 = candidateLongitude,
+            )
         val elapsed = Duration.between(previous.recordedAt, candidateRecordedAt)
 
         // A non-positive elapsed time means there's no meaningful speed to compute, but a large

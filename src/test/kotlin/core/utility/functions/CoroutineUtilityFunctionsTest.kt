@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.utility.functions
 
 import kotlinx.coroutines.CancellationException

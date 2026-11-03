@@ -1,8 +1,15 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.domain.validation
 
 private val INVALID_CHARACTERS = Regex("[<>\"'&;]")
+
+/** Maximum accepted display-name length. */
 const val DISPLAY_NAME_MAX_LENGTH = 100
 
+/** Returns validation messages for [name] under the supplied length and character rules. */
 fun validateDisplayName(
     name: String,
     maxLength: Int,

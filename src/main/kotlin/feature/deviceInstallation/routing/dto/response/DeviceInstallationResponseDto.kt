@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.deviceInstallation.routing.dto.response
 
 import com.mozgobolt.feature.deviceInstallation.domain.model.DeviceInstallation

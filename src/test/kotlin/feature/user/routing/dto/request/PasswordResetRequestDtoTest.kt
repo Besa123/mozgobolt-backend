@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.routing.dto.request
 
 import kotlin.test.Test
@@ -40,14 +44,14 @@ class PasswordResetValidateRequestDtoTest {
 class PasswordResetConfirmRequestDtoTest {
     @Test
     fun `a well-formed request has no validation errors`() {
-        val request = PasswordResetConfirmRequestDto(token = "some-token", newPassword = "Str0ngPass1")
+        val request = PasswordResetConfirmRequestDto(token = "some-token", newPassword = "Str0ngPassphrase1")
 
         assertTrue(request.validate().isEmpty())
     }
 
     @Test
     fun `a blank token is rejected`() {
-        val request = PasswordResetConfirmRequestDto(token = "", newPassword = "Str0ngPass1")
+        val request = PasswordResetConfirmRequestDto(token = "", newPassword = "Str0ngPassphrase1")
 
         assertTrue(request.validate().isNotEmpty())
     }
@@ -64,5 +68,12 @@ class PasswordResetConfirmRequestDtoTest {
         val request = PasswordResetConfirmRequestDto(token = "", newPassword = "")
 
         assertTrue(request.validate().size >= 2)
+    }
+
+    @Test
+    fun `a new password below the minimum length is rejected`() {
+        val request = PasswordResetConfirmRequestDto(token = "some-token", newPassword = "a".repeat(14))
+
+        assertTrue(request.validate().any { it.contains("15-128") })
     }
 }

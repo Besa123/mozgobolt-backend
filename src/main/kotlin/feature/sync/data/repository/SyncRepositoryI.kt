@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.sync.data.repository
 
 import com.mozgobolt.feature.sync.data.database.SyncEventsTable
@@ -19,13 +23,11 @@ import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.TransactionManager
 import java.time.Instant
 
-private val NOTIFY_PAYLOAD_TYPE = VarCharColumnType()
-private val ADVISORY_LOCK_INTEGER_TYPE = IntegerColumnType()
-
 const val SYNC_NOTIFY_CHANNEL = "sync_events"
 internal const val SYNC_USER_LOCK_NAMESPACE = 0x4D5A4254
 
 class SyncRepositoryI : SyncRepository {
+    @Suppress("CommandInjection", "SqlInjection")
     override suspend fun record(
         userId: Int,
         entityType: SyncEntityType,
@@ -50,8 +52,8 @@ class SyncRepositoryI : SyncRepository {
             stmt = "SELECT pg_notify(?, ?)",
             args =
                 listOf(
-                    NOTIFY_PAYLOAD_TYPE to SYNC_NOTIFY_CHANNEL,
-                    NOTIFY_PAYLOAD_TYPE to "$userId:$insertedId:${originDeviceId.orEmpty()}",
+                    VarCharColumnType() to SYNC_NOTIFY_CHANNEL,
+                    VarCharColumnType() to "$userId:$insertedId:${originDeviceId.orEmpty()}",
                 ),
         )
 
@@ -66,13 +68,14 @@ class SyncRepositoryI : SyncRepository {
     }
 
     // The transaction-level lock is held through commit, keeping each user's sequence IDs commit-ordered.
+    @Suppress("CommandInjection")
     private fun lockUserSyncEvents(userId: Int) {
         TransactionManager.current().exec(
             stmt = "SELECT pg_advisory_xact_lock(?, ?)",
             args =
                 listOf(
-                    ADVISORY_LOCK_INTEGER_TYPE to SYNC_USER_LOCK_NAMESPACE,
-                    ADVISORY_LOCK_INTEGER_TYPE to userId,
+                    IntegerColumnType() to SYNC_USER_LOCK_NAMESPACE,
+                    IntegerColumnType() to userId,
                 ),
             explicitStatementType = StatementType.SELECT,
         ) { resultSet ->

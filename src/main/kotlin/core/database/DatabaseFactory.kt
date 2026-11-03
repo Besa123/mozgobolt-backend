@@ -1,5 +1,10 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.database
 
+import com.mozgobolt.core.modules.RuntimeCapacityConfig
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -11,8 +16,8 @@ import kotlin.time.Duration.Companion.seconds
 
 private val logger = KotlinLogging.logger {}
 
+/** Creates PostgreSQL connection pools, Exposed database handles, and Flyway migrations. */
 object DatabaseFactory {
-    private const val DEFAULT_POOL_SIZE = 10
     private const val MIN_IDLE_CONNECTIONS = 2
     private val CONNECTION_TIMEOUT = 10.seconds
     private val VALIDATION_TIMEOUT = 5.seconds
@@ -25,8 +30,11 @@ object DatabaseFactory {
         dbUrl: String,
         dbUser: String,
         dbPassword: String,
-        poolSize: Int = DEFAULT_POOL_SIZE,
+        poolSize: Int = RuntimeCapacityConfig.DEFAULT_DATABASE_POOL_SIZE,
     ): DataSource {
+        require(poolSize > 0) { "Database pool size must be greater than zero" }
+        val configuredMinimumIdle = minOf(MIN_IDLE_CONNECTIONS, poolSize)
+
         val config =
             HikariConfig().apply {
                 driverClassName = "org.postgresql.Driver"
@@ -35,7 +43,7 @@ object DatabaseFactory {
                 password = dbPassword
                 poolName = "MozgoBolt-Pool"
                 maximumPoolSize = poolSize
-                minimumIdle = MIN_IDLE_CONNECTIONS
+                minimumIdle = configuredMinimumIdle
                 isAutoCommit = false
                 transactionIsolation = "TRANSACTION_READ_COMMITTED"
                 connectionTimeout = CONNECTION_TIMEOUT.inWholeMilliseconds
@@ -47,7 +55,7 @@ object DatabaseFactory {
             }
 
         return HikariDataSource(config).also {
-            logger.info { "Database pool started (max=$poolSize, minIdle=2)" }
+            logger.info { "Database pool started (max=$poolSize, minIdle=$configuredMinimumIdle)" }
         }
     }
 

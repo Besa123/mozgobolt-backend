@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.companyFavorite.service
 
 import com.mozgobolt.feature.company.domain.CompanyRepository
@@ -5,7 +9,10 @@ import com.mozgobolt.feature.company.domain.model.Company
 import com.mozgobolt.feature.companyFavorite.domain.CompanyFavoriteRepository
 import com.mozgobolt.feature.companyFavorite.domain.model.CompanyFavorite
 import com.mozgobolt.feature.companyFavorite.domain.model.CompanyFavoriteError
+import com.mozgobolt.feature.proximityNotification.domain.ProximityNotificationRepository
+import com.mozgobolt.feature.proximityNotification.domain.model.ProximityNotificationRecord
 import com.mozgobolt.feature.sync.domain.model.SyncEntityType
+import com.mozgobolt.feature.sync.domain.model.SyncOperation
 import com.mozgobolt.feature.sync.routing.FakeSyncService
 import com.mozgobolt.feature.user.service.NoopTransactionalRunner
 import kotlinx.coroutines.runBlocking
@@ -43,6 +50,45 @@ class CompanyFavoriteServiceITest {
             favorites.filter { it.companyId == companyId }.map { it.userId }
     }
 
+    private class FakeProximityNotificationRepository : ProximityNotificationRepository {
+        val deletedFor = mutableListOf<Pair<Int, Int>>()
+
+        override suspend fun find(
+            buyerUserId: Int,
+            savedLocationId: Int,
+            vehicleId: Int,
+        ): ProximityNotificationRecord? = error("not exercised by this test")
+
+        override suspend fun recordEntryAttempted(
+            buyerUserId: Int,
+            savedLocationId: Int,
+            vehicleId: Int,
+            attemptedAt: Instant,
+        ): ProximityNotificationRecord = error("not exercised by this test")
+
+        override suspend fun claimEntryNotification(
+            buyerUserId: Int,
+            savedLocationId: Int,
+            vehicleId: Int,
+            attemptedAt: Instant,
+            cooldownCutoff: Instant,
+        ): Boolean = error("not exercised by this test")
+
+        override suspend fun markOutside(
+            buyerUserId: Int,
+            savedLocationId: Int,
+            vehicleId: Int,
+        ) = error("not exercised by this test")
+
+        override suspend fun deleteForUserAndCompany(
+            buyerUserId: Int,
+            companyId: Int,
+        ): Int {
+            deletedFor += buyerUserId to companyId
+            return 0
+        }
+    }
+
     private class FakeCompanyRepository : CompanyRepository {
         private val companiesById = mutableMapOf<Int, Company>()
 
@@ -61,6 +107,8 @@ class CompanyFavoriteServiceITest {
 
         override suspend fun findById(companyId: Int): Company? = companiesById[companyId]
 
+        override suspend fun findByIdForUpdate(companyId: Int): Company? = findById(companyId)
+
         override suspend fun rename(
             companyId: Int,
             newName: String,
@@ -78,9 +126,11 @@ class CompanyFavoriteServiceITest {
         val companyRepository = FakeCompanyRepository()
         val syncService = FakeSyncService()
         val favoriteRepository = FakeCompanyFavoriteRepository()
+        val proximityNotificationRepository = FakeProximityNotificationRepository()
         val service =
             CompanyFavoriteServiceI(
                 favoriteRepository = favoriteRepository,
+                proximityNotificationRepository = proximityNotificationRepository,
                 companyRepository = companyRepository,
                 syncService = syncService,
                 tx = NoopTransactionalRunner(),
@@ -91,13 +141,18 @@ class CompanyFavoriteServiceITest {
     fun `favoriting an existing company succeeds and records a sync event`() {
         runBlocking {
             val fx = Fixture()
-            fx.companyRepository.seed(1)
+            fx.companyRepository.seed(42)
 
-            val result = fx.service.favoriteCompany(userId = 10, companyId = 1)
+            val result = fx.service.favoriteCompany(userId = 10, companyId = 42)
 
             result.fold(onSuccess = {}, onError = { fail("expected success but got $it") })
-            assertEquals(listOf(1), fx.service.listFavorites(10).map { it.companyId })
-            assertTrue(fx.syncService.recorded.any { it.entityType == SyncEntityType.COMPANY_FAVORITE })
+            assertEquals(listOf(42), fx.service.listFavorites(10).map { it.companyId })
+            val favoriteEvent = fx.syncService.recorded.single()
+            assertEquals(
+                Triple(10, SyncEntityType.COMPANY_FAVORITE, 42),
+                Triple(favoriteEvent.userId, favoriteEvent.entityType, favoriteEvent.entityId),
+            )
+            assertEquals(SyncOperation.UPSERT, favoriteEvent.operation)
         }
     }
 
@@ -118,14 +173,16 @@ class CompanyFavoriteServiceITest {
     fun `favoriting the same company twice is idempotent, not an error, and records only one sync event`() {
         runBlocking {
             val fx = Fixture()
-            fx.companyRepository.seed(1)
-            fx.service.favoriteCompany(10, 1).fold(onSuccess = {}, onError = { fail("$it") })
+            fx.companyRepository.seed(42)
+            fx.service.favoriteCompany(10, 42).fold(onSuccess = {}, onError = { fail("$it") })
 
-            val result = fx.service.favoriteCompany(10, 1)
+            val result = fx.service.favoriteCompany(10, 42)
 
             result.fold(onSuccess = {}, onError = { fail("expected success but got $it") })
             assertEquals(1, fx.service.listFavorites(10).size)
             assertEquals(1, fx.syncService.recorded.size)
+            val favoriteEvent = fx.syncService.recorded.single()
+            assertEquals(42, favoriteEvent.entityId)
         }
     }
 
@@ -133,14 +190,20 @@ class CompanyFavoriteServiceITest {
     fun `unfavoriting a company that was favorited removes it and records a sync event`() {
         runBlocking {
             val fx = Fixture()
-            fx.companyRepository.seed(1)
-            fx.service.favoriteCompany(10, 1).fold(onSuccess = {}, onError = { fail("$it") })
+            fx.companyRepository.seed(42)
+            fx.service.favoriteCompany(10, 42).fold(onSuccess = {}, onError = { fail("$it") })
 
-            val result = fx.service.unfavoriteCompany(10, 1)
+            val result = fx.service.unfavoriteCompany(10, 42)
 
             result.fold(onSuccess = {}, onError = { fail("expected success but got $it") })
             assertTrue(fx.service.listFavorites(10).isEmpty())
-            assertTrue(fx.syncService.recorded.any { it.operation.name == "DELETE" })
+            assertEquals(listOf(10 to 42), fx.proximityNotificationRepository.deletedFor)
+            val favoriteEvent = fx.syncService.recorded.last()
+            assertEquals(
+                Triple(10, SyncEntityType.COMPANY_FAVORITE, 42),
+                Triple(favoriteEvent.userId, favoriteEvent.entityType, favoriteEvent.entityId),
+            )
+            assertEquals(SyncOperation.DELETE, favoriteEvent.operation)
         }
     }
 
@@ -148,11 +211,28 @@ class CompanyFavoriteServiceITest {
     fun `unfavoriting a company that was never favorited is a no-op success, not an error`() {
         runBlocking {
             val fx = Fixture()
+            fx.companyRepository.seed(42)
 
-            val result = fx.service.unfavoriteCompany(10, 1)
+            val result = fx.service.unfavoriteCompany(10, 42)
 
             result.fold(onSuccess = {}, onError = { fail("expected success but got $it") })
             assertTrue(fx.syncService.recorded.isEmpty(), "nothing was actually removed, so nothing to sync")
+            assertTrue(fx.proximityNotificationRepository.deletedFor.isEmpty())
+        }
+    }
+
+    @Test
+    fun `unfavoriting a nonexistent company returns company not found`() {
+        runBlocking {
+            val fx = Fixture()
+
+            val result = fx.service.unfavoriteCompany(10, 999)
+
+            result.fold(
+                onSuccess = { fail("expected COMPANY_NOT_FOUND but got success") },
+                onError = { assertEquals(CompanyFavoriteError.COMPANY_NOT_FOUND, it) },
+            )
+            assertTrue(fx.syncService.recorded.isEmpty())
         }
     }
 

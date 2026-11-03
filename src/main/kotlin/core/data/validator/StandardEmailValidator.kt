@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.validator
 
 import com.mozgobolt.core.domain.validation.EmailValidator
@@ -21,6 +25,8 @@ class StandardEmailValidator : EmailValidator {
         private const val EMAIL_PATTERN =
             """^[a-z0-9]([a-z0-9._%+\-]*[a-z0-9])?@[a-z0-9]([a-z0-9\-]*[a-z0-9])?""" +
                 """(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*\.[a-z]{2,}$"""
+
+        @Suppress("RegexInjection")
         private val EMAIL_REGEX = Regex(EMAIL_PATTERN)
 
         private val disposableDomains: Set<String> by lazy {

@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.deviceInstallation.routing
 
 import com.mozgobolt.core.modules.plugin.BodyLimit

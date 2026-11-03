@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehiclePing.domain
 
 import com.mozgobolt.feature.vehiclePing.domain.model.VehiclePingNotification
@@ -14,10 +18,12 @@ import kotlinx.coroutines.flow.Flow
  * phase — closing that gap is a push-notification concern, deliberately out of scope here.
  */
 interface VehiclePingHub {
+    /** Publishes a transient ping notification to the vendor's active subscribers. */
     fun publish(
         vendorUserId: Int,
         notification: VehiclePingNotification,
     )
 
+    /** Subscribes to transient ping notifications for one vendor. */
     fun subscribe(vendorUserId: Int): Flow<VehiclePingNotification>
 }

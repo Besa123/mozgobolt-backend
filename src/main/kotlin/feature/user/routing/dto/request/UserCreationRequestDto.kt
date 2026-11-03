@@ -1,5 +1,13 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+// Credential fields are required for inbound request deserialization, not API response serialization.
+@file:Suppress("KotlinxSerializationSensitiveField")
+
 package com.mozgobolt.feature.user.routing.dto.request
 
+import com.mozgobolt.core.domain.security.PasswordPolicy
 import com.mozgobolt.core.domain.validation.DISPLAY_NAME_MAX_LENGTH
 import com.mozgobolt.core.domain.validation.ValidatedRequest
 import com.mozgobolt.core.domain.validation.validateDisplayName
@@ -22,10 +30,16 @@ data class UserCreationRequestDto(
 ) : ValidatedRequest {
     override fun validate() =
         buildList {
+            val allowedRoles = UserRole.entries.joinToString { it.name }
+
             if (email.isBlank()) add("Email is required")
-            if (password.isBlank()) add("Password is required")
+            if (password.isBlank()) {
+                add("Password is required")
+            } else if (!PasswordPolicy.isValid(password)) {
+                add("Password must be 15-128 characters and not commonly used")
+            }
             if (UserRole.entries.none { it.name == role }) {
-                add("Role must be one of ${UserRole.entries.joinToString { it.name }}")
+                add("Role must be one of $allowedRoles")
             }
             addAll(validateDisplayName(name, DISPLAY_NAME_MAX_LENGTH))
             addAll(validatePhoneNumber(phoneNumber))

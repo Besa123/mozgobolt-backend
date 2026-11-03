@@ -13,10 +13,12 @@ decisions (refresh-token rotation, results-over-exceptions, etc.).
   on startup)
 - **JWT** auth (access + refresh tokens, refresh-token family rotation with theft detection — see
   [ADR 0004](docs/adr/0004-refresh-token-family-rotation.md))
-- Structured JSON logging (Logback + Logstash encoder), request-correlated via call IDs
+- Structured JSON request logs (Logback + Logstash encoder) include request IDs and authenticated user IDs. Production
+  writes to stdout and rolling files under `LOG_DIR` (default `./logs`); request logs omit IPs, user agents, device IDs,
+  request bodies, emails, and tokens.
 - **Resilience4j** retry + circuit-breaker around external API calls (email today — see
   [ADR 0005](docs/adr/0005-resilience4j-for-external-calls.md))
-- **detekt** + **ktlint** (zero-tolerance, gated in CI) + **Jacoco** coverage reporting
+- **detekt** + **ktlint** (zero-tolerance, gated in CI) + **Kover** line and branch coverage reporting and gates
 
 ## Features
 
@@ -30,6 +32,9 @@ decisions (refresh-token rotation, results-over-exceptions, etc.).
 | Reliability   | Idempotency keys, request timeouts, body-size limits, graceful shutdown, retry + circuit-breaker on external calls |
 | Observability | `/health` (DB connectivity) and `/ready` endpoints, structured logs, request correlation IDs                       |
 
+Telemetry history uses a bounded in-memory buffer (up to 50,000 pending points). Failed batches retry in FIFO order
+with per-point idempotency; when the buffer is full, only the history copy is dropped and live updates continue.
+
 ## Getting started
 
 ```bash
@@ -42,7 +47,9 @@ a logging-only email service for local dev.
 
 ## Exposed migration preview
 
-`V1__init_schema.sql` is generated from the Exposed table declarations. For future changes, set
+`V1__init_schema.sql` is generated from the Exposed table declarations registered in
+`GenerateExposedMigrationPreview.kt`; `db/schema/v1_custom.sql` supplies PostgreSQL-only user-delete triggers for the
+last-company-admin guard and vehicle-location cleanup that Exposed cannot generate. For future changes, set
 `EXPOSED_MIGRATION_PREVIEW_JDBC_URL`, `EXPOSED_MIGRATION_PREVIEW_USER`, and `EXPOSED_MIGRATION_PREVIEW_PASSWORD` to a
 local PostgreSQL database whose name ends in `_migration_preview`; its `public` schema must be empty. The helper
 applies the committed Flyway history to that disposable database, then compares it with the Exposed table registry in
@@ -56,6 +63,18 @@ Add any new table object to that registry, then give the task a new Flyway scrip
 `build/exposed-migration-preview/`; the helper refuses to overwrite a preview and never applies it. Review the
 generated SQL before promoting it to `src/main/resources/db/migration`, especially destructive statements, column
 renames/type changes, data backfills, and partial-index predicate changes that Exposed cannot reliably detect.
+
+To regenerate the greenfield V1, generate the full schema from an empty disposable database without first applying
+Flyway, review `build/exposed-migration-preview/V1__init_schema.sql`, then explicitly promote that generated candidate:
+
+```bash
+./gradlew generateExposedInitialV1Candidate
+# Review the generated SQL before replacing V1.
+./gradlew promoteExposedInitialV1
+```
+
+The promotion task copies only that candidate over V1; it does not create a V2 migration. The initial-schema mode uses
+the same complete table registry as the preview task and appends the checked-in custom trigger SQL.
 
 ## API
 

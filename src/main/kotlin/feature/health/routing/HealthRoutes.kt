@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.health.routing
 
 import com.mozgobolt.core.routing.dto.response.ErrorResponse
@@ -7,6 +11,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import javax.sql.DataSource
@@ -15,11 +20,14 @@ private val logger = KotlinLogging.logger {}
 private const val STATUS_KEY = "status"
 private const val DB_VALIDATION_TIMEOUT_SECONDS = 2
 
-fun Route.infrastructureRoutes(dataSource: DataSource) {
+fun Route.infrastructureRoutes(
+    dataSource: DataSource,
+    ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) {
     get("/health") {
         val dbHealthy =
             runSuspendCatching {
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     dataSource.connection.use { it.isValid(DB_VALIDATION_TIMEOUT_SECONDS) }
                 }
             }.onFailure { logger.warn(it) { "Health check database probe failed" } }

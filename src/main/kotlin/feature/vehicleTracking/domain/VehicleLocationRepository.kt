@@ -1,10 +1,23 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleTracking.domain
 
 import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationUpdate
 import java.time.Instant
 
+/** Persistence operations for assignment-scoped vehicle location history. */
 interface VehicleLocationRepository {
+    /** Persists a batch of location updates. */
     suspend fun insertAll(updates: List<VehicleLocationUpdate>)
+
+    /**
+     * Background persistence may outlive the vehicle, user, or assignment that produced a point.
+     * Insert rows whose current foreign-key relationships still match and return how many stale or
+     * malformed history copies were skipped.
+     */
+    suspend fun insertAllForCurrentReferences(updates: List<VehicleLocationUpdate>): Int
 
     /**
      * Deletes every row whose driving session ended before [cutoff], plus (defensively) any row

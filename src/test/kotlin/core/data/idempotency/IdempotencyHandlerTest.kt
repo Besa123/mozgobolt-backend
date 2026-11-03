@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.idempotency
 
 import com.mozgobolt.core.modules.plugin.configureContentNegotiation
@@ -9,14 +13,25 @@ import io.ktor.server.application.Application
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
-import java.security.MessageDigest
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 
 class IdempotencyHandlerTest {
+    @Test
+    fun `request fingerprints are stable with one secret and unlinkable across secrets`() {
+        val requestFingerprint = """{"email":"user@example.com","password":"Str0ngPass1"}"""
+        val firstSecretFingerprint = keyedFingerprintHash("first-test-secret", requestFingerprint)
+
+        assertEquals(firstSecretFingerprint, keyedFingerprintHash("first-test-secret", requestFingerprint))
+        assertNotEquals(firstSecretFingerprint, keyedFingerprintHash("second-test-secret", requestFingerprint))
+        assertNotEquals(requestFingerprint, firstSecretFingerprint)
+        assertEquals("", keyedFingerprintHash("first-test-secret", ""))
+    }
+
     @Test
     fun `without an idempotency key header the handler just runs normally`() =
         testApplication {
@@ -73,6 +88,31 @@ class IdempotencyHandlerTest {
         }
 
     @Test
+    fun `best-effort post-commit action runs once and is not repeated on replay`() =
+        testApplication {
+            val store = FakeIdempotencyStore()
+            val invocations = AtomicInteger(0)
+            val afterCommitInvocations = AtomicInteger(0)
+            application {
+                installIdempotentTestRoute(
+                    store = store,
+                    invocations = invocations,
+                    afterCommitBestEffort = { afterCommitInvocations.incrementAndGet() },
+                )
+            }
+
+            repeat(2) {
+                client.post("/idempotent-test") {
+                    header(IDEMPOTENCY_KEY_HEADER, "key-1")
+                    header("X-Fingerprint", "a")
+                }
+            }
+
+            assertEquals(1, invocations.get())
+            assertEquals(1, afterCommitInvocations.get())
+        }
+
+    @Test
     fun `reusing the same key with a different payload fingerprint is rejected`() =
         testApplication {
             val store = FakeIdempotencyStore()
@@ -99,7 +139,7 @@ class IdempotencyHandlerTest {
             val store = FakeIdempotencyStore()
             val invocations = AtomicInteger(0)
             application { installIdempotentTestRoute(store, invocations) }
-            store.seed(inProgressRecord(fingerprint = "a", createdAt = Instant.now()))
+            store.seed(inProgressRecord(store, fingerprint = "a", createdAt = Instant.now()))
 
             val response =
                 client.post("/idempotent-test") {
@@ -117,7 +157,7 @@ class IdempotencyHandlerTest {
             val store = FakeIdempotencyStore()
             val invocations = AtomicInteger(0)
             application { installIdempotentTestRoute(store, invocations) }
-            store.seed(inProgressRecord(fingerprint = "a", createdAt = Instant.now().minusSeconds(600)))
+            store.seed(inProgressRecord(store, fingerprint = "a", createdAt = Instant.now().minusSeconds(600)))
 
             val response =
                 client.post("/idempotent-test") {
@@ -134,21 +174,12 @@ class IdempotencyHandlerTest {
         testApplication {
             val invocations = AtomicInteger(0)
             val raceLosingStore =
-                object : IdempotencyStore {
-                    override suspend fun find(key: String): IdempotencyRecord? = null
-
-                    override suspend fun acquireLock(
+                object : IdempotencyStore by FakeIdempotencyStore() {
+                    override suspend fun execute(
                         key: String,
                         fingerprint: String,
-                    ): Boolean = false
-
-                    override suspend fun complete(
-                        key: String,
-                        statusCode: Int,
-                        body: String,
-                    ) = Unit
-
-                    override suspend fun deleteStaleLock(key: String) = Unit
+                        handler: suspend () -> IdempotentResult,
+                    ) = IdempotencyExecution.Rejected(HttpStatusCode.Conflict.value, "REQUEST_IN_PROGRESS")
                 }
             application { installIdempotentTestRoute(raceLosingStore, invocations) }
 
@@ -212,33 +243,33 @@ class IdempotencyHandlerTest {
     }
 
     private fun inProgressRecord(
+        store: IdempotencyStore,
         fingerprint: String,
         createdAt: Instant,
     ) = IdempotencyRecord(
         key = "key-1",
-        requestFingerprint = sha256Hex(fingerprint),
+        requestFingerprint = store.hashFingerprint(fingerprint),
         statusCode = null,
         responseBody = "",
         createdAt = createdAt,
     )
 
-    private fun sha256Hex(value: String): String =
-        MessageDigest
-            .getInstance("SHA-256")
-            .digest(value.toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(it) }
-
     private fun Application.installIdempotentTestRoute(
         store: IdempotencyStore,
         invocations: AtomicInteger,
         fingerprintFromHeader: Boolean = true,
+        afterCommitBestEffort: (suspend () -> Unit)? = null,
     ) {
         configureContentNegotiation()
         routing {
             post("/idempotent-test") {
                 val fingerprint = if (fingerprintFromHeader) call.request.headers["X-Fingerprint"] ?: "" else ""
                 idempotent(store, requestFingerprint = fingerprint) {
-                    idempotentResult(HttpStatusCode.Created, mapOf("call" to invocations.incrementAndGet()))
+                    idempotentResult(
+                        HttpStatusCode.Created,
+                        mapOf("call" to invocations.incrementAndGet()),
+                        afterCommitBestEffort,
+                    )
                 }
             }
         }

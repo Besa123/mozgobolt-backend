@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.routing
 
 import com.mozgobolt.core.data.idempotency.IdempotencyStore
@@ -11,18 +15,22 @@ import com.mozgobolt.core.modules.plugin.limitedPost
 import com.mozgobolt.core.modules.plugin.validatedPatch
 import com.mozgobolt.core.modules.plugin.validatedPost
 import com.mozgobolt.core.routing.dto.response.ErrorResponse
+import com.mozgobolt.core.utility.functions.currentTokenFamilyIdOrNull
 import com.mozgobolt.core.utility.functions.currentUserIdOrNull
 import com.mozgobolt.core.utility.functions.protectedApi
 import com.mozgobolt.core.utility.functions.publicRateLimitedApi
 import com.mozgobolt.feature.user.domain.UserService
+import com.mozgobolt.feature.user.domain.UserSessionService
+import com.mozgobolt.feature.user.domain.model.AccountDeletionError
+import com.mozgobolt.feature.user.domain.model.ContactInfoError
 import com.mozgobolt.feature.user.domain.model.LoginError
 import com.mozgobolt.feature.user.domain.model.PasswordResetError
 import com.mozgobolt.feature.user.domain.model.RefreshError
 import com.mozgobolt.feature.user.domain.model.RegisterError
 import com.mozgobolt.feature.user.domain.model.UserRole
 import com.mozgobolt.feature.user.domain.model.VerifyEmailError
+import com.mozgobolt.feature.user.routing.dto.request.DeleteAccountRequestDto
 import com.mozgobolt.feature.user.routing.dto.request.LoginRequestDto
-import com.mozgobolt.feature.user.routing.dto.request.LogoutRequestDto
 import com.mozgobolt.feature.user.routing.dto.request.PasswordResetConfirmRequestDto
 import com.mozgobolt.feature.user.routing.dto.request.PasswordResetRequestDto
 import com.mozgobolt.feature.user.routing.dto.request.PasswordResetValidateRequestDto
@@ -35,8 +43,10 @@ import com.mozgobolt.feature.user.routing.dto.response.PasswordResetValidateResp
 import com.mozgobolt.feature.user.routing.dto.response.SignInResponseDto
 import com.mozgobolt.feature.user.routing.dto.response.toCurrentUserResponseDto
 import com.mozgobolt.feature.user.routing.dto.response.toResponseDto
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondRedirect
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.route
@@ -45,10 +55,11 @@ import kotlinx.serialization.json.Json
 
 fun Route.authRoutes(
     userService: UserService,
+    userSessionService: UserSessionService,
     idempotencyStore: IdempotencyStore,
 ) {
     authPublicRoutes(userService, idempotencyStore)
-    authProtectedRoutes(userService)
+    authProtectedRoutes(userService, userSessionService, idempotencyStore)
 }
 
 @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
@@ -60,8 +71,8 @@ private fun Route.authPublicRoutes(
         route("/auth") {
             validatedPost<UserCreationRequestDto>("/register", BodyLimit.TINY, RequestTimeout.FAST) { request ->
                 idempotent(idempotencyStore, requestFingerprint = Json.encodeToString(request)) {
-                    userService
-                        .createUser(
+                    val registrationResult =
+                        userService.createUser(
                             password = request.password,
                             email = request.email,
                             name = request.name,
@@ -70,82 +81,90 @@ private fun Route.authPublicRoutes(
                             whatsappNumber = request.whatsappNumber,
                             viberNumber = request.viberNumber,
                             messengerUsername = request.messengerUsername,
-                        ).fold(
-                            onError = { registerError ->
-                                val status =
-                                    when (registerError) {
-                                        RegisterError.ALREADY_EXISTS -> HttpStatusCode.Conflict
-                                        RegisterError.WEAK_PASSWORD -> HttpStatusCode.BadRequest
-                                        RegisterError.INVALID_EMAIL -> HttpStatusCode.BadRequest
-                                        RegisterError.INVALID_PHONE_NUMBER -> HttpStatusCode.BadRequest
-                                        RegisterError.INVALID_MESSENGER_USERNAME -> HttpStatusCode.BadRequest
-                                    }
-                                idempotentResult(status, ErrorResponse(error = registerError.name))
-                            },
-                            onSuccess = {
-                                IdempotentResult(HttpStatusCode.Created, "")
-                            },
                         )
+                    registrationResult.fold(
+                        onError = { registerError ->
+                            val status =
+                                when (registerError) {
+                                    RegisterError.ALREADY_EXISTS -> HttpStatusCode.Conflict
+                                    RegisterError.WEAK_PASSWORD -> HttpStatusCode.BadRequest
+                                    RegisterError.PASSWORD_CHECK_UNAVAILABLE -> HttpStatusCode.ServiceUnavailable
+                                    RegisterError.INVALID_EMAIL -> HttpStatusCode.BadRequest
+                                    RegisterError.INVALID_NAME -> HttpStatusCode.BadRequest
+                                    RegisterError.INVALID_PHONE_NUMBER -> HttpStatusCode.BadRequest
+                                    RegisterError.INVALID_MESSENGER_USERNAME -> HttpStatusCode.BadRequest
+                                }
+                            idempotentResult(
+                                status,
+                                ErrorResponse(error = registerError.name),
+                                shouldCacheResponse = registerError != RegisterError.PASSWORD_CHECK_UNAVAILABLE,
+                            )
+                        },
+                        onSuccess = { IdempotentResult(HttpStatusCode.Created, "") },
+                    )
                 }
             }
 
             validatedPost<LoginRequestDto>("/login", BodyLimit.TINY, RequestTimeout.FAST) { request ->
-                userService
-                    .signInUser(
+                val signInResult =
+                    userService.signInUser(
                         password = request.password,
                         email = request.email,
-                    ).fold(
-                        onSuccess = { authResponse ->
-                            call.respond(
-                                HttpStatusCode.OK,
-                                SignInResponseDto(
-                                    accessToken = authResponse.accessToken,
-                                    refreshToken = authResponse.refreshToken,
-                                ),
-                            )
-                        },
-                        onError = { error ->
-                            when (error) {
-                                LoginError.ACCOUNT_LOCKED ->
-                                    call.respond(
-                                        HttpStatusCode.TooManyRequests,
-                                        ErrorResponse(error = "ACCOUNT_LOCKED"),
-                                    )
-
-                                LoginError.INVALID_CREDENTIALS ->
-                                    call.respond(HttpStatusCode.Unauthorized)
-                            }
-                        },
                     )
+                signInResult.fold(
+                    onSuccess = { authResponse ->
+                        call.respond(
+                            HttpStatusCode.OK,
+                            SignInResponseDto(
+                                accessToken = authResponse.accessToken,
+                                refreshToken = authResponse.refreshToken,
+                            ),
+                        )
+                    },
+                    onError = { error ->
+                        when (error) {
+                            LoginError.ACCOUNT_LOCKED -> {
+                                call.respond(
+                                    HttpStatusCode.TooManyRequests,
+                                    ErrorResponse(error = "ACCOUNT_LOCKED"),
+                                )
+                            }
+
+                            LoginError.INVALID_CREDENTIALS -> {
+                                call.respond(HttpStatusCode.Unauthorized)
+                            }
+                        }
+                    },
+                )
             }
 
             validatedPost<RefreshRequestDto>("/refresh", BodyLimit.SMALL, RequestTimeout.FAST) { request ->
-                userService
-                    .refreshToken(
-                        oldRefreshToken = request.refreshToken,
-                    ).fold(
-                        onSuccess = { authResponse ->
-                            call.respond(
-                                HttpStatusCode.OK,
-                                SignInResponseDto(
-                                    accessToken = authResponse.accessToken,
-                                    refreshToken = authResponse.refreshToken,
-                                ),
-                            )
-                        },
-                        onError = { error ->
-                            when (error) {
-                                RefreshError.TOKEN_REUSE_DETECTED ->
-                                    call.respond(
-                                        HttpStatusCode.Unauthorized,
-                                        ErrorResponse(error = "TOKEN_REUSE_DETECTED"),
-                                    )
-
-                                RefreshError.INVALID_CREDENTIALS ->
-                                    call.respond(HttpStatusCode.Unauthorized)
+                val refreshResult = userService.refreshToken(oldRefreshToken = request.refreshToken)
+                refreshResult.fold(
+                    onSuccess = { authResponse ->
+                        call.respond(
+                            HttpStatusCode.OK,
+                            SignInResponseDto(
+                                accessToken = authResponse.accessToken,
+                                refreshToken = authResponse.refreshToken,
+                            ),
+                        )
+                    },
+                    onError = { error ->
+                        when (error) {
+                            RefreshError.TOKEN_REUSE_DETECTED -> {
+                                call.respond(
+                                    HttpStatusCode.Unauthorized,
+                                    ErrorResponse(error = "TOKEN_REUSE_DETECTED"),
+                                )
                             }
-                        },
-                    )
+
+                            RefreshError.INVALID_CREDENTIALS -> {
+                                call.respond(HttpStatusCode.Unauthorized)
+                            }
+                        }
+                    },
+                )
             }
 
             get("/verify-email") {
@@ -153,8 +172,17 @@ private fun Route.authPublicRoutes(
                     call.parameters["token"]
                         ?: return@get call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = "MISSING_TOKEN"))
 
+                val isBrowserNavigation =
+                    call.request.headers[HttpHeaders.Accept]
+                        ?.contains("text/html", ignoreCase = true) == true
                 userService.verifyEmail(token).fold(
-                    onSuccess = { call.respond(HttpStatusCode.OK) },
+                    onSuccess = {
+                        if (isBrowserNavigation) {
+                            call.respondRedirect("/")
+                        } else {
+                            call.respond(HttpStatusCode.OK)
+                        }
+                    },
                     onError = { error ->
                         val status =
                             when (error) {
@@ -162,7 +190,11 @@ private fun Route.authPublicRoutes(
                                 VerifyEmailError.EXPIRED_TOKEN -> HttpStatusCode.Gone
                                 VerifyEmailError.ALREADY_VERIFIED -> HttpStatusCode.Conflict
                             }
-                        call.respond(status, ErrorResponse(error = error.name))
+                        if (isBrowserNavigation) {
+                            call.respondRedirect("/")
+                        } else {
+                            call.respond(status, ErrorResponse(error = error.name))
+                        }
                     },
                 )
             }
@@ -172,11 +204,16 @@ private fun Route.authPublicRoutes(
                 BodyLimit.TINY,
                 RequestTimeout.FAST,
             ) { request ->
-                userService.requestPasswordReset(request.email)
-                call.respond(
-                    HttpStatusCode.OK,
-                    MessageResponseDto("If an account exists, a password reset link has been sent."),
-                )
+                idempotent(
+                    idempotencyStore,
+                    requestFingerprint = "password-reset-request:${Json.encodeToString(request)}",
+                ) {
+                    userService.requestPasswordReset(request.email)
+                    idempotentResult(
+                        HttpStatusCode.OK,
+                        MessageResponseDto("If an account exists, a password reset link has been sent."),
+                    )
+                }
             }
 
             validatedPost<PasswordResetValidateRequestDto>(
@@ -193,9 +230,10 @@ private fun Route.authPublicRoutes(
                     },
                     onError = { error ->
                         val status =
-                            when (error) {
-                                PasswordResetError.EXPIRED_TOKEN -> HttpStatusCode.Gone
-                                else -> HttpStatusCode.BadRequest
+                            if (error == PasswordResetError.EXPIRED_TOKEN) {
+                                HttpStatusCode.Gone
+                            } else {
+                                HttpStatusCode.BadRequest
                             }
                         call.respond(status, ErrorResponse(error = error.name))
                     },
@@ -207,29 +245,50 @@ private fun Route.authPublicRoutes(
                 BodyLimit.SMALL,
                 RequestTimeout.FAST,
             ) { request ->
-                userService.confirmPasswordReset(request.token, request.newPassword).fold(
-                    onSuccess = {
-                        call.respond(
-                            HttpStatusCode.OK,
-                            MessageResponseDto("Password reset successfully. You can now log in."),
-                        )
-                    },
-                    onError = { error ->
-                        val status =
-                            when (error) {
-                                PasswordResetError.EXPIRED_TOKEN -> HttpStatusCode.Gone
-                                PasswordResetError.ACCOUNT_LOCKED -> HttpStatusCode.TooManyRequests
-                                else -> HttpStatusCode.BadRequest
-                            }
-                        call.respond(status, ErrorResponse(error = error.name))
-                    },
-                )
+                idempotent(
+                    idempotencyStore,
+                    requestFingerprint = "password-reset-confirm:${Json.encodeToString(request)}",
+                ) {
+                    userService.confirmPasswordReset(request.token, request.newPassword).fold(
+                        onSuccess = {
+                            idempotentResult(
+                                HttpStatusCode.OK,
+                                MessageResponseDto("Password reset successfully. You can now log in."),
+                            )
+                        },
+                        onError = { error ->
+                            val status =
+                                when (error) {
+                                    PasswordResetError.EXPIRED_TOKEN -> HttpStatusCode.Gone
+
+                                    PasswordResetError.ACCOUNT_LOCKED -> HttpStatusCode.TooManyRequests
+
+                                    PasswordResetError.PASSWORD_CHECK_UNAVAILABLE -> HttpStatusCode.ServiceUnavailable
+
+                                    PasswordResetError.INVALID_TOKEN,
+                                    PasswordResetError.WEAK_PASSWORD,
+                                    PasswordResetError.SAME_AS_OLD,
+                                    PasswordResetError.USER_NOT_FOUND,
+                                    -> HttpStatusCode.BadRequest
+                                }
+                            idempotentResult(
+                                status,
+                                ErrorResponse(error = error.name),
+                                shouldCacheResponse = error != PasswordResetError.PASSWORD_CHECK_UNAVAILABLE,
+                            )
+                        },
+                    )
+                }
             }
         }
     }
 }
 
-private fun Route.authProtectedRoutes(userService: UserService) {
+private fun Route.authProtectedRoutes(
+    userService: UserService,
+    userSessionService: UserSessionService,
+    idempotencyStore: IdempotencyStore,
+) {
     protectedApi {
         validatedPatch<UpdateContactInfoRequestDto>(
             "/users/me/contact-info",
@@ -240,7 +299,19 @@ private fun Route.authProtectedRoutes(userService: UserService) {
 
             userService.updateContactInfo(userId, request.toDomain()).fold(
                 onSuccess = { call.respond(HttpStatusCode.OK, it.toResponseDto()) },
-                onError = { error -> call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = error.name)) },
+                onError = { error ->
+                    val status =
+                        when (error) {
+                            ContactInfoError.USER_NOT_FOUND -> HttpStatusCode.NotFound
+
+                            ContactInfoError.INVALID_PHONE_NUMBER,
+                            ContactInfoError.INVALID_WHATSAPP_NUMBER,
+                            ContactInfoError.INVALID_VIBER_NUMBER,
+                            ContactInfoError.INVALID_MESSENGER_USERNAME,
+                            -> HttpStatusCode.BadRequest
+                        }
+                    call.respond(status, ErrorResponse(error = error.name))
+                },
             )
         }
 
@@ -259,12 +330,17 @@ private fun Route.authProtectedRoutes(userService: UserService) {
                 call.respond(HttpStatusCode.OK, currentUser.toCurrentUserResponseDto())
             }
 
-            validatedPost<LogoutRequestDto>("/logout", BodyLimit.SMALL, RequestTimeout.FAST) { request ->
+            registerAccountDeletionRoute(userSessionService)
+
+            limitedPost("/logout", timeout = RequestTimeout.FAST) {
                 val userId =
                     call.currentUserIdOrNull()
-                        ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
+                        ?: return@limitedPost call.respond(HttpStatusCode.Unauthorized)
+                val familyId =
+                    call.currentTokenFamilyIdOrNull()
+                        ?: return@limitedPost call.respond(HttpStatusCode.Unauthorized)
 
-                userService.logoutUser(userId = userId, refreshToken = request.refreshToken)
+                userSessionService.logoutUser(userId = userId, familyId = familyId)
                 call.respond(HttpStatusCode.OK)
             }
 
@@ -273,7 +349,7 @@ private fun Route.authProtectedRoutes(userService: UserService) {
                     call.currentUserIdOrNull()
                         ?: return@limitedPost call.respond(HttpStatusCode.Unauthorized)
 
-                userService.logoutAllSessions(userId)
+                userSessionService.logoutAllSessions(userId)
                 call.respond(HttpStatusCode.OK)
             }
 
@@ -282,19 +358,46 @@ private fun Route.authProtectedRoutes(userService: UserService) {
                     call.currentUserIdOrNull()
                         ?: return@limitedPost call.respond(HttpStatusCode.Unauthorized)
 
-                userService.resendVerificationEmail(userId).fold(
-                    onSuccess = { call.respond(HttpStatusCode.OK) },
-                    onError = { error ->
-                        val status =
-                            when (error) {
-                                VerifyEmailError.ALREADY_VERIFIED -> HttpStatusCode.Conflict
-                                VerifyEmailError.INVALID_TOKEN -> HttpStatusCode.Unauthorized
-                                VerifyEmailError.EXPIRED_TOKEN -> HttpStatusCode.Gone
-                            }
-                        call.respond(status, ErrorResponse(error = error.name))
-                    },
-                )
+                idempotent(idempotencyStore, requestFingerprint = "resend-verification:$userId") {
+                    userService.resendVerificationEmail(userId).fold(
+                        onSuccess = { IdempotentResult(HttpStatusCode.OK, "") },
+                        onError = { error ->
+                            val status =
+                                when (error) {
+                                    VerifyEmailError.ALREADY_VERIFIED -> HttpStatusCode.Conflict
+                                    VerifyEmailError.INVALID_TOKEN -> HttpStatusCode.Unauthorized
+                                    VerifyEmailError.EXPIRED_TOKEN -> HttpStatusCode.Gone
+                                }
+                            idempotentResult(status, ErrorResponse(error = error.name))
+                        },
+                    )
+                }
             }
         }
+    }
+}
+
+private fun Route.registerAccountDeletionRoute(userSessionService: UserSessionService) {
+    validatedPost<DeleteAccountRequestDto>(
+        "/delete-account",
+        BodyLimit.TINY,
+        RequestTimeout.FAST,
+    ) { request ->
+        val userId =
+            call.currentUserIdOrNull()
+                ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
+
+        userSessionService.deleteAccount(userId, request.currentPassword).fold(
+            onSuccess = { call.respond(HttpStatusCode.NoContent) },
+            onError = { error ->
+                val status =
+                    when (error) {
+                        AccountDeletionError.USER_NOT_FOUND -> HttpStatusCode.NotFound
+                        AccountDeletionError.INVALID_CREDENTIALS -> HttpStatusCode.Unauthorized
+                        AccountDeletionError.LAST_COMPANY_ADMIN -> HttpStatusCode.Conflict
+                    }
+                call.respond(status, ErrorResponse(error = error.name))
+            },
+        )
     }
 }

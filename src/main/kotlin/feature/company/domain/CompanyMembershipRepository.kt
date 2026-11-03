@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.company.domain
 
 import com.mozgobolt.feature.company.domain.model.CompanyMemberSummary
@@ -5,6 +9,7 @@ import com.mozgobolt.feature.company.domain.model.CompanyMembership
 import com.mozgobolt.feature.company.domain.model.CompanyMembershipSummary
 import com.mozgobolt.feature.company.domain.model.CompanyRole
 
+/** Persistence operations for company membership and role state. */
 interface CompanyMembershipRepository {
     /**
      * `null` means a concurrent request already inserted this exact (companyId, userId) pair
@@ -20,23 +25,29 @@ interface CompanyMembershipRepository {
         role: CompanyRole,
     ): CompanyMembership?
 
+    /** Finds a user's membership in a company. */
     suspend fun find(
         companyId: Int,
         userId: Int,
     ): CompanyMembership?
 
+    /** Lists the members of a company. */
     suspend fun findAllForCompany(companyId: Int): List<CompanyMemberSummary>
 
+    /** Lists the companies and roles associated with a user. */
     suspend fun findCompanySummariesForUser(userId: Int): List<CompanyMembershipSummary>
 
+    /** Counts administrators currently assigned to a company. */
     suspend fun countAdmins(companyId: Int): Int
 
+    /** Replaces a member's role in a company. */
     suspend fun updateRole(
         companyId: Int,
         userId: Int,
         role: CompanyRole,
     )
 
+    /** Removes a user's membership from a company. */
     suspend fun remove(
         companyId: Int,
         userId: Int,

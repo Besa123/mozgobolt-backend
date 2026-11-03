@@ -1,7 +1,13 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.sync.service
 
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import kotlin.test.Test
@@ -45,11 +51,26 @@ class InMemorySyncEventHubTest {
             val device1Received = async { hub.subscribe(1).first() }
             val device2Received = async { hub.subscribe(1).first() }
             yield()
+            assertEquals(1, hub.activeUserChannelCount)
 
             hub.publish(1, 42L)
 
             assertEquals(42L, device1Received.await().eventId)
             assertEquals(42L, device2Received.await().eventId)
+            assertEquals(0, hub.activeUserChannelCount)
+        }
+
+    @Test
+    fun `cancelling the last live subscriber releases its per-user channel`() =
+        runBlocking {
+            val hub = InMemorySyncEventHub()
+            val subscriber = launch { hub.subscribe(1).collect {} }
+            yield()
+            assertEquals(1, hub.activeUserChannelCount)
+
+            subscriber.cancelAndJoin()
+
+            assertEquals(0, hub.activeUserChannelCount)
         }
 
     @Test
@@ -85,5 +106,6 @@ class InMemorySyncEventHubTest {
         hub.publish(1, 42L)
         // No assertion needed beyond "this doesn't throw" — there's no subscriber to observe it,
         // and that's the whole point: a hint that's dropped is never a correctness problem.
+        assertEquals(0, hub.activeUserChannelCount)
     }
 }

@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.messaging
 
 import com.mozgobolt.core.domain.messaging.MessageRelay
@@ -6,6 +10,7 @@ import io.lettuce.core.RedisClient
 import io.lettuce.core.api.StatefulRedisConnection
 import io.lettuce.core.api.coroutines
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection
+import io.lettuce.core.pubsub.api.reactive.RedisPubSubReactiveCommands
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.buffer
@@ -78,7 +83,7 @@ class RedisMessageRelay(
     override fun subscribe(channel: String): Flow<String> {
         val connection =
             checkNotNull(subscribeConnection) { "RedisMessageRelay.start() must be called before subscribe()" }
-        val commands = connection.reactive()
+        val commands = connection.commands(RedisPubSubReactiveCommands.factory())
         commands.subscribe(channel).subscribe()
 
         return commands

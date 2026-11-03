@@ -1,5 +1,10 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleTracking.service
 
+import com.mozgobolt.core.database.TransactionalRunner
 import com.mozgobolt.core.domain.AppResult
 import com.mozgobolt.feature.proximityNotification.domain.ProximityAlertService
 import com.mozgobolt.feature.vehicle.domain.VehicleRepository
@@ -14,6 +19,7 @@ import com.mozgobolt.feature.vehicleTracking.domain.model.TelemetryError
 import com.mozgobolt.feature.vehicleTracking.domain.model.TelemetryPoint
 import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationUpdate
 import io.github.oshai.kotlinlogging.KotlinLogging
+import java.time.Instant
 
 private val logger = KotlinLogging.logger {}
 
@@ -24,6 +30,7 @@ class VehicleTrackingServiceI(
     private val hub: VehicleLocationHub,
     private val buffer: VehicleLocationBuffer,
     private val proximityAlertService: ProximityAlertService,
+    private val tx: TransactionalRunner,
 ) : VehicleTrackingService {
     override suspend fun ingestTelemetry(
         vendorUserId: Int,
@@ -35,16 +42,23 @@ class VehicleTrackingServiceI(
 
         // Resolved once per batch, not per point — every point in this batch belongs to the same
         // active assignment's vehicle, so its company can't change mid-batch.
-        val companyId = vehicleRepository.findById(activeAssignment.vehicleId)?.companyId
+        val companyId =
+            tx.transactional {
+                vehicleRepository.findById(activeAssignment.vehicleId)?.companyId
+            }
 
-        // Accumulated as points are accepted, then handed to proximityAlertService once for the
-        // whole batch below — the plausibility check itself must stay sequential (each point's
-        // verdict depends on the previous accepted point's published position), but the proximity
-        // candidate lookup doesn't need repeating per point, only the points to check it against.
+        val acceptedUpdates = mutableListOf<VehicleLocationUpdate>()
         val acceptedPoints = mutableListOf<GeoPoint>()
+        var previous = hub.lastKnownLocation(activeAssignment.vehicleId)
 
         points.forEach { point ->
-            val previous = hub.lastKnownLocation(activeAssignment.vehicleId)
+            if (point.recordedAt.isBefore(activeAssignment.startedAt)) {
+                logger.warn {
+                    "Dropping telemetry recorded before assignment start for vehicle ${activeAssignment.vehicleId}"
+                }
+                return@forEach
+            }
+
             val isPlausible =
                 GpsPlausibility.isPlausibleMovement(
                     previous = previous,
@@ -67,14 +81,42 @@ class VehicleTrackingServiceI(
                     recordedAt = point.recordedAt,
                     cellId = cellIndexer.cellFor(point.latitude, point.longitude),
                     assignmentId = activeAssignment.id,
+                    sharesLocationWithCustomers = activeAssignment.sharesLocationWithCustomers,
                 )
-            hub.publish(update)
-            buffer.enqueue(update)
+            acceptedUpdates += update
             acceptedPoints += GeoPoint(point.latitude, point.longitude)
+            previous = update
         }
 
-        if (companyId != null) {
-            proximityAlertService.evaluateBatch(activeAssignment.vehicleId, companyId, acceptedPoints)
+        if (acceptedUpdates.isNotEmpty() &&
+            !vehicleAssignmentService.recordTelemetryReceived(
+                assignmentId = activeAssignment.id,
+                vendorUserId = vendorUserId,
+                receivedAt = Instant.now(),
+            )
+        ) {
+            return AppResult.Error(TelemetryError.NOT_LINKED_TO_VEHICLE)
+        }
+
+        var droppedHistoryPoints = 0
+        val publishedPoints = mutableListOf<GeoPoint>()
+        acceptedUpdates.forEachIndexed { index, update ->
+            if (hub.publishIfCurrent(update)) {
+                if (!buffer.enqueue(update)) droppedHistoryPoints++
+                publishedPoints += acceptedPoints[index]
+            }
+        }
+
+        if (droppedHistoryPoints > 0) {
+            logger.warn {
+                "Dropped $droppedHistoryPoints telemetry history point(s) because the in-memory buffer is full"
+            }
+        }
+
+        val shouldEvaluateProximityAlerts =
+            activeAssignment.sharesLocationWithCustomers && publishedPoints.isNotEmpty()
+        if (companyId != null && shouldEvaluateProximityAlerts) {
+            proximityAlertService.evaluateBatch(activeAssignment.vehicleId, companyId, publishedPoints)
         }
 
         return AppResult.Success(Unit)

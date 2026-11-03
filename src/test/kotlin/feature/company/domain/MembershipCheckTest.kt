@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.company.domain
 
 import com.mozgobolt.feature.company.domain.model.CompanyRole

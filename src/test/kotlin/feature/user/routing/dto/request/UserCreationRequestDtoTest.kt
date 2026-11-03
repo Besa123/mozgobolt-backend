@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.routing.dto.request
 
 import kotlin.test.Test
@@ -8,7 +12,7 @@ class UserCreationRequestDtoTest {
     fun `a well-formed request has no validation errors`() {
         val request =
             UserCreationRequestDto(
-                password = "Str0ngPass",
+                password = "Str0ngPassphrase1",
                 email = "user@example.com",
                 name = "Jane Doe",
                 role = "BUYER",
@@ -19,7 +23,8 @@ class UserCreationRequestDtoTest {
 
     @Test
     fun `a blank email is rejected`() {
-        val request = UserCreationRequestDto(password = "Str0ngPass", email = "", name = "Jane Doe", role = "BUYER")
+        val request =
+            UserCreationRequestDto(password = "Str0ngPassphrase1", email = "", name = "Jane Doe", role = "BUYER")
 
         assertTrue(request.validate().isNotEmpty())
     }
@@ -34,7 +39,8 @@ class UserCreationRequestDtoTest {
 
     @Test
     fun `a whitespace-only email is rejected`() {
-        val request = UserCreationRequestDto(password = "Str0ngPass", email = "   ", name = "Jane Doe", role = "BUYER")
+        val request =
+            UserCreationRequestDto(password = "Str0ngPassphrase1", email = "   ", name = "Jane Doe", role = "BUYER")
 
         assertTrue(request.validate().isNotEmpty())
     }
@@ -50,7 +56,12 @@ class UserCreationRequestDtoTest {
     @Test
     fun `a blank name is rejected`() {
         val request =
-            UserCreationRequestDto(password = "Str0ngPass", email = "user@example.com", name = "", role = "BUYER")
+            UserCreationRequestDto(
+                password = "Str0ngPassphrase1",
+                email = "user@example.com",
+                name = "",
+                role = "BUYER",
+            )
 
         assertTrue(request.validate().isNotEmpty())
     }
@@ -59,7 +70,7 @@ class UserCreationRequestDtoTest {
     fun `a name over one hundred characters is rejected`() {
         val request =
             UserCreationRequestDto(
-                password = "Str0ngPass",
+                password = "Str0ngPassphrase1",
                 email = "user@example.com",
                 name = "a".repeat(101),
                 role = "BUYER",
@@ -72,7 +83,7 @@ class UserCreationRequestDtoTest {
     fun `a name at exactly one hundred characters is accepted`() {
         val request =
             UserCreationRequestDto(
-                password = "Str0ngPass",
+                password = "Str0ngPassphrase1",
                 email = "user@example.com",
                 name = "a".repeat(100),
                 role = "BUYER",
@@ -85,7 +96,7 @@ class UserCreationRequestDtoTest {
     fun `a name with leading whitespace is rejected`() {
         val request =
             UserCreationRequestDto(
-                password = "Str0ngPass",
+                password = "Str0ngPassphrase1",
                 email = "user@example.com",
                 name = " Jane Doe",
                 role = "BUYER",
@@ -98,7 +109,7 @@ class UserCreationRequestDtoTest {
     fun `a name with trailing whitespace is rejected`() {
         val request =
             UserCreationRequestDto(
-                password = "Str0ngPass",
+                password = "Str0ngPassphrase1",
                 email = "user@example.com",
                 name = "Jane Doe ",
                 role = "BUYER",
@@ -111,7 +122,7 @@ class UserCreationRequestDtoTest {
     fun `a name containing markup-like characters is rejected`() {
         val request =
             UserCreationRequestDto(
-                password = "Str0ngPass",
+                password = "Str0ngPassphrase1",
                 email = "user@example.com",
                 name = "<script>Jane</script>",
                 role = "BUYER",
@@ -124,7 +135,7 @@ class UserCreationRequestDtoTest {
     fun `a name containing an ampersand or quote is rejected`() {
         val request =
             UserCreationRequestDto(
-                password = "Str0ngPass",
+                password = "Str0ngPassphrase1",
                 email = "user@example.com",
                 name = "Jane & Bob",
                 role = "BUYER",
@@ -144,7 +155,7 @@ class UserCreationRequestDtoTest {
     fun `a null phone number is accepted`() {
         val request =
             UserCreationRequestDto(
-                password = "Str0ngPass",
+                password = "Str0ngPassphrase1",
                 email = "user@example.com",
                 name = "Jane Doe",
                 role = "BUYER",
@@ -158,7 +169,7 @@ class UserCreationRequestDtoTest {
     fun `a well-formed phone number is accepted`() {
         val request =
             UserCreationRequestDto(
-                password = "Str0ngPass",
+                password = "Str0ngPassphrase1",
                 email = "user@example.com",
                 name = "Jane Doe",
                 role = "BUYER",
@@ -172,7 +183,7 @@ class UserCreationRequestDtoTest {
     fun `a blank phone number is rejected, unlike an absent one`() {
         val request =
             UserCreationRequestDto(
-                password = "Str0ngPass",
+                password = "Str0ngPassphrase1",
                 email = "user@example.com",
                 name = "Jane Doe",
                 role = "BUYER",
@@ -186,7 +197,7 @@ class UserCreationRequestDtoTest {
     fun `a phone number with letters is rejected`() {
         val request =
             UserCreationRequestDto(
-                password = "Str0ngPass",
+                password = "Str0ngPassphrase1",
                 email = "user@example.com",
                 name = "Jane Doe",
                 role = "BUYER",
@@ -197,10 +208,49 @@ class UserCreationRequestDtoTest {
     }
 
     @Test
+    fun `a password below the minimum length is rejected`() {
+        val request =
+            UserCreationRequestDto(
+                password = "a".repeat(14),
+                email = "user@example.com",
+                name = "Jane Doe",
+                role = "BUYER",
+            )
+
+        assertTrue(request.validate().any { it.contains("15-128") })
+    }
+
+    @Test
+    fun `a common password is rejected`() {
+        val request =
+            UserCreationRequestDto(
+                password = "password1234567",
+                email = "user@example.com",
+                name = "Jane Doe",
+                role = "BUYER",
+            )
+
+        assertTrue(request.validate().any { it.contains("commonly used") })
+    }
+
+    @Test
+    fun `a password over the maximum length is rejected`() {
+        val request =
+            UserCreationRequestDto(
+                password = "a".repeat(129),
+                email = "user@example.com",
+                name = "Jane Doe",
+                role = "BUYER",
+            )
+
+        assertTrue(request.validate().any { it.contains("15-128") })
+    }
+
+    @Test
     fun `an unrecognized role is rejected`() {
         val request =
             UserCreationRequestDto(
-                password = "Str0ngPass",
+                password = "Str0ngPassphrase1",
                 email = "user@example.com",
                 name = "Jane Doe",
                 role = "ADMIN",

@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.modules.plugin
 
 import com.mozgobolt.core.configureTestEnvironment
@@ -15,6 +19,10 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import io.ktor.server.routing.post as routePost
@@ -99,6 +107,33 @@ class RateLimitConfigTest {
 
             assertEquals(listOf(HttpStatusCode.OK), statuses.take(5).distinct())
             assertEquals(HttpStatusCode.TooManyRequests, statuses.last())
+        }
+
+    @Test
+    fun `AUTH_LIMIT does not oversubscribe during a concurrent burst from one source`() =
+        testApplication {
+            configureTestEnvironment()
+            application {
+                installTestModules()
+                routing {
+                    publicRateLimitedApi {
+                        routePost("/auth-limit-burst-test") { call.respond(HttpStatusCode.OK) }
+                    }
+                }
+            }
+
+            val statuses =
+                coroutineScope {
+                    (1..1_000)
+                        .map {
+                            async(Dispatchers.IO) {
+                                client.post("/auth-limit-burst-test").status
+                            }
+                        }.awaitAll()
+                }
+
+            assertEquals(5, statuses.count { it == HttpStatusCode.OK })
+            assertEquals(995, statuses.count { it == HttpStatusCode.TooManyRequests })
         }
 
     @Test

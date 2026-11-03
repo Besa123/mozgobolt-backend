@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.domain.model
 
 import java.time.Instant
@@ -50,8 +54,10 @@ class LockoutPolicyTest {
         expectedMinutes: Long,
     ) {
         val before = Instant.now()
-        val lockUntil = LockoutPolicy.calculateLockUntil(attempts)
-        checkNotNull(lockUntil) { "attempts=$attempts should lock the account" }
+        val lockUntil =
+            checkNotNull(LockoutPolicy.calculateLockUntil(attempts)) {
+                "attempts=$attempts should lock the account"
+            }
 
         val expected = before.plusSeconds(expectedMinutes * 60)
         val deltaMillis = kotlin.math.abs(lockUntil.toEpochMilli() - expected.toEpochMilli())

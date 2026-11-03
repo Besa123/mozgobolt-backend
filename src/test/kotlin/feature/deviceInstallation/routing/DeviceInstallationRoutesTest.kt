@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.deviceInstallation.routing
 
 import com.mozgobolt.core.configureTestEnvironment
@@ -9,12 +13,15 @@ import com.mozgobolt.feature.deviceInstallation.domain.DeviceInstallationService
 import com.mozgobolt.feature.deviceInstallation.domain.model.DeviceInstallation
 import com.mozgobolt.feature.deviceInstallation.domain.model.DeviceInstallationError
 import com.mozgobolt.feature.deviceInstallation.domain.model.DevicePlatform
+import com.mozgobolt.feature.deviceInstallation.routing.dto.response.DeviceInstallationResponseDto
 import com.mozgobolt.feature.user.routing.postJson
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.delete
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
+import kotlinx.serialization.json.Json
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -22,6 +29,10 @@ import kotlin.test.assertEquals
 class DeviceInstallationRoutesTest {
     private class FakeDeviceInstallationService : DeviceInstallationService {
         var registerCallCount = 0
+            private set
+        var unregisterCallCount = 0
+            private set
+        var lastUnregisterCall: Pair<Int, String>? = null
             private set
         var unregisterResult: AppResult<Unit, DeviceInstallationError> = AppResult.Success(Unit)
 
@@ -37,7 +48,11 @@ class DeviceInstallationRoutesTest {
         override suspend fun unregisterInstallation(
             userId: Int,
             installationId: String,
-        ): AppResult<Unit, DeviceInstallationError> = unregisterResult
+        ): AppResult<Unit, DeviceInstallationError> {
+            unregisterCallCount++
+            lastUnregisterCall = userId to installationId
+            return unregisterResult
+        }
 
         override suspend fun sendPush(
             userId: Int,
@@ -63,6 +78,10 @@ class DeviceInstallationRoutesTest {
 
             assertEquals(HttpStatusCode.OK, response.status)
             assertEquals(1, service.registerCallCount)
+            assertEquals(
+                DeviceInstallationResponseDto(id = 1, platform = "ANDROID"),
+                Json.decodeFromString<DeviceInstallationResponseDto>(response.bodyAsText()),
+            )
         }
 
     @Test
@@ -138,6 +157,7 @@ class DeviceInstallationRoutesTest {
             val response = client.delete("/api/v1/device-installations/some-fid") { bearerAuth(token) }
 
             assertEquals(HttpStatusCode.NotFound, response.status)
+            assertEquals(1, service.unregisterCallCount)
         }
 
     @Test
@@ -153,5 +173,25 @@ class DeviceInstallationRoutesTest {
             val response = client.delete("/api/v1/device-installations/some-fid")
 
             assertEquals(HttpStatusCode.Unauthorized, response.status)
+        }
+
+    @Test
+    fun `unregistering a registered installation returns no content and forwards the authenticated user`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeDeviceInstallationService()
+            application {
+                installTestModules()
+                routing { apiV1 { deviceInstallationRoutes(service) } }
+            }
+
+            val response =
+                client.delete("/api/v1/device-installations/fcm-fid") {
+                    bearerAuth(testAccessTokenFor(userId = 42))
+                }
+
+            assertEquals(HttpStatusCode.NoContent, response.status)
+            assertEquals(1, service.unregisterCallCount)
+            assertEquals(42 to "fcm-fid", service.lastUnregisterCall)
         }
 }

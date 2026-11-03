@@ -1,6 +1,12 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.domain.validation
 
 // Facebook's own real limit for a page/profile username.
+
+/** Maximum accepted Messenger username length. */
 const val MESSENGER_USERNAME_MAX_LENGTH = 50
 private const val MESSENGER_USERNAME_MIN_LENGTH = 5
 

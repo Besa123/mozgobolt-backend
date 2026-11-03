@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.domain.contact
 
 private val NON_DIGIT = Regex("[^0-9]")

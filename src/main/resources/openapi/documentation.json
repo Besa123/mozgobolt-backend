@@ -325,7 +325,8 @@
             "type": "string"
           },
           "entityId": {
-            "type": "integer"
+            "type": "integer",
+            "description": "ID of the changed entity; COMPANY_FAVORITE uses the company ID."
           },
           "operation": {
             "type": "string"
@@ -1551,6 +1552,105 @@
         ]
       }
     },
+    "/api/v1/companies/{id}/invite-code": {
+      "get": {
+        "summary": "Read the current invite code",
+        "description": "Admin-only. Returns the current company join code without rotating it. The response is not cacheable.",
+        "tags": [
+          "Companies"
+        ],
+        "operationId": "getCurrentInviteCode",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Company id",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current invite code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "inviteCode": {
+                      "type": "string",
+                      "minLength": 8,
+                      "maxLength": 8
+                    }
+                  },
+                  "required": [
+                    "inviteCode"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid company id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "INVALID_COMPANY_ID"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "403": {
+            "description": "Caller is not a company admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "notMember": {
+                    "value": {
+                      "error": "NOT_A_MEMBER"
+                    }
+                  },
+                  "notAdmin": {
+                    "value": {
+                      "error": "NOT_ADMIN"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Company not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "COMPANY_NOT_FOUND"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v1/companies/{id}/invite-code/regenerate": {
       "post": {
         "summary": "Regenerate the invite code",
@@ -2236,7 +2336,7 @@
     "/api/v1/companies/{companyId}/vehicles/{id}": {
       "patch": {
         "summary": "Update a vehicle's plate/picture URL",
-        "description": "Admin-only. Rejected for an already-archived vehicle (treated as not-found).",
+        "description": "Admin-only. Rejected for an already-archived vehicle (treated as not-found). An omitted or null `pictureUrl` leaves the current value unchanged; set `clearPictureUrl` to true to remove it. `clearPictureUrl` cannot be combined with a non-null `pictureUrl`.",
         "tags": [
           "Vehicles"
         ],
@@ -2273,7 +2373,13 @@
                   },
                   "pictureUrl": {
                     "type": "string",
-                    "nullable": true
+                    "nullable": true,
+                    "description": "Replacement URL; omitted or null preserves the current value."
+                  },
+                  "clearPictureUrl": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Set true to clear the current picture URL."
                   }
                 },
                 "required": [
@@ -2422,7 +2528,7 @@
     "/api/v1/companies/{companyId}/vehicles/{id}/picture": {
       "post": {
         "summary": "Upload a vehicle picture",
-        "description": "Admin-only. Rate limit: 10/min (upload-limit), stricter than the rest of this feature. Multipart file upload, max 5MB. The image is virus-scanned (fail-closed) and re-encoded to JPEG. A vehicle has at most one current picture \u2014 re-uploading overwrites it. Rejected for an already-archived vehicle.",
+        "description": "Admin-only. Rate limit: 10/min (upload-limit), stricter than the rest of this feature. Multipart file upload, max 5MB. ClamAV scanning is required in production and fails closed; scanner unavailability returns 503. Accepted images are re-encoded to JPEG. A vehicle has at most one current picture; each upload stores a versioned object and atomically switches the private storage key. Rejected for an already-archived vehicle.",
         "tags": [
           "Vehicles"
         ],
@@ -2463,7 +2569,7 @@
             "description": "Missing or invalid access token"
           },
           "400": {
-            "description": "Not an image, corrupt, or flagged by the virus scanner",
+            "description": "Not an image, corrupt, or infected",
             "content": {
               "application/json": {
                 "schema": {
@@ -2471,6 +2577,19 @@
                 },
                 "example": {
                   "error": "INVALID_IMAGE"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ClamAV is unavailable; the upload was rejected and may be retried after recovery",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "VIRUS_SCANNER_UNAVAILABLE"
                 }
               }
             }

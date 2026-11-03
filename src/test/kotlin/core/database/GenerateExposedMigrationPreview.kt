@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 @file:OptIn(org.jetbrains.exposed.v1.core.ExperimentalDatabaseMigrationApi::class)
 
 package com.mozgobolt.core.database
@@ -13,6 +17,7 @@ import com.mozgobolt.feature.sync.data.database.SyncEventsTable
 import com.mozgobolt.feature.user.data.database.EmailVerificationTokensTable
 import com.mozgobolt.feature.user.data.database.PasswordResetTokensTable
 import com.mozgobolt.feature.user.data.database.RefreshTokensTable
+import com.mozgobolt.feature.user.data.database.UserEmailOutboxTable
 import com.mozgobolt.feature.user.data.database.UsersTable
 import com.mozgobolt.feature.vehicle.data.database.VehiclesTable
 import com.mozgobolt.feature.vehicleAssignment.data.database.VehicleAssignmentsTable
@@ -22,6 +27,7 @@ import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.jdbc.transactions.TransactionManager
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.migration.jdbc.MigrationUtils
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import javax.sql.DataSource
@@ -30,6 +36,9 @@ private const val JDBC_URL_ENV = "EXPOSED_MIGRATION_PREVIEW_JDBC_URL"
 private const val USER_ENV = "EXPOSED_MIGRATION_PREVIEW_USER"
 private const val PASSWORD_ENV = "EXPOSED_MIGRATION_PREVIEW_PASSWORD"
 private const val OUTPUT_DIRECTORY = "build/exposed-migration-preview"
+private const val INITIAL_SCHEMA_ARGUMENT = "--initial-schema"
+private const val INITIAL_SCHEMA_NAME = "V1__init_schema"
+private const val CUSTOM_INITIAL_SCHEMA_RESOURCE = "db/schema/v1_custom.sql"
 private val SAFE_LOCAL_DATABASE_URL =
     Regex("""^jdbc:postgresql://(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?/([A-Za-z0-9_]+)(?:\?.*)?$""")
 
@@ -39,6 +48,7 @@ private val exposedTables: Array<Table> =
         RefreshTokensTable,
         EmailVerificationTokensTable,
         PasswordResetTokensTable,
+        UserEmailOutboxTable,
         IdempotencyKeysTable,
         CompaniesTable,
         CompanyMembershipsTable,
@@ -54,12 +64,16 @@ private val exposedTables: Array<Table> =
     )
 
 fun main(args: Array<String>) {
-    require(args.size == 1) {
-        "Pass the new Flyway SQL script name."
+    val generateInitialSchema = args.getOrNull(1) == INITIAL_SCHEMA_ARGUMENT
+    require(args.size == if (generateInitialSchema) 2 else 1) {
+        "Pass the new Flyway SQL script name; use $INITIAL_SCHEMA_ARGUMENT for initial V1 generation."
     }
-    val scriptName = args.single()
+    val scriptName = args.first()
     require(scriptName.matches(Regex("^[A-Za-z0-9_]+$"))) {
         "Script name may contain only ASCII letters, digits, and underscores."
+    }
+    require(!generateInitialSchema || scriptName == INITIAL_SCHEMA_NAME) {
+        "Initial schema generation must target $INITIAL_SCHEMA_NAME."
     }
 
     val jdbcUrl = requiredEnvironmentVariable(JDBC_URL_ENV)
@@ -86,7 +100,7 @@ fun main(args: Array<String>) {
         )
     try {
         requirePublicSchemaIsEmpty(dataSource)
-        DatabaseFactory.runFlywayMigration(dataSource)
+        if (!generateInitialSchema) DatabaseFactory.runFlywayMigration(dataSource)
 
         val database = DatabaseFactory.createDatabase(dataSource)
         try {
@@ -107,8 +121,31 @@ fun main(args: Array<String>) {
         (dataSource as AutoCloseable).close()
     }
 
-    println("Generated migration preview: $outputFile")
-    println("Review it manually. This helper never applies the generated script.")
+    if (generateInitialSchema) appendCustomInitialSchemaSql(outputFile)
+
+    if (generateInitialSchema) {
+        println("Generated full initial V1 schema candidate: $outputFile")
+    } else {
+        println("Generated migration preview: $outputFile")
+    }
+    println("Review the generated SQL manually. This helper never applies it.")
+}
+
+private fun appendCustomInitialSchemaSql(outputFile: Path) {
+    val customSql =
+        checkNotNull(Thread.currentThread().contextClassLoader.getResourceAsStream(CUSTOM_INITIAL_SCHEMA_RESOURCE)) {
+            "Missing custom initial schema SQL resource: $CUSTOM_INITIAL_SCHEMA_RESOURCE"
+        }.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+    val generatedSql = Files.readString(outputFile, StandardCharsets.UTF_8).trimEnd()
+    Files.writeString(
+        outputFile,
+        buildString {
+            appendLine(generatedSql)
+            appendLine()
+            appendLine(customSql.trim())
+        },
+        StandardCharsets.UTF_8,
+    )
 }
 
 private fun requiredEnvironmentVariable(name: String): String =

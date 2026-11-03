@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.data.database
 
 import com.mozgobolt.core.domain.validation.DISPLAY_NAME_MAX_LENGTH

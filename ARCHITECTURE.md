@@ -53,5 +53,5 @@ Structured JSON logs (Logback/Logstash), request-correlated via `callId`. `/heal
 
 ## Known gaps
 
-No containerization, no CD stage, no metrics/tracing, no coverage gate (Jacoco reports but doesn't enforce). Verify
-against the code before assuming anything else exists.
+No containerization, no CD stage, no metrics/tracing. Kover enforces at least 92% total line coverage and 62% branch
+coverage in CI; Docker is required to include the database, Redis, and S3 integration tests in the measurement.

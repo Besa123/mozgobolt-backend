@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.messaging
 
 import com.mozgobolt.core.skipIfNoDocker
@@ -35,7 +39,9 @@ private val SUBSCRIBE_SETTLE_DELAY = 300.milliseconds
  */
 class RedisMessageRelayRealRedisTest {
     @BeforeTest
-    fun checkDocker() = skipIfNoDocker()
+    fun checkDocker() {
+        skipIfNoDocker()
+    }
 
     @Test
     fun `a message published on one relay instance is received by another sharing the same Redis`() =

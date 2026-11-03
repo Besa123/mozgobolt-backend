@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.push
 
 import com.mozgobolt.core.domain.push.PushNotificationSender
@@ -9,11 +13,11 @@ class FakePushNotificationSender : PushNotificationSender {
     )
 
     val sent = mutableListOf<SentPush>()
-    private val throwForInstallationId = mutableMapOf<String, PushDeliveryException>()
+    private val throwForInstallationId = mutableMapOf<String, Throwable>()
 
     fun failNextSendTo(
         installationId: String,
-        exception: PushDeliveryException,
+        exception: Throwable,
     ) {
         throwForInstallationId[installationId] = exception
     }

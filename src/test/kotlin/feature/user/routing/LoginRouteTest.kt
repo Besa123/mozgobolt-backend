@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.routing
 
 import com.mozgobolt.core.configureTestEnvironment
@@ -93,6 +97,6 @@ class LoginRouteTest {
         }
 
     private companion object {
-        const val VALID_BODY = """{"email":"user@example.com","password":"Str0ngPass1"}"""
+        const val VALID_BODY = """{"email":"user@example.com","password":"Str0ngPassphrase1"}"""
     }
 }

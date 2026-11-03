@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.domain.validation
 
 import com.google.i18n.phonenumbers.PhoneNumberUtil
@@ -11,6 +15,8 @@ private const val PHONE_NUMBER_REGION = "HU"
 // E.164's longest possible form is a leading '+' plus up to 15 digits (16 chars); this headroom
 // is for the DB column (see UsersTable.phoneNumber), not for validation — libphonenumber is the
 // actual source of truth for whether a number is valid.
+
+/** Maximum persisted length allowed for a phone number. */
 const val PHONE_NUMBER_MAX_LENGTH = 20
 
 private val phoneNumberUtil: PhoneNumberUtil by lazy { PhoneNumberUtil.getInstance() }

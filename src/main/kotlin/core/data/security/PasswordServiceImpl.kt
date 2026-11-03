@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.security
 
 import com.mozgobolt.core.domain.security.PasswordPolicy
@@ -6,11 +10,16 @@ import com.password4j.Argon2Function
 import com.password4j.Password
 import com.password4j.types.Argon2
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private val logger = KotlinLogging.logger {}
 
 class PasswordServiceImpl(
     private val pepper: String,
+    private val hashingDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : PasswordService {
     private val argon2 =
         Argon2Function.getInstance(
@@ -21,30 +30,43 @@ class PasswordServiceImpl(
             Argon2.ID,
         )
 
-    override fun hashPassword(password: String): String {
+    override suspend fun hashPassword(password: String): String {
         require(password.length <= PasswordPolicy.MAX_LENGTH) { "Password too long" }
 
-        return Password
-            .hash(password)
-            .addRandomSalt()
-            .addPepper(pepper)
-            .with(argon2)
-            .result
+        return withContext(hashingDispatcher) {
+            Password
+                .hash(password)
+                .addRandomSalt()
+                .addPepper(pepper)
+                .with(argon2)
+                .result
+        }
     }
 
-    override fun verifyPassword(
+    @Suppress("TooGenericExceptionCaught") // Password4j reports malformed hashes through multiple runtime exceptions.
+    override suspend fun verifyPassword(
         password: String,
         hash: String,
-    ): Boolean =
-        password.length <= PasswordPolicy.MAX_LENGTH &&
-            runCatching {
+    ): Boolean {
+        if (password.length > PasswordPolicy.MAX_LENGTH) return false
+
+        return withContext(hashingDispatcher) {
+            try {
                 Password
                     .check(password, hash)
                     .addPepper(pepper)
                     .with(argon2)
-            }.onFailure { error ->
-                logger.warn(error) { "Password hash could not be parsed during verification" }
-            }.getOrDefault(false)
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Exception) {
+                logger.warn {
+                    "Password hash could not be parsed during verification " +
+                        "(${failure.javaClass.simpleName})"
+                }
+                false
+            }
+        }
+    }
 
     companion object {
         private const val ARGON2_MEMORY_KB = 65_536

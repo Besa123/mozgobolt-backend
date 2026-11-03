@@ -1,6 +1,11 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleTracking.service
 
 import com.mozgobolt.core.data.messaging.FakeMessageRelay
+import com.mozgobolt.core.utility.ApplicationBackgroundScope
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationHub
 import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationUpdate
 import kotlinx.coroutines.delay
@@ -9,7 +14,9 @@ import kotlinx.coroutines.withTimeout
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -28,6 +35,13 @@ private const val TEST_LONGITUDE = 19.0402
 class RedisRelayVehicleLocationHubTest {
     private val cellIndexer = H3CellIndexer()
 
+    private fun relayHub(relay: FakeMessageRelay) =
+        RedisRelayVehicleLocationHub(
+            delegate = InMemoryVehicleLocationHub(cellIndexer),
+            relay = relay,
+            backgroundScope = ApplicationBackgroundScope(),
+        )
+
     private fun update(vehicleId: Int) =
         VehicleLocationUpdate(
             vehicleId = vehicleId,
@@ -40,7 +54,7 @@ class RedisRelayVehicleLocationHubTest {
 
     @Test
     fun `publish updates this instance's own local hub immediately`() {
-        val hub = RedisRelayVehicleLocationHub(InMemoryVehicleLocationHub(cellIndexer), FakeMessageRelay())
+        val hub = relayHub(FakeMessageRelay())
 
         hub.publish(update(vehicleId = 1))
 
@@ -51,7 +65,7 @@ class RedisRelayVehicleLocationHubTest {
     fun `publish relays the update to the shared channel`() =
         runBlocking {
             val relay = FakeMessageRelay()
-            val hub = RedisRelayVehicleLocationHub(InMemoryVehicleLocationHub(cellIndexer), relay)
+            val hub = relayHub(relay)
 
             hub.publish(update(vehicleId = 7))
 
@@ -89,8 +103,8 @@ class RedisRelayVehicleLocationHubTest {
     fun `a second instance sharing the same relay receives an update this instance published`() =
         runBlocking {
             val relay = FakeMessageRelay()
-            val hubA = RedisRelayVehicleLocationHub(InMemoryVehicleLocationHub(cellIndexer), relay)
-            val hubB = RedisRelayVehicleLocationHub(InMemoryVehicleLocationHub(cellIndexer), relay)
+            val hubA = relayHub(relay)
+            val hubB = relayHub(relay)
 
             hubB.start()
             withTimeout(TEST_AWAIT_TIMEOUT) { relay.awaitSubscriber(VEHICLE_LOCATION_CHANNEL) }
@@ -102,16 +116,81 @@ class RedisRelayVehicleLocationHubTest {
         }
 
     @Test
+    fun `assignment-scoped offline relay rejects late old-session points on other instances`() =
+        runBlocking {
+            val relay = FakeMessageRelay()
+            val hubA = relayHub(relay)
+            val hubB = relayHub(relay)
+            val oldAssignment = update(vehicleId = 42).copy(assignmentId = 10)
+            val newAssignment = update(vehicleId = 42).copy(assignmentId = 11)
+
+            hubB.start()
+            try {
+                withTimeout(TEST_AWAIT_TIMEOUT) { relay.awaitSubscriber(VEHICLE_LOCATION_CHANNEL) }
+
+                assertTrue(hubA.publishIfCurrent(oldAssignment))
+                awaitRelayCount(relay, 1)
+                awaitAssignment(hubB, vehicleId = 42, assignmentId = 10)
+
+                assertTrue(hubA.markOffline(vehicleId = 42, assignmentId = 10))
+                awaitRelayCount(relay, 2)
+                awaitOffline(hubB, vehicleId = 42)
+                assertNull(hubB.lastKnownLocation(vehicleId = 42))
+
+                assertFalse(hubA.publishIfCurrent(oldAssignment.copy(recordedAt = Instant.now().plusSeconds(1))))
+                assertEquals(2, relay.published.size, "an ended assignment must not relay another location")
+
+                assertTrue(hubA.publishIfCurrent(newAssignment))
+                awaitRelayCount(relay, 3)
+                awaitAssignment(hubB, vehicleId = 42, assignmentId = 11)
+
+                assertFalse(hubA.markOffline(vehicleId = 42, assignmentId = 10))
+                assertEquals(3, relay.published.size, "an old offline signal must not be relayed")
+                assertEquals(11, hubB.lastKnownLocation(vehicleId = 42)?.assignmentId)
+            } finally {
+                hubB.stop()
+            }
+        }
+
+    private suspend fun awaitRelayCount(
+        relay: FakeMessageRelay,
+        expectedCount: Int,
+    ) {
+        withTimeout(TEST_AWAIT_TIMEOUT) {
+            while (relay.published.size < expectedCount) delay(10)
+        }
+    }
+
+    private suspend fun awaitAssignment(
+        hub: VehicleLocationHub,
+        vehicleId: Int,
+        assignmentId: Int,
+    ) {
+        withTimeout(TEST_AWAIT_TIMEOUT) {
+            while (hub.lastKnownLocation(vehicleId)?.assignmentId != assignmentId) delay(10)
+        }
+    }
+
+    private suspend fun awaitOffline(
+        hub: VehicleLocationHub,
+        vehicleId: Int,
+    ) {
+        withTimeout(TEST_AWAIT_TIMEOUT) {
+            while (hub.lastKnownLocation(vehicleId) != null) delay(10)
+        }
+    }
+
+    @Test
     fun `a malformed message on the relay is skipped, not fatal to the collector loop`() =
         runBlocking {
             val relay = FakeMessageRelay()
-            val hubB = RedisRelayVehicleLocationHub(InMemoryVehicleLocationHub(cellIndexer), relay)
+            val hubB = relayHub(relay)
             hubB.start()
             withTimeout(TEST_AWAIT_TIMEOUT) { relay.awaitSubscriber(VEHICLE_LOCATION_CHANNEL) }
 
             relay.publish(VEHICLE_LOCATION_CHANNEL, "not valid json")
 
-            val hubA = RedisRelayVehicleLocationHub(InMemoryVehicleLocationHub(cellIndexer), relay)
+            val hubA = relayHub(relay)
             hubA.publish(update(vehicleId = 5))
 
             assertEquals(5, pollLastKnownLocation(hubB, vehicleId = 5)?.vehicleId)
@@ -122,12 +201,12 @@ class RedisRelayVehicleLocationHubTest {
     fun `stop cancels the relay-consuming loop, so a later relayed update never arrives`() =
         runBlocking {
             val relay = FakeMessageRelay()
-            val hubB = RedisRelayVehicleLocationHub(InMemoryVehicleLocationHub(cellIndexer), relay)
+            val hubB = relayHub(relay)
             hubB.start()
             withTimeout(TEST_AWAIT_TIMEOUT) { relay.awaitSubscriber(VEHICLE_LOCATION_CHANNEL) }
             hubB.stop()
 
-            val hubA = RedisRelayVehicleLocationHub(InMemoryVehicleLocationHub(cellIndexer), relay)
+            val hubA = relayHub(relay)
             hubA.publish(update(vehicleId = 9))
 
             val arrivedAnyway = pollLastKnownLocation(hubB, vehicleId = 9, budget = NEGATIVE_CHECK_BUDGET)

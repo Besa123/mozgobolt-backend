@@ -1,6 +1,11 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.modules.plugin
 
 import com.mozgobolt.core.modules.AppConfig
+import com.mozgobolt.core.modules.hosts
 import com.mozgobolt.core.utility.functions.DEVICE_ID_HEADER
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod

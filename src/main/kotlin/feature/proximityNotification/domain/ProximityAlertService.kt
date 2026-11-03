@@ -1,7 +1,12 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.proximityNotification.domain
 
 import com.mozgobolt.feature.vehicleTracking.domain.model.GeoPoint
 
+/** Evaluates telemetry batches for buyer proximity alerts. */
 interface ProximityAlertService {
     /**
      * Checks whether any of [points] — telemetry recorded for a vehicle belonging to [companyId]

@@ -1,5 +1,10 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleTracking.routing
 
+import com.mozgobolt.core.domain.security.AccessTokenSessionValidator
 import com.mozgobolt.core.modules.plugin.BodyLimit
 import com.mozgobolt.core.modules.plugin.RECONNECT_WARNING_LEAD_TIME
 import com.mozgobolt.core.modules.plugin.RequestTimeout
@@ -7,6 +12,8 @@ import com.mozgobolt.core.modules.plugin.SSE_EVENT_RECONNECT
 import com.mozgobolt.core.modules.plugin.SSE_HEARTBEAT_PERIOD
 import com.mozgobolt.core.modules.plugin.validatedPost
 import com.mozgobolt.core.routing.dto.response.ErrorResponse
+import com.mozgobolt.core.utility.functions.collectWhileAccessSessionActive
+import com.mozgobolt.core.utility.functions.currentTokenFamilyIdOrNull
 import com.mozgobolt.core.utility.functions.currentUserIdOrNull
 import com.mozgobolt.core.utility.functions.protectedApi
 import com.mozgobolt.core.utility.functions.remainingJwtValidityOrNull
@@ -22,13 +29,15 @@ import com.mozgobolt.feature.vehicleTracking.routing.dto.request.TelemetryBatchR
 import com.mozgobolt.feature.vehicleTracking.routing.dto.response.VehicleOfflineResponseDto
 import com.mozgobolt.feature.vehicleTracking.routing.dto.response.toResponseDto
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.intercept
+import io.ktor.server.routing.route
 import io.ktor.server.sse.heartbeat
 import io.ktor.server.sse.sse
 import io.ktor.sse.ServerSentEvent
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.encodeToString
@@ -52,33 +61,52 @@ private const val ERROR_CODE_INVALID_REQUEST = "INVALID_REQUEST"
 fun Route.vehicleTrackingRoutes(
     vehicleTrackingService: VehicleTrackingService,
     hub: VehicleLocationHub,
+    accessTokenSessionValidator: AccessTokenSessionValidator,
 ) {
     protectedApi {
-        validatedPost<TelemetryBatchRequestDto>(
-            "/vehicle-tracking/telemetry",
-            BodyLimit.MEDIUM,
-            RequestTimeout.STANDARD,
-        ) { request ->
-            if (!requireRole(UserRole.VENDOR)) return@validatedPost
-            val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
+        vehicleTrackingTelemetryRoute(vehicleTrackingService)
+        vehicleTrackingLiveRoute(hub, accessTokenSessionValidator)
+    }
+}
 
-            val points =
-                request.points.map { point ->
-                    TelemetryPoint(
-                        latitude = point.latitude,
-                        longitude = point.longitude,
-                        recordedAt = Instant.parse(point.recordedAt),
-                    )
-                }
+private fun Route.vehicleTrackingTelemetryRoute(vehicleTrackingService: VehicleTrackingService) {
+    validatedPost<TelemetryBatchRequestDto>(
+        "/vehicle-tracking/telemetry",
+        BodyLimit.MEDIUM,
+        RequestTimeout.STANDARD,
+    ) { request ->
+        if (!requireRole(UserRole.VENDOR)) return@validatedPost
+        val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
 
-            vehicleTrackingService.ingestTelemetry(userId, points).fold(
-                onSuccess = { call.respond(HttpStatusCode.Accepted) },
-                onError = { error -> call.respond(error.toHttpStatusCode(), ErrorResponse(error = error.name)) },
-            )
+        val points =
+            request.points.map { point ->
+                TelemetryPoint(
+                    latitude = point.latitude,
+                    longitude = point.longitude,
+                    recordedAt = Instant.parse(point.recordedAt),
+                )
+            }
+
+        vehicleTrackingService.ingestTelemetry(userId, points).fold(
+            onSuccess = { call.respond(HttpStatusCode.Accepted) },
+            onError = { error -> call.respond(error.toHttpStatusCode(), ErrorResponse(error = error.name)) },
+        )
+    }
+}
+
+@Suppress("DEPRECATION") // Reject before the SSE handler commits a 200 response.
+private fun Route.vehicleTrackingLiveRoute(
+    hub: VehicleLocationHub,
+    accessTokenSessionValidator: AccessTokenSessionValidator,
+) {
+    route(VEHICLE_TRACKING_LIVE_PATH) {
+        intercept(ApplicationCallPipeline.Call) {
+            if (!context.requireRole(UserRole.BUYER)) finish()
         }
 
-        sse(VEHICLE_TRACKING_LIVE_PATH) {
-            call.currentUserIdOrNull() ?: return@sse
+        sse {
+            val userId = call.currentUserIdOrNull() ?: return@sse
+            val familyId = call.currentTokenFamilyIdOrNull() ?: return@sse
             val remainingTokenValidity = call.remainingJwtValidityOrNull() ?: return@sse
             if (remainingTokenValidity <= Duration.ZERO) return@sse
 
@@ -101,11 +129,10 @@ fun Route.vehicleTrackingRoutes(
 
             val (snapshotUpdates, liveUpdates) =
                 when (liveRequest) {
-                    is LiveRequest.All -> hub.snapshotAll() to hub.subscribeAll()
-
-                    is LiveRequest.Nearby ->
+                    is LiveRequest.Nearby -> {
                         hub.snapshotNear(liveRequest.latitude, liveRequest.longitude, liveRequest.radiusKm) to
                             hub.subscribeNear(liveRequest.latitude, liveRequest.longitude, liveRequest.radiusKm)
+                    }
 
                     is LiveRequest.Invalid -> {
                         val error = ErrorResponse(error = ERROR_CODE_INVALID_REQUEST, message = liveRequest.reason)
@@ -124,7 +151,11 @@ fun Route.vehicleTrackingRoutes(
             }
 
             withTimeoutOrNull(remainingTokenValidity) {
-                liveUpdates.collect { event ->
+                liveUpdates.collectWhileAccessSessionActive(
+                    userId = userId,
+                    familyId = familyId,
+                    validator = accessTokenSessionValidator,
+                ) { event ->
                     when (event) {
                         is VehicleLiveEvent.Position -> sendLocation(event.update)
                         is VehicleLiveEvent.Offline -> sendOffline(event.vehicleId)

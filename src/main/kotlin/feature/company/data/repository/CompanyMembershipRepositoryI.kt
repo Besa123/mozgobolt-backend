@@ -1,7 +1,10 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.company.data.repository
 
 import com.mozgobolt.feature.company.data.database.CompaniesTable
-import com.mozgobolt.feature.company.data.database.CompanyMembershipEntity
 import com.mozgobolt.feature.company.data.database.CompanyMembershipsTable
 import com.mozgobolt.feature.company.data.mapper.toCompanyMembership
 import com.mozgobolt.feature.company.domain.CompanyMembershipRepository
@@ -17,6 +20,7 @@ import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insertIgnore
 import org.jetbrains.exposed.v1.jdbc.select
+import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.update
 import java.time.Instant
 
@@ -45,10 +49,11 @@ class CompanyMembershipRepositoryI : CompanyMembershipRepository {
         companyId: Int,
         userId: Int,
     ): CompanyMembership? =
-        CompanyMembershipEntity
-            .find {
+        CompanyMembershipsTable
+            .selectAll()
+            .where {
                 (CompanyMembershipsTable.companyId eq companyId) and (CompanyMembershipsTable.userId eq userId)
-            }.firstOrNull()
+            }.singleOrNull()
             ?.toCompanyMembership()
 
     override suspend fun findAllForCompany(companyId: Int): List<CompanyMemberSummary> =

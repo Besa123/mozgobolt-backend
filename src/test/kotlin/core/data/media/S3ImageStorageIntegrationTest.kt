@@ -1,7 +1,12 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.media
 
 import com.adobe.testing.s3mock.testcontainers.S3MockContainer
 import com.mozgobolt.core.modules.AppConfig
+import com.mozgobolt.core.resilience.ExternalServiceResiliencePolicies
 import com.mozgobolt.core.skipIfNoDocker
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
@@ -10,6 +15,7 @@ import kotlin.test.assertNull
 
 class S3ImageStorageIntegrationTest {
     private val bucket = "test-bucket"
+    private val vehiclePictureKey = "vehicles/42/123e4567-e89b-12d3-a456-426614174000"
 
     @Test
     fun `store, read, and delete round-trip against a real S3-protocol server`() {
@@ -19,25 +25,27 @@ class S3ImageStorageIntegrationTest {
         try {
             val storage =
                 S3ImageStorage(
-                    S3ImageStorage.buildClient(
-                        AppConfig.ObjectStorage(
-                            enabled = true,
-                            endpoint = mock.httpEndpoint,
-                            bucket = bucket,
-                            accessKeyId = "test-access-key",
-                            secretAccessKey = "test-secret-key",
-                            region = "auto",
+                    client =
+                        S3ImageStorage.buildClient(
+                            AppConfig.ObjectStorage(
+                                enabled = true,
+                                endpoint = mock.httpEndpoint,
+                                bucket = bucket,
+                                accessKeyId = "test-access-key",
+                                secretAccessKey = "test-secret-key",
+                                region = "auto",
+                            ),
                         ),
-                    ),
-                    bucket,
+                    bucket = bucket,
+                    resilience = ExternalServiceResiliencePolicies.create().s3,
                 )
 
             runBlocking {
-                storage.store("key-1", byteArrayOf(1, 2, 3, 4))
-                assertEquals(listOf<Byte>(1, 2, 3, 4), storage.read("key-1")?.toList())
+                storage.store(vehiclePictureKey, byteArrayOf(1, 2, 3, 4))
+                assertEquals(listOf<Byte>(1, 2, 3, 4), storage.read(vehiclePictureKey)?.toList())
 
-                storage.deleteBestEffort(listOf("key-1"))
-                assertNull(storage.read("key-1"))
+                storage.deleteBestEffort(listOf(vehiclePictureKey))
+                assertNull(storage.read(vehiclePictureKey))
             }
         } finally {
             mock.stop()
@@ -53,17 +61,19 @@ class S3ImageStorageIntegrationTest {
         try {
             val storage =
                 S3ImageStorage(
-                    S3ImageStorage.buildClient(
-                        AppConfig.ObjectStorage(
-                            enabled = true,
-                            endpoint = mock.httpEndpoint,
-                            bucket = bucket,
-                            accessKeyId = "test-access-key",
-                            secretAccessKey = "test-secret-key",
-                            region = "auto",
+                    client =
+                        S3ImageStorage.buildClient(
+                            AppConfig.ObjectStorage(
+                                enabled = true,
+                                endpoint = mock.httpEndpoint,
+                                bucket = bucket,
+                                accessKeyId = "test-access-key",
+                                secretAccessKey = "test-secret-key",
+                                region = "auto",
+                            ),
                         ),
-                    ),
-                    bucket,
+                    bucket = bucket,
+                    resilience = ExternalServiceResiliencePolicies.create().s3,
                 )
 
             runBlocking {

@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.savedLocation.data.repository
 
 import com.mozgobolt.feature.savedLocation.data.database.UserSavedLocationEntity
@@ -39,9 +43,8 @@ class SavedLocationRepositoryI : SavedLocationRepository {
             .find { UserSavedLocationsTable.userId eq userId }
             .map { it.toUserSavedLocation() }
 
-    override suspend fun delete(id: Int) {
-        UserSavedLocationsTable.deleteWhere { UserSavedLocationsTable.id eq id }
-    }
+    override suspend fun delete(id: Int): Boolean =
+        UserSavedLocationsTable.deleteWhere { UserSavedLocationsTable.id eq id } > 0
 
     override suspend fun findAllForUsers(userIds: Collection<Int>): List<UserSavedLocation> {
         if (userIds.isEmpty()) return emptyList()

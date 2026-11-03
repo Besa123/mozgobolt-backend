@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.sync.data.mapper
 
 import com.mozgobolt.feature.sync.data.database.SyncEventsTable

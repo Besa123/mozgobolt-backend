@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.company.routing.dto.response
 
 import com.mozgobolt.feature.company.domain.model.Company
@@ -8,6 +12,11 @@ data class CompanyResponseDto(
     val id: Int,
     val name: String,
     val inviteCode: String? = null,
+)
+
+@Serializable
+data class InviteCodeResponseDto(
+    val inviteCode: String,
 )
 
 fun Company.toResponseDto() =

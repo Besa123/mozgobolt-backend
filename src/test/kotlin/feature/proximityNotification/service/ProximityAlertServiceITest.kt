@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.proximityNotification.service
 
 import com.mozgobolt.core.data.push.FakePushNotificationSender
@@ -17,6 +21,7 @@ import kotlinx.coroutines.runBlocking
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.toJavaDuration
 
@@ -110,11 +115,13 @@ class ProximityAlertServiceITest {
         }
     }
 
-    /** In-memory but faithful to the real repository's find-then-write contract — see
-     * [ProximityNotificationRepositoryI]'s kdoc for why that's an accepted race, not a bug. */
+    /** In-memory equivalent of the repository's atomic notification claim. */
     private class FakeProximityNotificationRepository : ProximityNotificationRepository {
         private val records = mutableMapOf<Triple<Int, Int, Int>, ProximityNotificationRecord>()
         private var nextId = 1
+
+        var recordWriteCount = 0
+            private set
 
         override suspend fun find(
             buyerUserId: Int,
@@ -122,12 +129,13 @@ class ProximityAlertServiceITest {
             vehicleId: Int,
         ): ProximityNotificationRecord? = records[Triple(buyerUserId, savedLocationId, vehicleId)]
 
-        override suspend fun recordEntryNotified(
+        override suspend fun recordEntryAttempted(
             buyerUserId: Int,
             savedLocationId: Int,
             vehicleId: Int,
-            notifiedAt: Instant,
+            attemptedAt: Instant,
         ): ProximityNotificationRecord {
+            recordWriteCount++
             val key = Triple(buyerUserId, savedLocationId, vehicleId)
             val existing = records[key]
             val record =
@@ -137,10 +145,28 @@ class ProximityAlertServiceITest {
                     savedLocationId = savedLocationId,
                     vehicleId = vehicleId,
                     currentlyInside = true,
-                    lastNotifiedAt = notifiedAt,
+                    lastAttemptedAt = attemptedAt,
                 )
             records[key] = record
             return record
+        }
+
+        override suspend fun claimEntryNotification(
+            buyerUserId: Int,
+            savedLocationId: Int,
+            vehicleId: Int,
+            attemptedAt: Instant,
+            cooldownCutoff: Instant,
+        ): Boolean {
+            val existing = find(buyerUserId, savedLocationId, vehicleId)
+            val shouldSuppress =
+                existing?.let {
+                    it.currentlyInside && it.lastAttemptedAt.isAfter(cooldownCutoff)
+                } == true
+            if (shouldSuppress) return false
+
+            recordEntryAttempted(buyerUserId, savedLocationId, vehicleId, attemptedAt)
+            return true
         }
 
         override suspend fun markOutside(
@@ -151,6 +177,11 @@ class ProximityAlertServiceITest {
             val key = Triple(buyerUserId, savedLocationId, vehicleId)
             records[key]?.let { records[key] = it.copy(currentlyInside = false) }
         }
+
+        override suspend fun deleteForUserAndCompany(
+            buyerUserId: Int,
+            companyId: Int,
+        ): Int = error("not exercised by this test")
     }
 
     private class Fixture {
@@ -358,7 +389,7 @@ class ProximityAlertServiceITest {
             // Simulate "already notified a while ago, and still inside" directly, rather than
             // waiting real time in the test.
             val longAgo = Instant.now().minus(PROXIMITY_NOTIFICATION_COOLDOWN.toJavaDuration()).minusSeconds(1)
-            fx.proximityNotificationRepository.recordEntryNotified(10, savedLocation.id, 100, longAgo)
+            fx.proximityNotificationRepository.recordEntryAttempted(10, savedLocation.id, 100, longAgo)
             val (insideLat, insideLon) = insidePoint
 
             fx.service.evaluate(vehicleId = 100, companyId = 1, latitude = insideLat, longitude = insideLon)
@@ -388,7 +419,7 @@ class ProximityAlertServiceITest {
                     .minus(
                         PROXIMITY_NOTIFICATION_COOLDOWN.toJavaDuration(),
                     ).plusSeconds(1)
-            fx.proximityNotificationRepository.recordEntryNotified(10, savedLocation.id, 100, justUnderCooldownAgo)
+            fx.proximityNotificationRepository.recordEntryAttempted(10, savedLocation.id, 100, justUnderCooldownAgo)
             val (insideLat, insideLon) = insidePoint
 
             fx.service.evaluate(vehicleId = 100, companyId = 1, latitude = insideLat, longitude = insideLon)
@@ -481,13 +512,14 @@ class ProximityAlertServiceITest {
             val fx = Fixture()
             fx.favoriteRepository.seedFavorite(companyId = 1, userId = 10)
             val (savedLat, savedLon) = savedPoint
-            fx.savedLocationRepository.seed(
-                userId = 10,
-                label = "Home",
-                latitude = savedLat,
-                longitude = savedLon,
-                radiusKm = 1.0,
-            )
+            val savedLocation =
+                fx.savedLocationRepository.seed(
+                    userId = 10,
+                    label = "Home",
+                    latitude = savedLat,
+                    longitude = savedLon,
+                    radiusKm = 1.0,
+                )
             fx.deviceInstallationRepository.seed(userId = 10, installationId = "buyer-device")
             fx.pushSender.failNextSendTo(
                 "buyer-device",
@@ -498,6 +530,20 @@ class ProximityAlertServiceITest {
             // Must not throw — a real bug here would have crashed the telemetry-ingestion request
             // that calls this.
             fx.service.evaluate(vehicleId = 100, companyId = 1, latitude = insideLat, longitude = insideLon)
+            val afterFailedDelivery =
+                assertNotNull(
+                    fx.proximityNotificationRepository.find(10, savedLocation.id, 100),
+                    "the best-effort attempt must persist its cooldown even when push delivery fails",
+                )
+
+            fx.service.evaluate(vehicleId = 100, companyId = 1, latitude = insideLat, longitude = insideLon)
+
+            assertEquals(1, fx.proximityNotificationRepository.recordWriteCount)
+            assertEquals(
+                afterFailedDelivery.lastAttemptedAt,
+                fx.proximityNotificationRepository.find(10, savedLocation.id, 100)?.lastAttemptedAt,
+                "repeated telemetry during the cooldown must not re-attempt a failed best-effort alert",
+            )
         }
     }
 

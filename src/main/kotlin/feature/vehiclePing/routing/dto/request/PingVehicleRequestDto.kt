@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehiclePing.routing.dto.request
 
 import com.mozgobolt.core.domain.validation.ValidatedRequest
@@ -5,9 +9,9 @@ import com.mozgobolt.feature.vehicleTracking.domain.model.GeoBounds
 import kotlinx.serialization.Serializable
 
 /**
- * The buyer's real, exact position when they tapped ping — validated here, then immediately
- * coarsened by [com.mozgobolt.feature.vehiclePing.service.VehiclePingServiceI] before it touches
- * anything else. This DTO is the only place in the backend that ever holds the exact value.
+ * The buyer's exact position when they tapped ping. It is validated here and immediately
+ * coarsened by [com.mozgobolt.feature.vehiclePing.service.VehiclePingServiceI] before repository,
+ * log, or delivery use; only the coarsened point is sent to the driver.
  */
 @Serializable
 data class PingVehicleRequestDto(

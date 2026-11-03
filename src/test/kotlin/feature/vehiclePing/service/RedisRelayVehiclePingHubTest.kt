@@ -1,6 +1,11 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehiclePing.service
 
 import com.mozgobolt.core.data.messaging.FakeMessageRelay
+import com.mozgobolt.core.utility.ApplicationBackgroundScope
 import com.mozgobolt.feature.vehiclePing.domain.model.VehiclePingNotification
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -26,10 +31,17 @@ private fun notification(vehicleId: Int) =
     VehiclePingNotification(vehicleId = vehicleId, sentAt = Instant.now(), latitude = 47.4979, longitude = 19.0402)
 
 class RedisRelayVehiclePingHubTest {
+    private fun relayHub(relay: FakeMessageRelay) =
+        RedisRelayVehiclePingHub(
+            delegate = InMemoryVehiclePingHub(),
+            relay = relay,
+            backgroundScope = ApplicationBackgroundScope(),
+        )
+
     @Test
     fun `publish updates this instance's own local hub immediately`() =
         runBlocking {
-            val hub = RedisRelayVehiclePingHub(InMemoryVehiclePingHub(), FakeMessageRelay())
+            val hub = relayHub(FakeMessageRelay())
             val received = async { withTimeout(TEST_AWAIT_TIMEOUT) { hub.subscribe(vendorUserId = 1).first() } }
             yield() // one collector, one flow — a single scheduler turn is enough to attach.
 
@@ -42,7 +54,7 @@ class RedisRelayVehiclePingHubTest {
     fun `publish relays to the shared channel`() =
         runBlocking {
             val relay = FakeMessageRelay()
-            val hub = RedisRelayVehiclePingHub(InMemoryVehiclePingHub(), relay)
+            val hub = relayHub(relay)
 
             hub.publish(vendorUserId = 1, notification = notification(vehicleId = 7))
 
@@ -56,8 +68,8 @@ class RedisRelayVehiclePingHubTest {
     fun `a second instance sharing the same relay receives a ping this instance published`() =
         runBlocking {
             val relay = FakeMessageRelay()
-            val hubA = RedisRelayVehiclePingHub(InMemoryVehiclePingHub(), relay)
-            val hubB = RedisRelayVehiclePingHub(InMemoryVehiclePingHub(), relay)
+            val hubA = relayHub(relay)
+            val hubB = relayHub(relay)
 
             hubB.start()
             withTimeout(TEST_AWAIT_TIMEOUT) { relay.awaitSubscriber(VEHICLE_PING_CHANNEL) }
@@ -75,7 +87,7 @@ class RedisRelayVehiclePingHubTest {
     fun `a malformed message on the relay is skipped, not fatal to the collector loop`() =
         runBlocking {
             val relay = FakeMessageRelay()
-            val hubB = RedisRelayVehiclePingHub(InMemoryVehiclePingHub(), relay)
+            val hubB = relayHub(relay)
             hubB.start()
             withTimeout(TEST_AWAIT_TIMEOUT) { relay.awaitSubscriber(VEHICLE_PING_CHANNEL) }
 
@@ -84,7 +96,7 @@ class RedisRelayVehiclePingHubTest {
             val onB = async { withTimeout(TEST_AWAIT_TIMEOUT) { hubB.subscribe(vendorUserId = 5).first() } }
             yield()
 
-            val hubA = RedisRelayVehiclePingHub(InMemoryVehiclePingHub(), relay)
+            val hubA = relayHub(relay)
             hubA.publish(vendorUserId = 5, notification = notification(vehicleId = 3))
 
             assertEquals(3, onB.await().vehicleId)
@@ -95,12 +107,12 @@ class RedisRelayVehiclePingHubTest {
     fun `stop cancels the relay-consuming loop, so a later relayed ping never arrives`() =
         runBlocking {
             val relay = FakeMessageRelay()
-            val hubB = RedisRelayVehiclePingHub(InMemoryVehiclePingHub(), relay)
+            val hubB = relayHub(relay)
             hubB.start()
             withTimeout(TEST_AWAIT_TIMEOUT) { relay.awaitSubscriber(VEHICLE_PING_CHANNEL) }
             hubB.stop()
 
-            val hubA = RedisRelayVehiclePingHub(InMemoryVehiclePingHub(), relay)
+            val hubA = relayHub(relay)
             hubA.publish(vendorUserId = 5, notification = notification(vehicleId = 1))
 
             val arrivedAnyway =

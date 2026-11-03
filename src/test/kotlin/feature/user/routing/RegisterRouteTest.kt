@@ -1,6 +1,11 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.routing
 
 import com.mozgobolt.core.configureTestEnvironment
+import com.mozgobolt.core.data.idempotency.FakeIdempotencyStore
 import com.mozgobolt.core.domain.AppResult
 import com.mozgobolt.feature.user.domain.model.RegisterError
 import io.ktor.client.request.header
@@ -68,7 +73,37 @@ class RegisterRouteTest {
                 )
 
             assertEquals(HttpStatusCode.BadRequest, response.status)
-            assertEquals("WEAK_PASSWORD", response.errorBody().error)
+            assertEquals("VALIDATION_FAILED", response.errorBody().error)
+            assertEquals(null, userService.lastCreateUserCall)
+        }
+
+    @Test
+    fun `a password check outage returns 503 and allows retry with the same idempotency key`() =
+        testApplication {
+            configureTestEnvironment()
+            val userService =
+                FakeUserService().apply {
+                    createUserResult = AppResult.Error(RegisterError.PASSWORD_CHECK_UNAVAILABLE)
+                }
+            val idempotencyStore = FakeIdempotencyStore()
+            application { installAuthRoutesTestApp(userService, idempotencyStore) }
+
+            val first =
+                postJson(AuthPaths.REGISTER, VALID_BODY) {
+                    header("Idempotency-Key", "password-check-retry")
+                }
+            assertEquals(HttpStatusCode.ServiceUnavailable, first.status)
+            assertEquals("PASSWORD_CHECK_UNAVAILABLE", first.errorBody().error)
+            assertEquals(null, idempotencyStore.find("password-check-retry"))
+
+            userService.createUserResult = AppResult.Success(Unit)
+            val retry =
+                postJson(AuthPaths.REGISTER, VALID_BODY) {
+                    header("Idempotency-Key", "password-check-retry")
+                }
+
+            assertEquals(HttpStatusCode.Created, retry.status)
+            assertEquals(2, userService.createUserCallCount)
         }
 
     @Test
@@ -87,11 +122,27 @@ class RegisterRouteTest {
             val response =
                 postJson(
                     AuthPaths.REGISTER,
-                    """{"password":"Str0ngPass1","email":"not-an-email","name":"User","role":"BUYER"}""",
+                    """{"password":"Str0ngPassphrase1","email":"not-an-email","name":"User","role":"BUYER"}""",
                 )
 
             assertEquals(HttpStatusCode.BadRequest, response.status)
             assertEquals("INVALID_EMAIL", response.errorBody().error)
+        }
+
+    @Test
+    fun `an invalid name from the use case returns 400`() =
+        testApplication {
+            configureTestEnvironment()
+            val userService =
+                FakeUserService().apply {
+                    createUserResult = AppResult.Error(RegisterError.INVALID_NAME)
+                }
+            application { installAuthRoutesTestApp(userService) }
+
+            val response = postJson(AuthPaths.REGISTER, VALID_BODY)
+
+            assertEquals(HttpStatusCode.BadRequest, response.status)
+            assertEquals("INVALID_NAME", response.errorBody().error)
         }
 
     @Test
@@ -122,7 +173,7 @@ class RegisterRouteTest {
             val response =
                 postJson(
                     AuthPaths.REGISTER,
-                    """{"password":"Str0ngPass1","email":"user@example.com","name":"<script>x</script>",""" +
+                    """{"password":"Str0ngPassphrase1","email":"user@example.com","name":"<script>x</script>",""" +
                         """"role":"BUYER"}""",
                 )
 
@@ -177,12 +228,10 @@ class RegisterRouteTest {
             val userService = FakeUserService()
             application { installAuthRoutesTestApp(userService) }
             val oversizedName = "a".repeat(2 * 1024)
+            val oversizedRequestBody =
+                """{"password":"Str0ngPassphrase1","email":"user@example.com","name":"$oversizedName","role":"BUYER"}"""
 
-            val response =
-                postJson(
-                    AuthPaths.REGISTER,
-                    """{"password":"Str0ngPass1","email":"user@example.com","name":"$oversizedName","role":"BUYER"}""",
-                )
+            val response = postJson(AuthPaths.REGISTER, oversizedRequestBody)
 
             assertEquals(HttpStatusCode.PayloadTooLarge, response.status)
             assertEquals(null, userService.lastCreateUserCall)
@@ -213,14 +262,14 @@ class RegisterRouteTest {
 
             postJson(
                 AuthPaths.REGISTER,
-                """{"password":"Str0ngPass1","email":"first@example.com","name":"User","role":"BUYER"}""",
+                """{"password":"Str0ngPassphrase1","email":"first@example.com","name":"User","role":"BUYER"}""",
             ) {
                 header("Idempotency-Key", "reg-key-1")
             }
             val second =
                 postJson(
                     AuthPaths.REGISTER,
-                    """{"password":"Str0ngPass1","email":"second@example.com","name":"User","role":"BUYER"}""",
+                    """{"password":"Str0ngPassphrase1","email":"second@example.com","name":"User","role":"BUYER"}""",
                 ) {
                     header("Idempotency-Key", "reg-key-1")
                 }
@@ -229,6 +278,7 @@ class RegisterRouteTest {
         }
 
     private companion object {
-        const val VALID_BODY = """{"password":"Str0ngPass1","email":"user@example.com","name":"User","role":"BUYER"}"""
+        const val VALID_BODY =
+            """{"password":"Str0ngPassphrase1","email":"user@example.com","name":"User","role":"BUYER"}"""
     }
 }

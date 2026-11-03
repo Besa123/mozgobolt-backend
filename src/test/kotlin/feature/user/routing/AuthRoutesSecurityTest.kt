@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.routing
 
 import com.mozgobolt.core.TEST_JWT_AUDIENCE
@@ -62,7 +66,7 @@ class AuthRoutesSecurityTest {
                     audience = TEST_JWT_AUDIENCE,
                     issuer = TEST_JWT_ISSUER,
                 )
-            val forgedToken = otherManager.generateAccessToken(userId = 1, role = "BUYER")
+            val forgedToken = otherManager.generateAccessToken(userId = 1, role = "BUYER", familyId = "family")
 
             val response = client.post(AuthPaths.LOGOUT_ALL) { bearerAuth(forgedToken) }
 

@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.routing
 
 import com.mozgobolt.core.configureTestEnvironment
@@ -11,21 +15,21 @@ import kotlin.test.assertEquals
 
 class LogoutRouteTest {
     @Test
-    fun `logout with a valid access token revokes the presented refresh token`() =
+    fun `logout uses the signed session family without sending the refresh token`() =
         testApplication {
             configureTestEnvironment()
-            val userService = FakeUserService()
-            application { installAuthRoutesTestApp(userService) }
+            val userSessionService = FakeUserSessionService()
+            application { installAuthRoutesTestApp(userSessionService = userSessionService) }
 
             val response =
-                postJson(AuthPaths.LOGOUT, """{"refreshToken":"some-refresh-token"}""") {
-                    bearerAuth(testAccessTokenFor(userId = 1))
+                client.post(AuthPaths.LOGOUT) {
+                    bearerAuth(testAccessTokenFor(userId = 1, familyId = "family-1"))
                 }
 
             assertEquals(HttpStatusCode.OK, response.status)
             assertEquals(
-                listOf(FakeUserService.LogoutCall(userId = 1, refreshToken = "some-refresh-token")),
-                userService.logoutUserCalls,
+                listOf(FakeUserSessionService.LogoutCall(userId = 1, familyId = "family-1")),
+                userSessionService.logoutUserCalls,
             )
         }
 
@@ -33,53 +37,53 @@ class LogoutRouteTest {
     fun `logout without an access token is rejected`() =
         testApplication {
             configureTestEnvironment()
-            val userService = FakeUserService()
-            application { installAuthRoutesTestApp(userService) }
+            val userSessionService = FakeUserSessionService()
+            application { installAuthRoutesTestApp(userSessionService = userSessionService) }
 
-            val response = postJson(AuthPaths.LOGOUT, """{"refreshToken":"some-refresh-token"}""")
+            val response = client.post(AuthPaths.LOGOUT)
 
             assertEquals(HttpStatusCode.Unauthorized, response.status)
-            assertEquals(emptyList(), userService.logoutUserCalls)
+            assertEquals(emptyList(), userSessionService.logoutUserCalls)
         }
 
     @Test
-    fun `logout with a blank refresh token fails validation`() =
+    fun `logout rejects an access token without a session family`() =
         testApplication {
             configureTestEnvironment()
-            val userService = FakeUserService()
-            application { installAuthRoutesTestApp(userService) }
+            val userSessionService = FakeUserSessionService()
+            application { installAuthRoutesTestApp(userSessionService = userSessionService) }
 
             val response =
-                postJson(AuthPaths.LOGOUT, """{"refreshToken":""}""") {
-                    bearerAuth(testAccessTokenFor(userId = 1))
+                client.post(AuthPaths.LOGOUT) {
+                    bearerAuth(testAccessTokenFor(userId = 1, familyId = ""))
                 }
 
-            assertEquals(HttpStatusCode.BadRequest, response.status)
+            assertEquals(HttpStatusCode.Unauthorized, response.status)
         }
 
     @Test
     fun `logout-all with a valid access token revokes every session for that user`() =
         testApplication {
             configureTestEnvironment()
-            val userService = FakeUserService()
-            application { installAuthRoutesTestApp(userService) }
+            val userSessionService = FakeUserSessionService()
+            application { installAuthRoutesTestApp(userSessionService = userSessionService) }
 
             val response = client.post(AuthPaths.LOGOUT_ALL) { bearerAuth(testAccessTokenFor(userId = 42)) }
 
             assertEquals(HttpStatusCode.OK, response.status)
-            assertEquals(listOf(42), userService.logoutAllSessionsCalls)
+            assertEquals(listOf(42), userSessionService.logoutAllSessionsCalls)
         }
 
     @Test
     fun `logout-all without an access token is rejected`() =
         testApplication {
             configureTestEnvironment()
-            val userService = FakeUserService()
-            application { installAuthRoutesTestApp(userService) }
+            val userSessionService = FakeUserSessionService()
+            application { installAuthRoutesTestApp(userSessionService = userSessionService) }
 
             val response = client.post(AuthPaths.LOGOUT_ALL)
 
             assertEquals(HttpStatusCode.Unauthorized, response.status)
-            assertEquals(emptyList(), userService.logoutAllSessionsCalls)
+            assertEquals(emptyList(), userSessionService.logoutAllSessionsCalls)
         }
 }

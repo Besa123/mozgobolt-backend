@@ -1,21 +1,30 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.validator
 
+import com.mozgobolt.core.domain.AppResult
+import com.mozgobolt.core.domain.security.PasswordBreachChecker
 import com.mozgobolt.core.domain.security.PasswordPolicy
+import com.mozgobolt.core.domain.validation.PasswordValidationError
 import com.mozgobolt.core.domain.validation.PasswordValidator
 
-class StandardPasswordValidator : PasswordValidator {
-    override fun isValid(password: String): Boolean {
-        if (password.length < MIN_PASSWORD_LENGTH) return false
-        if (password.length > PasswordPolicy.MAX_LENGTH) return false
+class StandardPasswordValidator(
+    private val passwordBreachChecker: PasswordBreachChecker,
+) : PasswordValidator {
+    override suspend fun validate(password: String): AppResult<Unit, PasswordValidationError> {
+        if (!PasswordPolicy.isValid(password)) return AppResult.Error(PasswordValidationError.INVALID)
 
-        val hasUpperCase = password.any { it.isUpperCase() }
-        val hasLowerCase = password.any { it.isLowerCase() }
-        val hasDigit = password.any { it.isDigit() }
-
-        return hasUpperCase && hasLowerCase && hasDigit
-    }
-
-    companion object {
-        private const val MIN_PASSWORD_LENGTH = 8
+        return passwordBreachChecker.isCompromised(password).fold(
+            onSuccess = { compromised ->
+                if (compromised) {
+                    AppResult.Error(PasswordValidationError.INVALID)
+                } else {
+                    AppResult.Success(Unit)
+                }
+            },
+            onError = { AppResult.Error(PasswordValidationError.BREACH_CHECK_UNAVAILABLE) },
+        )
     }
 }

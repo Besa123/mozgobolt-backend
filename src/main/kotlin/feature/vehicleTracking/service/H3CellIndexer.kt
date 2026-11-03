@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleTracking.service
 
 import com.mozgobolt.feature.vehicleTracking.domain.CellIndexer
@@ -50,11 +54,15 @@ class H3CellIndexer(
         // Res 7 ≈ 1.22km average edge — fine enough for a "who's in my neighborhood" query
         // without the k-ring growing huge at the request's max allowed radius (see
         // MAX_RING_COUNT below and VehicleTrackingRoutes' MAX_RADIUS_KM).
+
+        /** H3 resolution used to index vehicle locations. */
         const val DEFAULT_RESOLUTION = 7
 
         // H3 cell addresses are hex-encoded 64-bit indexes: at most 16 hex characters, ever,
         // regardless of resolution. Referenced by VehicleLocationsTable's column width so that
         // width is tied to this fact, not an independently-guessed number.
+
+        /** Maximum encoded length of an H3 cell address. */
         const val CELL_ADDRESS_MAX_LENGTH = 16
 
         private const val MIN_RING_COUNT = 1

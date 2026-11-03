@@ -1,6 +1,11 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleAssignment.service
 
 import com.mozgobolt.feature.company.domain.CompanyMembershipRepository
+import com.mozgobolt.feature.company.domain.CompanyRepository
 import com.mozgobolt.feature.company.domain.model.CompanyMembership
 import com.mozgobolt.feature.company.domain.model.CompanyRole
 import com.mozgobolt.feature.sync.domain.model.SyncEntityType
@@ -8,6 +13,7 @@ import com.mozgobolt.feature.sync.routing.FakeSyncService
 import com.mozgobolt.feature.user.service.NoopTransactionalRunner
 import com.mozgobolt.feature.vehicle.domain.VehicleRepository
 import com.mozgobolt.feature.vehicle.domain.model.Vehicle
+import com.mozgobolt.feature.vehicle.service.FakeVehicleCompanyRepository
 import com.mozgobolt.feature.vehicleAssignment.domain.VehicleAssignmentRepository
 import com.mozgobolt.feature.vehicleAssignment.domain.model.ActiveVehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignment
@@ -21,14 +27,16 @@ import kotlinx.coroutines.runBlocking
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
 class VehicleAssignmentServiceITest {
-    /** A spy, not just a no-op: [markedOffline] lets tests assert *which* vehicle (and how many
-     * times) [VehicleAssignmentServiceI] told the hub to clear, since that's the actual behavior
-     * under test for unlink/endActiveAssignment — not just "this doesn't crash." */
+    /**
+     * A spy that lets tests assert which vehicle the service told the hub to clear.
+     * The notification count and vehicle ID are the behavior under test.
+     */
     private class FakeVehicleLocationHub : VehicleLocationHub {
         val markedOffline = mutableListOf<Int>()
 
@@ -46,19 +54,16 @@ class VehicleAssignmentServiceITest {
             radiusKm: Double,
         ): Flow<VehicleLiveEvent> = emptyFlow()
 
-        override fun subscribeAll(): Flow<VehicleLiveEvent> = emptyFlow()
-
         override fun snapshotNear(
             latitude: Double,
             longitude: Double,
             radiusKm: Double,
         ): List<VehicleLocationUpdate> = emptyList()
-
-        override fun snapshotAll(): List<VehicleLocationUpdate> = emptyList()
     }
 
     private class FakeVehicleRepository : VehicleRepository {
         private val vehiclesById = mutableMapOf<Int, Vehicle>()
+        var beforeNextLockedRead: ((Int) -> Unit)? = null
 
         fun seed(
             id: Int,
@@ -86,6 +91,26 @@ class VehicleAssignmentServiceITest {
 
         override suspend fun findById(vehicleId: Int): Vehicle? = vehiclesById[vehicleId]
 
+        override suspend fun findByIdForUpdate(vehicleId: Int): Vehicle? {
+            beforeNextLockedRead?.let { action ->
+                beforeNextLockedRead = null
+                action(vehicleId)
+            }
+            return findById(vehicleId)
+        }
+
+        fun remove(vehicleId: Int) {
+            vehiclesById.remove(vehicleId)
+        }
+
+        fun moveToCompany(
+            vehicleId: Int,
+            companyId: Int,
+        ) {
+            val vehicle = checkNotNull(vehiclesById[vehicleId])
+            vehiclesById[vehicleId] = vehicle.copy(companyId = companyId)
+        }
+
         override suspend fun findAllByCompany(companyId: Int) = error("not exercised by this test")
 
         override suspend fun findByCompanyAndPlate(
@@ -97,6 +122,7 @@ class VehicleAssignmentServiceITest {
             vehicleId: Int,
             licensePlate: String,
             pictureUrl: String?,
+            pictureStorageKey: String?,
         ) = error("not exercised by this test")
 
         override suspend fun archive(vehicleId: Int): Boolean {
@@ -109,9 +135,10 @@ class VehicleAssignmentServiceITest {
         override suspend fun updatePictureUrl(
             vehicleId: Int,
             pictureUrl: String?,
+            pictureStorageKey: String?,
         ): Vehicle? {
             val existing = vehiclesById[vehicleId] ?: return null
-            val updated = existing.copy(pictureUrl = pictureUrl)
+            val updated = existing.copy(pictureUrl = pictureUrl, pictureStorageKey = pictureStorageKey)
             vehiclesById[vehicleId] = updated
             return updated
         }
@@ -119,7 +146,9 @@ class VehicleAssignmentServiceITest {
 
     private class FakeCompanyMembershipRepository : CompanyMembershipRepository {
         private val memberships = mutableListOf<CompanyMembership>()
+        private val lookupCounts = mutableMapOf<Pair<Int, Int>, Int>()
         private var nextId = 1
+        var revokeAfterFirstLookup: Pair<Int, Int>? = null
 
         fun seed(
             companyId: Int,
@@ -138,7 +167,14 @@ class VehicleAssignmentServiceITest {
         override suspend fun find(
             companyId: Int,
             userId: Int,
-        ): CompanyMembership? = memberships.find { it.companyId == companyId && it.userId == userId }
+        ): CompanyMembership? {
+            val key = companyId to userId
+            val lookupCount = lookupCounts.getOrDefault(key, 0) + 1
+            lookupCounts[key] = lookupCount
+            if (key == revokeAfterFirstLookup && lookupCount > 1) return null
+
+            return memberships.find { it.companyId == companyId && it.userId == userId }
+        }
 
         override suspend fun findAllForCompany(companyId: Int) = error("not exercised by this test")
 
@@ -169,6 +205,7 @@ class VehicleAssignmentServiceITest {
         private val assignments = mutableListOf<VehicleAssignment>()
         private var nextId = 1
         var rejectNextStart = false
+        var rejectNextEnd = false
         private var phantomWinnerVendorUserId: Int? = null
 
         fun loseNextStartToConcurrentWinner(vendorUserId: Int) {
@@ -183,6 +220,8 @@ class VehicleAssignmentServiceITest {
 
         override suspend fun findActiveForVehicle(vehicleId: Int): VehicleAssignment? =
             assignments.find { it.vehicleId == vehicleId && it.isActive }
+
+        override suspend fun findAllForCompany(companyId: Int): List<VehicleAssignment> = assignments.toList()
 
         override suspend fun startAssignment(
             vehicleId: Int,
@@ -215,24 +254,63 @@ class VehicleAssignmentServiceITest {
             return assignment
         }
 
+        override suspend fun startAssignment(
+            vehicleId: Int,
+            vendorUserId: Int,
+            startedAt: Instant,
+            locationSharingConsentedAt: Instant?,
+        ): VehicleAssignment? {
+            val assignment =
+                startAssignment(
+                    vehicleId = vehicleId,
+                    vendorUserId = vendorUserId,
+                    startedAt = startedAt,
+                ) ?: return null
+            val withConsent = assignment.copy(locationSharingConsentedAt = locationSharingConsentedAt)
+            val index = assignments.indexOfFirst { it.id == assignment.id }
+            assignments[index] = withConsent
+            return withConsent
+        }
+
         override suspend fun endAssignment(
             id: Int,
             endedAt: Instant,
-        ) {
+        ): Boolean {
+            if (rejectNextEnd) {
+                rejectNextEnd = false
+                return false
+            }
             val index = assignments.indexOfFirst { it.id == id }
-            if (index >= 0) assignments[index] = assignments[index].copy(endedAt = endedAt)
+            if (index < 0 || !assignments[index].isActive) return false
+            assignments[index] = assignments[index].copy(endedAt = endedAt)
+            return true
         }
+    }
+
+    private class FakeAssignmentCompanyRepository(
+        private val delegate: CompanyRepository = FakeVehicleCompanyRepository(),
+    ) : CompanyRepository by delegate {
+        var missingCompanyOnLock: Int? = null
+
+        override suspend fun findByIdForUpdate(companyId: Int) =
+            if (companyId == missingCompanyOnLock) {
+                null
+            } else {
+                delegate.findByIdForUpdate(companyId)
+            }
     }
 
     private class Fixture {
         val vehicleRepository = FakeVehicleRepository()
         val membershipRepository = FakeCompanyMembershipRepository()
+        val companyRepository = FakeAssignmentCompanyRepository()
         val assignmentRepository = FakeVehicleAssignmentRepository()
         val syncService = FakeSyncService()
         val hub = FakeVehicleLocationHub()
         val service =
             VehicleAssignmentServiceI(
                 vehicleAssignmentRepository = assignmentRepository,
+                companyRepository = companyRepository,
                 vehicleRepository = vehicleRepository,
                 membershipRepository = membershipRepository,
                 syncService = syncService,
@@ -263,6 +341,21 @@ class VehicleAssignmentServiceITest {
             assertEquals(10, assignment.vehicleId)
             assertTrue(assignment.isActive)
             assertTrue(fx.syncService.recorded.any { it.entityType == SyncEntityType.VEHICLE_ASSIGNMENT })
+        }
+    }
+
+    @Test
+    fun `linking with customer sharing requested persists the consent time`() {
+        runBlocking {
+            val fx = Fixture()
+            val vendorId = fx.seedVendor(companyId = 1)
+            fx.vehicleRepository.seed(id = 10, companyId = 1)
+
+            val result = fx.service.link(vendorId, 10, shareLocationWithCustomers = true)
+
+            val assignment = result.fold(onSuccess = { it }, onError = { fail("expected success but got $it") })
+            assertNotNull(assignment.locationSharingConsentedAt)
+            assertTrue(assignment.sharesLocationWithCustomers)
         }
     }
 
@@ -308,6 +401,59 @@ class VehicleAssignmentServiceITest {
             result.fold(onSuccess = { fail("expected FORBIDDEN but got success") }, onError = {
                 assertEquals(VehicleAssignmentError.FORBIDDEN, it)
             })
+        }
+    }
+
+    @Test
+    fun `linking is rejected if the company disappears after the initial vehicle read`() {
+        runBlocking {
+            val fx = Fixture()
+            val vendorId = fx.seedVendor(companyId = 1)
+            fx.vehicleRepository.seed(id = 10, companyId = 1)
+            fx.companyRepository.missingCompanyOnLock = 1
+
+            val result = fx.service.link(vendorId, 10)
+
+            result.fold(onSuccess = { fail("expected VEHICLE_NOT_FOUND but got success") }, onError = {
+                assertEquals(VehicleAssignmentError.VEHICLE_NOT_FOUND, it)
+            })
+            assertNull(fx.assignmentRepository.findActiveForVendor(vendorId))
+        }
+    }
+
+    @Test
+    fun `linking is rejected if vehicle ownership changes before the locked reread`() {
+        runBlocking {
+            val fx = Fixture()
+            val vendorId = fx.seedVendor(companyId = 1)
+            fx.vehicleRepository.seed(id = 10, companyId = 1)
+            fx.vehicleRepository.beforeNextLockedRead = { vehicleId ->
+                fx.vehicleRepository.moveToCompany(vehicleId, companyId = 2)
+            }
+
+            val result = fx.service.link(vendorId, 10)
+
+            result.fold(onSuccess = { fail("expected VEHICLE_NOT_FOUND but got success") }, onError = {
+                assertEquals(VehicleAssignmentError.VEHICLE_NOT_FOUND, it)
+            })
+            assertNull(fx.assignmentRepository.findActiveForVendor(vendorId))
+        }
+    }
+
+    @Test
+    fun `linking is rejected if membership is revoked before the locked authorization recheck`() {
+        runBlocking {
+            val fx = Fixture()
+            val vendorId = fx.seedVendor(companyId = 1)
+            fx.vehicleRepository.seed(id = 10, companyId = 1)
+            fx.membershipRepository.revokeAfterFirstLookup = 1 to vendorId
+
+            val result = fx.service.link(vendorId, 10)
+
+            result.fold(onSuccess = { fail("expected FORBIDDEN but got success") }, onError = {
+                assertEquals(VehicleAssignmentError.FORBIDDEN, it)
+            })
+            assertNull(fx.assignmentRepository.findActiveForVendor(vendorId))
         }
     }
 
@@ -441,6 +587,27 @@ class VehicleAssignmentServiceITest {
                 fx.syncService.recorded.isEmpty(),
                 "this call created nothing itself — the concurrent winner already recorded its own sync event",
             )
+        }
+    }
+
+    @Test
+    fun `same-vendor race while switching vehicles still ends and syncs the previous assignment`() {
+        runBlocking {
+            val fx = Fixture()
+            val vendorId = fx.seedVendor(companyId = 1)
+            fx.vehicleRepository.seed(id = 10, companyId = 1)
+            fx.vehicleRepository.seed(id = 20, companyId = 1)
+            val previous =
+                fx.service.link(vendorId, 10).fold(onSuccess = { it }, onError = { fail("setup failed: $it") })
+            fx.assignmentRepository.loseNextStartToConcurrentWinner(vendorId)
+
+            val result = fx.service.link(vendorId, 20)
+
+            val winner = result.fold(onSuccess = { it }, onError = { fail("expected success but got $it") })
+            assertEquals(20, winner.vehicleId)
+            assertNull(fx.assignmentRepository.findActiveForVehicle(10))
+            assertEquals(2, fx.syncService.recorded.count { it.entityId == previous.id })
+            assertEquals(listOf(10), fx.hub.markedOffline)
         }
     }
 
@@ -658,9 +825,8 @@ class VehicleAssignmentServiceITest {
     }
 
     // --- endActiveAssignmentForVendorInCompany() ---
-    // The internal primitive CompanyServiceI's membership-removal path calls, so that ending a
-    // session on removal goes through the same "DB + sync + markOffline" sequence as unlink()/
-    // endActiveAssignment(), instead of a caller reaching around this service to do it by hand.
+    // Internal callers own the corresponding sync event and post-commit live-map notification so
+    // they can batch both with other effects in the transaction that owns the mutation.
 
     @Test
     fun `ends the vendor's active assignment when it belongs to the given company`() {
@@ -671,10 +837,23 @@ class VehicleAssignmentServiceITest {
             val vendorId = fx.seedVendor(companyId)
             fx.service.link(vendorId, vehicleId).fold(onSuccess = {}, onError = { fail("$it") })
 
-            fx.service.endActiveAssignmentForVendorInCompany(vendorId, companyId)
+            val endedAssignment = fx.service.endActiveAssignmentForVendorInCompany(vendorId, companyId)
 
+            assertEquals(vehicleId, endedAssignment?.vehicleId)
+            assertEquals(vendorId, endedAssignment?.vendorUserId)
             assertNull(fx.service.findActiveForVendor(vendorId))
+            assertTrue(
+                fx.hub.markedOffline.isEmpty(),
+                "the internal end primitive must leave live notification to its post-commit caller",
+            )
+            val ended = requireNotNull(endedAssignment)
+            fx.service.notifyEndedAssignments(listOf(ended, ended))
             assertEquals(listOf(vehicleId), fx.hub.markedOffline)
+            assertEquals(
+                1,
+                fx.syncService.recorded.count { it.entityType == SyncEntityType.VEHICLE_ASSIGNMENT },
+                "only link() should record an event; the caller batches the end event",
+            )
         }
     }
 
@@ -703,6 +882,84 @@ class VehicleAssignmentServiceITest {
             fx.service.endActiveAssignmentForVendorInCompany(vendorId, companyId = 1)
 
             assertTrue(fx.hub.markedOffline.isEmpty())
+        }
+    }
+
+    // --- endAllActiveAssignmentsForCompany() ---
+
+    @Test
+    fun `ends all active company assignments in vehicle order without emitting side effects`() {
+        runBlocking {
+            val fx = Fixture()
+            val vehicleTwenty = fx.vehicleRepository.seed(id = 20, companyId = 1)
+            val vehicleTen = fx.vehicleRepository.seed(id = 10, companyId = 1)
+            val firstVendor = fx.seedVendor(companyId = 1)
+            val secondVendor = fx.seedVendor(companyId = 1)
+            fx.service.link(firstVendor, vehicleTwenty.id).fold(onSuccess = {}, onError = { fail("$it") })
+            fx.service.link(secondVendor, vehicleTen.id).fold(onSuccess = {}, onError = { fail("$it") })
+            val syncCountBeforeEnd = fx.syncService.recorded.size
+
+            val ended = fx.service.endAllActiveAssignmentsForCompany(companyId = 1)
+
+            assertEquals(listOf(10, 20), ended.map(VehicleAssignment::vehicleId))
+            assertNull(fx.assignmentRepository.findActiveForVehicle(vehicleTen.id))
+            assertNull(fx.assignmentRepository.findActiveForVehicle(vehicleTwenty.id))
+            assertEquals(syncCountBeforeEnd, fx.syncService.recorded.size)
+            assertTrue(fx.hub.markedOffline.isEmpty())
+        }
+    }
+
+    @Test
+    fun `endAllActiveAssignmentsForCompany returns empty when the company is missing`() {
+        runBlocking {
+            val fx = Fixture()
+            val vehicle = fx.vehicleRepository.seed(id = 10, companyId = 1)
+            val vendorId = fx.seedVendor(companyId = 1)
+            fx.service.link(vendorId, vehicle.id).fold(onSuccess = {}, onError = { fail("$it") })
+            fx.companyRepository.missingCompanyOnLock = 1
+
+            val ended = fx.service.endAllActiveAssignmentsForCompany(companyId = 1)
+
+            assertTrue(ended.isEmpty())
+            assertEquals(vehicle.id, fx.assignmentRepository.findActiveForVendor(vendorId)?.vehicleId)
+        }
+    }
+
+    @Test
+    fun `endActiveAssignmentForVendor ends and syncs the current assignment without notifying the hub`() {
+        runBlocking {
+            val fx = Fixture()
+            val vehicle = fx.vehicleRepository.seed(id = 10, companyId = 1)
+            val vendorId = fx.seedVendor(companyId = 1)
+            val assignment =
+                fx.service.link(vendorId, vehicle.id).fold(onSuccess = { it }, onError = { fail("$it") })
+            val syncCountBeforeEnd = fx.syncService.recorded.size
+
+            val ended = fx.service.endActiveAssignmentForVendor(vendorId)
+
+            assertEquals(assignment.id, ended?.id)
+            assertNotNull(ended?.endedAt)
+            assertNull(fx.assignmentRepository.findActiveForVendor(vendorId))
+            assertEquals(syncCountBeforeEnd + 1, fx.syncService.recorded.size)
+            assertTrue(fx.hub.markedOffline.isEmpty())
+        }
+    }
+
+    @Test
+    fun `endActiveAssignmentForVendor returns null when another operation already ended the row`() {
+        runBlocking {
+            val fx = Fixture()
+            val vehicle = fx.vehicleRepository.seed(id = 10, companyId = 1)
+            val vendorId = fx.seedVendor(companyId = 1)
+            fx.service.link(vendorId, vehicle.id).fold(onSuccess = {}, onError = { fail("$it") })
+            val syncCountBeforeEnd = fx.syncService.recorded.size
+            fx.assignmentRepository.rejectNextEnd = true
+
+            val ended = fx.service.endActiveAssignmentForVendor(vendorId)
+
+            assertNull(ended)
+            assertEquals(vehicle.id, fx.assignmentRepository.findActiveForVendor(vendorId)?.vehicleId)
+            assertEquals(syncCountBeforeEnd, fx.syncService.recorded.size)
         }
     }
 }

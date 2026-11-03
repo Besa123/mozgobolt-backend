@@ -1,16 +1,42 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleAssignment.service
 
 import com.mozgobolt.core.domain.AppResult
+import com.mozgobolt.core.domain.security.SecureTokenGenerator
 import com.mozgobolt.core.skipIfNoDocker
+import com.mozgobolt.core.utility.ApplicationBackgroundScope
+import com.mozgobolt.feature.company.domain.model.CompanyConstraints
+import com.mozgobolt.feature.company.domain.model.CompanyRole
+import com.mozgobolt.feature.sync.domain.SyncService
+import com.mozgobolt.feature.sync.domain.model.SyncEntityType
+import com.mozgobolt.feature.sync.domain.model.SyncOperation
+import com.mozgobolt.feature.sync.routing.FakeSyncService
+import com.mozgobolt.feature.vehicleAssignment.data.database.VehicleAssignmentsTable
+import com.mozgobolt.feature.vehicleAssignment.domain.VehicleAssignmentRepository
 import com.mozgobolt.feature.vehicleAssignment.domain.model.ActiveVehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignmentError
 import com.mozgobolt.feature.vehicleAssignment.withRealVehicleAssignmentDatabase
+import com.mozgobolt.feature.vehicleTracking.NoOpVehicleLocationHub
+import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationHub
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.jdbc.selectAll
+import java.time.Instant
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlin.test.fail
 
 /**
@@ -22,6 +48,34 @@ import kotlin.test.fail
  * class of bug CLAUDE.md calls out: invisible to unit-test fakes, only caught by a real DB.
  */
 class VehicleAssignmentServiceRealDatabaseTest {
+    private class RecordingVehicleLocationHub : VehicleLocationHub by NoOpVehicleLocationHub() {
+        val markedOffline = mutableListOf<Pair<Int, Int?>>()
+
+        override fun markOffline(vehicleId: Int) {
+            markedOffline += vehicleId to null
+        }
+
+        override fun markOffline(
+            vehicleId: Int,
+            assignmentId: Int,
+        ): Boolean {
+            markedOffline += vehicleId to assignmentId
+            return true
+        }
+    }
+
+    private class FailingSyncService : SyncService by FakeSyncService() {
+        override suspend fun recordChange(
+            userId: Int,
+            entityType: SyncEntityType,
+            entityId: Int,
+            operation: SyncOperation,
+            originDeviceId: String?,
+        ) {
+            error("simulated sync write failure")
+        }
+    }
+
     @Test
     fun `current assignment read returns active vehicle details and null after the shift ends`() {
         skipIfNoDocker()
@@ -54,6 +108,122 @@ class VehicleAssignmentServiceRealDatabaseTest {
 
             harness.service.unlink(vendorUserId = 1, vehicleId = vehicleId)
             assertNull(harness.service.findActiveDetailsForVendor(1))
+        }
+    }
+
+    @Test
+    fun `link persists sharing consent and stale assignment cleanup respects the last accepted telemetry`() {
+        skipIfNoDocker()
+
+        withRealVehicleAssignmentDatabase { harness ->
+            val (staleVehicleId, recentVehicleId) = harness.seedSharedCompanyWithTwoVehicles()
+            val now = Instant.now()
+            val staleAssignment =
+                harness.tx.transactional {
+                    harness.assignmentRepository.startAssignment(
+                        staleVehicleId,
+                        vendorUserId = 1,
+                        startedAt = now.minusSeconds(13 * 60 * 60),
+                        locationSharingConsentedAt = now.minusSeconds(13 * 60 * 60),
+                    )
+                } ?: fail("failed to create stale assignment")
+            val recentAssignment =
+                harness.tx.transactional {
+                    harness.assignmentRepository.startAssignment(
+                        recentVehicleId,
+                        vendorUserId = 2,
+                        startedAt = now.minusSeconds(20 * 60 * 60),
+                        locationSharingConsentedAt = now.minusSeconds(20 * 60 * 60),
+                    )
+                } ?: fail("failed to create recent assignment")
+            harness.tx.transactional {
+                assertTrue(
+                    harness.assignmentRepository.recordTelemetryReceived(
+                        recentAssignment.id,
+                        vendorUserId = 2,
+                        receivedAt = now.minusSeconds(11 * 60 * 60),
+                    ),
+                )
+            }
+
+            val reaper =
+                VehicleAssignmentStaleSessionReaper(
+                    vehicleAssignmentRepository = harness.assignmentRepository,
+                    syncService = FakeSyncService(),
+                    hub = NoOpVehicleLocationHub(),
+                    tx = harness.tx,
+                    backgroundScope = ApplicationBackgroundScope(),
+                )
+
+            val ended = reaper.expireStaleAssignments()
+
+            assertEquals(1, ended)
+            assertNull(harness.tx.transactional { harness.assignmentRepository.findActiveForVendor(1) })
+            assertEquals(
+                recentAssignment.id,
+                harness.tx.transactional { harness.assignmentRepository.findActiveForVendor(2)?.id },
+            )
+            assertTrue(staleAssignment.sharesLocationWithCustomers)
+        }
+    }
+
+    @Test
+    fun `sync failure rolls back assignment end without clearing the live vehicle`() {
+        skipIfNoDocker()
+
+        withRealVehicleAssignmentDatabase { harness ->
+            val vehicleId = harness.seedSharedCompanyWithOneVehicle()
+            harness.service
+                .link(vendorUserId = 1, vehicleId = vehicleId)
+                .fold(onSuccess = {}, onError = { fail("setup assignment failed: $it") })
+            val hub = RecordingVehicleLocationHub()
+            val service =
+                VehicleAssignmentServiceI(
+                    vehicleAssignmentRepository = harness.assignmentRepository,
+                    companyRepository = harness.companyRepository,
+                    vehicleRepository = harness.vehicleRepository,
+                    membershipRepository = harness.membershipRepository,
+                    syncService = FailingSyncService(),
+                    hub = hub,
+                    tx = harness.tx,
+                )
+
+            assertFailsWith<IllegalStateException> {
+                service.unlink(vendorUserId = 1, vehicleId = vehicleId)
+            }
+
+            assertNotNull(harness.tx.transactional { harness.assignmentRepository.findActiveForVendor(1) })
+            assertTrue(hub.markedOffline.isEmpty(), "a rolled-back end must not emit a live offline signal")
+        }
+    }
+
+    @Test
+    fun `ending an assignment twice does not overwrite its original ended timestamp`() {
+        skipIfNoDocker()
+
+        withRealVehicleAssignmentDatabase { harness ->
+            val vehicleId = harness.seedSharedCompanyWithOneVehicle()
+            val assignment =
+                harness.service
+                    .link(vendorUserId = 1, vehicleId = vehicleId)
+                    .fold(onSuccess = { it }, onError = { fail("setup assignment failed: $it") })
+            val firstEnd = Instant.now().plusSeconds(10)
+
+            assertTrue(harness.tx.transactional { harness.assignmentRepository.endAssignment(assignment.id, firstEnd) })
+            assertFalse(
+                harness.tx.transactional {
+                    harness.assignmentRepository.endAssignment(assignment.id, firstEnd.plusSeconds(10))
+                },
+            )
+            val persistedEnd =
+                harness.tx.transactional {
+                    VehicleAssignmentsTable
+                        .selectAll()
+                        .where { VehicleAssignmentsTable.id eq assignment.id }
+                        .single()[VehicleAssignmentsTable.endedAt]
+                }
+
+            assertEquals(firstEnd, persistedEnd)
         }
     }
 
@@ -122,6 +292,77 @@ class VehicleAssignmentServiceRealDatabaseTest {
     }
 
     @Test
+    fun `one vendor cannot win concurrent links across different companies`() {
+        skipIfNoDocker()
+
+        withRealVehicleAssignmentDatabase { harness ->
+            val vehicleIds =
+                harness.tx.transactional {
+                    val companyOne =
+                        harness.companyRepository.create(
+                            name = "Vendor Race Company One",
+                            inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
+                        )
+                    val companyTwo =
+                        harness.companyRepository.create(
+                            name = "Vendor Race Company Two",
+                            inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
+                        )
+                    harness.membershipRepository.addIfAbsent(companyOne.id, 1, CompanyRole.MEMBER)
+                    harness.membershipRepository.addIfAbsent(companyTwo.id, 1, CompanyRole.MEMBER)
+                    val vehicleOne =
+                        harness.vehicleRepository.create(companyOne.id, "One", "VENDOR-RACE-ONE")!!.id
+                    val vehicleTwo =
+                        harness.vehicleRepository.create(companyTwo.id, "Two", "VENDOR-RACE-TWO")!!.id
+                    vehicleOne to vehicleTwo
+                }
+            val syncService = FakeSyncService()
+            val repository =
+                CoordinatedVendorAssignmentRepository(
+                    delegate = harness.assignmentRepository,
+                    vendorUserId = 1,
+                    barrier = CyclicBarrier(2),
+                )
+            val service =
+                VehicleAssignmentServiceI(
+                    vehicleAssignmentRepository = repository,
+                    companyRepository = harness.companyRepository,
+                    vehicleRepository = harness.vehicleRepository,
+                    membershipRepository = harness.membershipRepository,
+                    syncService = syncService,
+                    hub =
+                        com.mozgobolt.feature.vehicleTracking
+                            .NoOpVehicleLocationHub(),
+                    tx = harness.tx,
+                )
+
+            val results =
+                coroutineScope {
+                    listOf(
+                        async(Dispatchers.IO) { service.link(vendorUserId = 1, vehicleId = vehicleIds.first) },
+                        async(Dispatchers.IO) { service.link(vendorUserId = 1, vehicleId = vehicleIds.second) },
+                    ).map { it.await() }
+                }
+
+            assertEquals(1, results.count { it is AppResult.Success })
+            assertEquals(
+                1,
+                results.count {
+                    it is AppResult.Error && it.errorType == VehicleAssignmentError.VEHICLE_ALREADY_ASSIGNED
+                },
+            )
+            val active = harness.tx.transactional { harness.assignmentRepository.findActiveForVendor(1) }
+            assertNotNull(active)
+            assertTrue(active.vehicleId in vehicleIds.toList())
+            assertEquals(
+                1,
+                syncService.recorded.count { it.entityType == SyncEntityType.VEHICLE_ASSIGNMENT },
+                "the losing transaction must roll back without publishing a sync event",
+            )
+        }
+    }
+
+    @Test
     fun `REGRESSION losing a concurrent race for a different vehicle never loses your own current session`() {
         // This is the scenario a fake in-memory repository can never prove: vendor 1 is already
         // actively driving vehicle A when they attempt to switch to vehicle B, racing vendor 2 for
@@ -174,5 +415,20 @@ class VehicleAssignmentServiceRealDatabaseTest {
                 }
             assertNotNull(activeOnVehicleB, "exactly one of vendor 1 or vendor 2 must hold vehicle B")
         }
+    }
+
+    private class CoordinatedVendorAssignmentRepository(
+        private val delegate: VehicleAssignmentRepository,
+        private val vendorUserId: Int,
+        private val barrier: CyclicBarrier,
+    ) : VehicleAssignmentRepository by delegate {
+        private val vendorLookupCount = AtomicInteger()
+
+        override suspend fun findActiveForVendor(vendorUserId: Int) =
+            delegate.findActiveForVendor(vendorUserId).also {
+                if (vendorUserId == this.vendorUserId && vendorLookupCount.incrementAndGet() <= 2) {
+                    barrier.await(10, TimeUnit.SECONDS)
+                }
+            }
     }
 }

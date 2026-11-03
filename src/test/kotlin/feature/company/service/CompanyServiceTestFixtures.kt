@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.company.service
 
 import com.mozgobolt.feature.company.domain.CompanyMembershipRepository
@@ -7,6 +11,8 @@ import com.mozgobolt.feature.company.domain.model.CompanyMemberSummary
 import com.mozgobolt.feature.company.domain.model.CompanyMembership
 import com.mozgobolt.feature.company.domain.model.CompanyMembershipSummary
 import com.mozgobolt.feature.company.domain.model.CompanyRole
+import com.mozgobolt.feature.companyFavorite.domain.CompanyFavoriteRepository
+import com.mozgobolt.feature.companyFavorite.domain.model.CompanyFavorite
 import com.mozgobolt.feature.sync.routing.FakeSyncService
 import com.mozgobolt.feature.user.service.NoopTransactionalRunner
 import com.mozgobolt.feature.vehicle.domain.VehicleRepository
@@ -44,6 +50,8 @@ internal class FakeCompanyRepository : CompanyRepository {
 
     override suspend fun findById(companyId: Int): Company? = companiesById[companyId]
 
+    override suspend fun findByIdForUpdate(companyId: Int): Company? = findById(companyId)
+
     override suspend fun rename(
         companyId: Int,
         newName: String,
@@ -63,6 +71,38 @@ internal class FakeCompanyRepository : CompanyRepository {
     }
 
     override suspend fun delete(companyId: Int): Boolean = companiesById.remove(companyId) != null
+}
+
+internal class FakeCompanyFavoriteRepository : CompanyFavoriteRepository {
+    private val favorites = mutableListOf<CompanyFavorite>()
+    private var nextId = 1
+
+    fun seed(
+        userId: Int,
+        companyId: Int,
+    ) {
+        favorites += CompanyFavorite(nextId++, userId, companyId, Instant.now())
+    }
+
+    override suspend fun addIfAbsent(
+        userId: Int,
+        companyId: Int,
+    ): CompanyFavorite? {
+        if (favorites.any { it.userId == userId && it.companyId == companyId }) return null
+        val favorite = CompanyFavorite(nextId++, userId, companyId, Instant.now())
+        favorites += favorite
+        return favorite
+    }
+
+    override suspend fun remove(
+        userId: Int,
+        companyId: Int,
+    ): Boolean = favorites.removeAll { it.userId == userId && it.companyId == companyId }
+
+    override suspend fun findAllForUser(userId: Int): List<CompanyFavorite> = favorites.filter { it.userId == userId }
+
+    override suspend fun findUserIdsFavoritingCompany(companyId: Int): List<Int> =
+        favorites.filter { it.companyId == companyId }.map { it.userId }
 }
 
 internal class FakeCompanyMembershipRepository(
@@ -171,6 +211,8 @@ internal class FakeVehicleRepository : VehicleRepository {
 
     override suspend fun findById(vehicleId: Int): Vehicle? = vehiclesById[vehicleId]
 
+    override suspend fun findByIdForUpdate(vehicleId: Int): Vehicle? = findById(vehicleId)
+
     override suspend fun findAllByCompany(companyId: Int) = vehiclesById.values.filter { it.companyId == companyId }
 
     override suspend fun findByCompanyAndPlate(
@@ -182,6 +224,7 @@ internal class FakeVehicleRepository : VehicleRepository {
         vehicleId: Int,
         licensePlate: String,
         pictureUrl: String?,
+        pictureStorageKey: String?,
     ) = error("not exercised by this test")
 
     override suspend fun archive(vehicleId: Int) = error("not exercised by this test")
@@ -189,10 +232,13 @@ internal class FakeVehicleRepository : VehicleRepository {
     override suspend fun updatePictureUrl(
         vehicleId: Int,
         pictureUrl: String?,
+        pictureStorageKey: String?,
     ) = error("not exercised by this test")
 }
 
-internal class FakeVehicleAssignmentRepository : VehicleAssignmentRepository {
+internal class FakeVehicleAssignmentRepository(
+    private val vehicleRepository: FakeVehicleRepository,
+) : VehicleAssignmentRepository {
     private val assignments = mutableListOf<VehicleAssignment>()
     private var nextId = 1
 
@@ -219,6 +265,9 @@ internal class FakeVehicleAssignmentRepository : VehicleAssignmentRepository {
     override suspend fun findActiveForVehicle(vehicleId: Int): VehicleAssignment? =
         assignments.find { it.vehicleId == vehicleId && it.isActive }
 
+    override suspend fun findAllForCompany(companyId: Int): List<VehicleAssignment> =
+        assignments.filter { vehicleRepository.findById(it.vehicleId)?.companyId == companyId }
+
     override suspend fun startAssignment(
         vehicleId: Int,
         vendorUserId: Int,
@@ -228,9 +277,11 @@ internal class FakeVehicleAssignmentRepository : VehicleAssignmentRepository {
     override suspend fun endAssignment(
         id: Int,
         endedAt: Instant,
-    ) {
+    ): Boolean {
         val index = assignments.indexOfFirst { it.id == id }
-        if (index >= 0) assignments[index] = assignments[index].copy(endedAt = endedAt)
+        if (index < 0 || !assignments[index].isActive) return false
+        assignments[index] = assignments[index].copy(endedAt = endedAt)
+        return true
     }
 }
 
@@ -253,22 +304,19 @@ internal class SpyVehicleLocationHub : VehicleLocationHub {
         radiusKm: Double,
     ): Flow<VehicleLiveEvent> = emptyFlow()
 
-    override fun subscribeAll(): Flow<VehicleLiveEvent> = emptyFlow()
-
     override fun snapshotNear(
         latitude: Double,
         longitude: Double,
         radiusKm: Double,
     ) = error("not exercised by this test")
-
-    override fun snapshotAll() = error("not exercised by this test")
 }
 
 internal class CompanyServiceFixture {
     val companyRepository = FakeCompanyRepository()
     val membershipRepository = FakeCompanyMembershipRepository(companyRepository)
+    val companyFavoriteRepository = FakeCompanyFavoriteRepository()
     val vehicleRepository = FakeVehicleRepository()
-    val assignmentRepository = FakeVehicleAssignmentRepository()
+    val assignmentRepository = FakeVehicleAssignmentRepository(vehicleRepository)
     val locationHub = SpyVehicleLocationHub()
     val syncService = FakeSyncService()
 
@@ -278,6 +326,7 @@ internal class CompanyServiceFixture {
     private val vehicleAssignmentService =
         VehicleAssignmentServiceI(
             vehicleAssignmentRepository = assignmentRepository,
+            companyRepository = companyRepository,
             vehicleRepository = vehicleRepository,
             membershipRepository = membershipRepository,
             syncService = syncService,
@@ -289,6 +338,7 @@ internal class CompanyServiceFixture {
         CompanyServiceI(
             companyRepository = companyRepository,
             membershipRepository = membershipRepository,
+            companyFavoriteRepository = companyFavoriteRepository,
             vehicleAssignmentService = vehicleAssignmentService,
             syncService = syncService,
             tx = NoopTransactionalRunner(),

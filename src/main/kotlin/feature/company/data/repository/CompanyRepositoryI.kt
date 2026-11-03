@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.company.data.repository
 
 import com.mozgobolt.feature.company.data.database.CompaniesTable
@@ -7,6 +11,7 @@ import com.mozgobolt.feature.company.domain.CompanyRepository
 import com.mozgobolt.feature.company.domain.model.Company
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
+import org.jetbrains.exposed.v1.jdbc.selectAll
 import java.time.Instant
 
 class CompanyRepositoryI : CompanyRepository {
@@ -30,6 +35,14 @@ class CompanyRepositoryI : CompanyRepository {
             ?.toCompany()
 
     override suspend fun findById(companyId: Int): Company? = CompanyEntity.findById(companyId)?.toCompany()
+
+    override suspend fun findByIdForUpdate(companyId: Int): Company? =
+        CompaniesTable
+            .selectAll()
+            .where { CompaniesTable.id eq companyId }
+            .forUpdate()
+            .singleOrNull()
+            ?.toCompany()
 
     override suspend fun rename(
         companyId: Int,

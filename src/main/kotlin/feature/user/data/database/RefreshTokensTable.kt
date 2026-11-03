@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.data.database
 
 import org.jetbrains.exposed.v1.core.ReferenceOption
@@ -20,6 +24,7 @@ object RefreshTokensTable : IntIdTable("refresh_tokens") {
     val isRevoked = bool("is_revoked").default(false)
     val createdAt = timestamp("created_at")
     val expiresAt = timestamp("expires_at")
+    val familyExpiresAt = timestamp("family_expires_at").index()
 }
 
 class RefreshTokenEntity(
@@ -31,6 +36,7 @@ class RefreshTokenEntity(
     var isRevoked by RefreshTokensTable.isRevoked
     var createdAt by RefreshTokensTable.createdAt
     var expiresAt by RefreshTokensTable.expiresAt
+    var familyExpiresAt by RefreshTokensTable.familyExpiresAt
 
     companion object : IntEntityClass<RefreshTokenEntity>(RefreshTokensTable)
 }

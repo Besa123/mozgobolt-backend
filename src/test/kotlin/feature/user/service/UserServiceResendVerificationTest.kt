@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.user.service
 
 import com.mozgobolt.feature.user.domain.model.UserRole
@@ -5,9 +9,11 @@ import com.mozgobolt.feature.user.domain.model.VerifyEmailError
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 import kotlin.test.fail
 
 class UserServiceResendVerificationTest {
@@ -29,7 +35,7 @@ class UserServiceResendVerificationTest {
             val user =
                 harness.repository.seedVerifiedUser(
                     email = "user@example.com",
-                    password = "Str0ngPass",
+                    password = "Str0ngPassphrase1",
                     verified = true,
                 )
 
@@ -44,24 +50,24 @@ class UserServiceResendVerificationTest {
         runBlocking {
             val harness = newHarness()
             harness.service.createUser(
-                password = "Str0ngPass",
+                password = "Str0ngPassphrase1",
                 email = "user@example.com",
                 name = "User",
                 role = UserRole.BUYER,
             )
             val originalToken =
-                harness.emailService.sentTokens
+                harness.emailOutbox.verificationEmails
                     .single()
-                    .second
+                    .rawToken
             val user = assertNotNull(harness.repository.findUser("user@example.com"))
 
             harness.service
                 .resendVerificationEmail(user.id)
                 .fold(onSuccess = {}, onError = { fail("expected success but got $it") })
             val newToken =
-                harness.emailService.sentTokens
+                harness.emailOutbox.verificationEmails
                     .last()
-                    .second
+                    .rawToken
 
             assertNotEquals(originalToken, newToken)
             assertError(VerifyEmailError.INVALID_TOKEN, harness.service.verifyEmail(originalToken))
@@ -72,20 +78,43 @@ class UserServiceResendVerificationTest {
     }
 
     @Test
-    fun `cancellation while resending the verification email propagates instead of being swallowed`() {
+    fun `cancellation while queuing a verification resend propagates`() {
         runBlocking {
             val harness = newHarness()
             val user =
                 harness.repository.seedVerifiedUser(
                     email = "user@example.com",
-                    password = "Str0ngPass",
+                    password = "Str0ngPassphrase1",
                     verified = false,
                 )
-            harness.emailService.failureToThrow = CancellationException("client disconnected")
+            harness.emailOutbox.failureToThrow = CancellationException("client disconnected")
 
             assertFailsWith<CancellationException> {
                 harness.service.resendVerificationEmail(user.id)
             }
+        }
+    }
+
+    @Test
+    fun `a resend queues the replacement token for asynchronous delivery`() {
+        runBlocking {
+            val harness = newHarness()
+            val user =
+                harness.repository.seedVerifiedUser(
+                    email = "user@example.com",
+                    password = "Str0ngPassphrase1",
+                    verified = false,
+                )
+            val result = harness.service.resendVerificationEmail(user.id)
+
+            result.fold(onSuccess = {}, onError = { fail("resend should remain successful: $it") })
+            assertTrue(harness.repository.hasVerificationToken(user.id))
+            assertEquals(
+                user.id,
+                harness.emailOutbox.pending
+                    .single()
+                    .userId,
+            )
         }
     }
 }

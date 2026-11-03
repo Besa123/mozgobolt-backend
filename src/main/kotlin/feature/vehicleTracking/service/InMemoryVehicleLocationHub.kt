@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.feature.vehicleTracking.service
 
 import com.mozgobolt.feature.vehicleTracking.domain.CellIndexer
@@ -8,12 +12,19 @@ import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationUpdate
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.merge
+import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 private const val BROADCAST_BUFFER_CAPACITY = 64
+private const val LIVE_LOCATION_STALE_AFTER_MILLIS = 5 * 60 * 1000L
+
+// The global request safety net is three minutes; keep an ended-session fence longer than any
+// in-flight telemetry request or ordinary relay attempt can remain outstanding.
+internal const val ASSIGNMENT_FENCE_RETENTION_SECONDS = 300L
+private const val ASSIGNMENT_FENCE_SWEEP_INTERVAL_MILLIS = 60_000L
 
 /**
  * [VehicleLocationHub] partitioned by [CellIndexer] cell, mirroring the per-key `SharedFlow` shape
@@ -27,34 +38,171 @@ private const val BROADCAST_BUFFER_CAPACITY = 64
  * Slovakian border) is deliberately still allowed, not rejected — but a cell with zero current
  * subscribers is reclaimed by a [com.mozgobolt.core.utility.IdleSharedFlowSweeper] wired over this
  * map (see the vehicleTracking DI module), so distinct-cells-ever-seen no longer means
- * distinct-cells-held-in-memory-forever. `internal`, not `private`, only so that sweeper can be
- * constructed with a reference to it.
+ * distinct-cells-held-in-memory-forever. `assignmentFences` retains only a small ended-session
+ * marker for five minutes so late telemetry cannot resurrect an ended shift; the same sweeper
+ * reclaims those markers. `internal`, not `private`, only so that sweeper can be constructed with
+ * a reference to the cell-flow map.
  */
 class InMemoryVehicleLocationHub(
     private val cellIndexer: CellIndexer,
 ) : VehicleLocationHub {
-    private val latestByVehicleId = ConcurrentHashMap<Int, VehicleLocationUpdate>()
+    private data class AssignmentFence(
+        val assignmentId: Int,
+        val isEnded: Boolean,
+        val endedAt: Instant? = null,
+    )
+
+    private data class PublishedLocation(
+        val update: VehicleLocationUpdate,
+        val receivedAtMillis: Long,
+    )
+
+    private val latestByVehicleId = ConcurrentHashMap<Int, PublishedLocation>()
+    private val publiclyVisibleVehicleIds = ConcurrentHashMap.newKeySet<Int>()
+
+    // Keep a short-lived high-water mark after a shift ends so in-flight telemetry and relay messages
+    // cannot resurrect it. Vehicle assignment IDs increase across sessions on the same locked vehicle.
+    private val assignmentFences = ConcurrentHashMap<Int, AssignmentFence>()
+    private val lastFenceSweepAtMillis = AtomicLong(0)
     internal val flowsByCell = ConcurrentHashMap<CellId, MutableSharedFlow<VehicleLiveEvent>>()
-    private val allFlow = newBroadcastFlow()
 
     override fun publish(update: VehicleLocationUpdate) {
-        latestByVehicleId[update.vehicleId] = update
+        publishIfCurrent(update)
+    }
 
-        val event = VehicleLiveEvent.Position(update)
-        // No-op if nobody has ever subscribed near this cell — nothing to create a flow for yet.
-        flowsByCell[update.cellId]?.tryEmit(event)
-        allFlow.tryEmit(event)
+    override fun publishIfCurrent(update: VehicleLocationUpdate): Boolean {
+        sweepExpiredAssignmentFences()
+        var wasAccepted = false
+        assignmentFences.compute(update.vehicleId) { _, fence ->
+            val assignmentId = update.assignmentId
+            when {
+                fence != null && (assignmentId == null || assignmentId < fence.assignmentId) -> {
+                    fence
+                }
+
+                fence != null && assignmentId == fence.assignmentId && fence.isEnded -> {
+                    fence
+                }
+
+                else -> {
+                    val previous = latestByVehicleId[update.vehicleId]?.update
+                    latestByVehicleId[update.vehicleId] =
+                        PublishedLocation(update, System.currentTimeMillis())
+                    if (update.sharesLocationWithCustomers) {
+                        publiclyVisibleVehicleIds.add(update.vehicleId)
+                        emitPosition(update)
+                    } else if (publiclyVisibleVehicleIds.remove(update.vehicleId)) {
+                        previous?.let(::emitOffline)
+                    }
+                    wasAccepted = true
+                    assignmentId?.let { AssignmentFence(it, isEnded = false) } ?: fence
+                }
+            }
+        }
+        return wasAccepted
     }
 
     override fun markOffline(vehicleId: Int) {
-        val last = latestByVehicleId.remove(vehicleId) ?: return
-
-        val event = VehicleLiveEvent.Offline(vehicleId)
-        flowsByCell[last.cellId]?.tryEmit(event)
-        allFlow.tryEmit(event)
+        sweepExpiredAssignmentFences()
+        val endedAt = Instant.now()
+        assignmentFences.compute(vehicleId) { _, fence ->
+            if (fence == null) {
+                val removedLocation = latestByVehicleId.remove(vehicleId)
+                if (removedLocation != null && publiclyVisibleVehicleIds.remove(vehicleId)) {
+                    emitOffline(removedLocation.update)
+                }
+                null
+            } else if (fence.isEnded) {
+                fence
+            } else {
+                val latest = latestByVehicleId[vehicleId]?.update
+                val isLatestForAssignment =
+                    latest?.assignmentId == null || latest.assignmentId == fence.assignmentId
+                if (latest != null && isLatestForAssignment) {
+                    val current = latestByVehicleId[vehicleId]
+                    val wasRemoved = current?.update == latest && latestByVehicleId.remove(vehicleId, current)
+                    if (wasRemoved && publiclyVisibleVehicleIds.remove(vehicleId)) emitOffline(latest)
+                }
+                fence.copy(isEnded = true, endedAt = endedAt)
+            }
+        }
     }
 
-    override fun lastKnownLocation(vehicleId: Int): VehicleLocationUpdate? = latestByVehicleId[vehicleId]
+    @Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod") // Branches model assignment-fence states atomically.
+    override fun markOffline(
+        vehicleId: Int,
+        assignmentId: Int,
+    ): Boolean {
+        sweepExpiredAssignmentFences()
+        val endedAt = Instant.now()
+        var wasAccepted = false
+        assignmentFences.compute(vehicleId) { _, fence ->
+            when {
+                fence != null && assignmentId < fence.assignmentId -> {
+                    fence
+                }
+
+                fence != null && assignmentId == fence.assignmentId && fence.isEnded -> {
+                    wasAccepted = true
+                    fence
+                }
+
+                else -> {
+                    val latest = latestByVehicleId[vehicleId]?.update
+                    if (latest?.assignmentId != null && latest.assignmentId > assignmentId) {
+                        AssignmentFence(latest.assignmentId, isEnded = false)
+                    } else {
+                        val isLatestForAssignment =
+                            latest?.assignmentId == null || latest.assignmentId == assignmentId
+                        if (latest != null && isLatestForAssignment) {
+                            val published = latestByVehicleId[vehicleId]
+                            val wasRemoved =
+                                published?.update == latest && latestByVehicleId.remove(vehicleId, published)
+                            if (wasRemoved && publiclyVisibleVehicleIds.remove(vehicleId)) emitOffline(latest)
+                        }
+                        wasAccepted = true
+                        AssignmentFence(assignmentId, isEnded = true, endedAt = endedAt)
+                    }
+                }
+            }
+        }
+        return wasAccepted
+    }
+
+    internal fun sweepExpiredAssignmentFences() {
+        val nowMillis = System.currentTimeMillis()
+        val previousSweep = lastFenceSweepAtMillis.get()
+        if (nowMillis - previousSweep < ASSIGNMENT_FENCE_SWEEP_INTERVAL_MILLIS) return
+        if (!lastFenceSweepAtMillis.compareAndSet(previousSweep, nowMillis)) return
+        pruneExpiredAssignmentFences(Instant.ofEpochMilli(nowMillis))
+    }
+
+    internal fun pruneExpiredAssignmentFences(now: Instant) {
+        val cutoff = now.minusSeconds(ASSIGNMENT_FENCE_RETENTION_SECONDS)
+        assignmentFences.entries.removeIf { (_, fence) ->
+            fence.endedAt?.isBefore(cutoff) == true
+        }
+    }
+
+    internal fun sweepStaleLocations(nowMillis: Long = System.currentTimeMillis()) {
+        latestByVehicleId.entries.toList().forEach { (vehicleId, observed) ->
+            if (nowMillis - observed.receivedAtMillis < LIVE_LOCATION_STALE_AFTER_MILLIS) return@forEach
+
+            assignmentFences.compute(vehicleId) { _, fence ->
+                val current = latestByVehicleId[vehicleId]
+                val isCurrentAndStale =
+                    current === observed && nowMillis - observed.receivedAtMillis >= LIVE_LOCATION_STALE_AFTER_MILLIS
+                val wasRemoved = isCurrentAndStale && latestByVehicleId.remove(vehicleId, observed)
+                if (wasRemoved && publiclyVisibleVehicleIds.remove(vehicleId)) emitOffline(observed.update)
+                fence
+            }
+        }
+    }
+
+    override fun lastKnownLocation(vehicleId: Int): VehicleLocationUpdate? {
+        sweepStaleLocations()
+        return latestByVehicleId[vehicleId]?.update
+    }
 
     @Suppress("SpreadOperator") // merge(vararg) is the stable API; the array copy of a few
     // hundred Flow references at most is negligible. (flattenMerge avoids the spread but is
@@ -72,18 +220,29 @@ class InMemoryVehicleLocationHub(
         return merge(*cellFlows.toTypedArray())
     }
 
-    override fun subscribeAll(): Flow<VehicleLiveEvent> = allFlow.asSharedFlow()
-
     override fun snapshotNear(
         latitude: Double,
         longitude: Double,
         radiusKm: Double,
     ): List<VehicleLocationUpdate> {
+        sweepStaleLocations()
         val cells = cellIndexer.cellsWithin(latitude, longitude, radiusKm)
-        return latestByVehicleId.values.filter { it.cellId in cells }
+        return latestByVehicleId.values
+            .asSequence()
+            .filter { it.update.sharesLocationWithCustomers && it.update.cellId in cells }
+            .map(PublishedLocation::update)
+            .toList()
     }
 
-    override fun snapshotAll(): List<VehicleLocationUpdate> = latestByVehicleId.values.toList()
+    private fun emitPosition(update: VehicleLocationUpdate) {
+        val event = VehicleLiveEvent.Position(update)
+        flowsByCell[update.cellId]?.tryEmit(event)
+    }
+
+    private fun emitOffline(update: VehicleLocationUpdate) {
+        val event = VehicleLiveEvent.Offline(update.vehicleId)
+        flowsByCell[update.cellId]?.tryEmit(event)
+    }
 
     private fun newBroadcastFlow() =
         MutableSharedFlow<VehicleLiveEvent>(

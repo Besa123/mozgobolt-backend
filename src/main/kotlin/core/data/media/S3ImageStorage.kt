@@ -1,12 +1,15 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package com.mozgobolt.core.data.media
 
 import com.mozgobolt.core.domain.media.ImageStorage
 import com.mozgobolt.core.modules.AppConfig
-import com.mozgobolt.core.modules.plugin.ResiliencePolicy
-import com.mozgobolt.core.modules.plugin.ResilienceRegistry
-import com.mozgobolt.core.modules.plugin.withS3Resilience
+import com.mozgobolt.core.resilience.ResiliencePolicy
 import com.mozgobolt.core.utility.functions.runSuspendCatching
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
@@ -30,14 +33,15 @@ private val logger = KotlinLogging.logger {}
 class S3ImageStorage(
     private val client: S3Client,
     private val bucket: String,
-    private val resilience: ResiliencePolicy = ResilienceRegistry.s3,
+    private val resilience: ResiliencePolicy,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ImageStorage {
     override suspend fun store(
         key: String,
         bytes: ByteArray,
     ) {
-        withS3Resilience(resilience) {
-            withContext(Dispatchers.IO) {
+        resilience.execute {
+            withContext(ioDispatcher) {
                 client.putObject(
                     PutObjectRequest
                         .builder()
@@ -52,8 +56,8 @@ class S3ImageStorage(
 
     override suspend fun read(key: String): ByteArray? =
         try {
-            withS3Resilience(resilience) {
-                withContext(Dispatchers.IO) {
+            resilience.execute {
+                withContext(ioDispatcher) {
                     client
                         .getObject(
                             GetObjectRequest
@@ -73,23 +77,28 @@ class S3ImageStorage(
         if (keys.isEmpty()) return
 
         runSuspendCatching {
-            withS3Resilience(resilience) {
-                withContext(Dispatchers.IO) {
-                    client.deleteObjects(
-                        DeleteObjectsRequest
-                            .builder()
-                            .bucket(bucket)
-                            .delete(
-                                Delete
-                                    .builder()
-                                    .objects(keys.map { ObjectIdentifier.builder().key(it).build() })
-                                    .build(),
-                            ).build(),
-                    )
+            resilience.execute {
+                withContext(ioDispatcher) {
+                    val response =
+                        client.deleteObjects(
+                            DeleteObjectsRequest
+                                .builder()
+                                .bucket(bucket)
+                                .delete(
+                                    Delete
+                                        .builder()
+                                        .objects(keys.map { ObjectIdentifier.builder().key(it).build() })
+                                        .build(),
+                                ).build(),
+                        )
+                    val errors = response.errors()
+                    if (errors.isNotEmpty()) {
+                        logger.warn { "S3 reported ${errors.size} image object deletion failure(s)" }
+                    }
                 }
             }
         }.onFailure { error ->
-            logger.warn(error) { "Failed to delete objects from S3: $keys — leaving them in place" }
+            logger.warn(error) { "S3 image-object cleanup failed; requested objects may remain" }
         }
     }
 
