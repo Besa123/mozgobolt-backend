@@ -61,6 +61,9 @@ private fun parseNearbyRequest(
     if (longitude !in GeoBounds.MIN_LONGITUDE..GeoBounds.MAX_LONGITUDE) {
         return LiveRequest.Invalid("lon must be between ${GeoBounds.MIN_LONGITUDE} and ${GeoBounds.MAX_LONGITUDE}")
     }
+    if (!radiusKm.isFinite()) {
+        return LiveRequest.Invalid("radiusKm must be finite")
+    }
     if (radiusKm <= 0.0 || radiusKm > MAX_RADIUS_KM) {
         return LiveRequest.Invalid("radiusKm must be greater than 0 and at most $MAX_RADIUS_KM")
     }

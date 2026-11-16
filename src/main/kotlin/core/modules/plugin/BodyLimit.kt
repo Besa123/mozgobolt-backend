@@ -2,11 +2,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+@file:Suppress("UnusedImports")
+
 package com.mozgobolt.core.modules.plugin
 
+import com.mozgobolt.core.routing.dto.response.ErrorResponse
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.call
 import io.ktor.server.plugins.bodylimit.RequestBodyLimit
@@ -15,6 +19,18 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.RoutingContext
 import io.ktor.server.routing.route
+
+private const val PAYLOAD_TOO_LARGE = "PAYLOAD_TOO_LARGE"
+private const val PAYLOAD_TOO_LARGE_MESSAGE = "Request body exceeds the allowed size"
+
+/** Responds with the standard error envelope for a body-limit violation. */
+@Suppress("SuspendFunWithCoroutineScopeReceiver")
+suspend fun ApplicationCall.respondPayloadTooLarge() {
+    respond(
+        HttpStatusCode.PayloadTooLarge,
+        ErrorResponse(error = PAYLOAD_TOO_LARGE, message = PAYLOAD_TOO_LARGE_MESSAGE),
+    )
+}
 
 enum class BodyLimit(
     val bytes: Long,
@@ -51,7 +67,7 @@ fun Application.configureGlobalBodyLimit() {
     intercept(ApplicationCallPipeline.Plugins) {
         val contentLength = call.request.contentLength()
         if (contentLength != null && contentLength > BodyLimit.GLOBAL.bytes) {
-            call.respond(HttpStatusCode.PayloadTooLarge)
+            call.respondPayloadTooLarge()
             finish()
         }
     }

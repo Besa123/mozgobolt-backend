@@ -32,6 +32,9 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.ByteWriteChannel
+import io.ktor.utils.io.writeStringUtf8
+import kotlinx.coroutines.delay
 import kotlinx.serialization.Serializable
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
@@ -208,6 +211,20 @@ class RouteBuildersTest {
             assertEquals(HttpStatusCode.OK, withinLimit.status)
             assertEquals(HttpStatusCode.PayloadTooLarge, overLimit.status)
             assertTrue(overLimit.bodyAsText().contains("PAYLOAD_TOO_LARGE"))
+        }
+
+    @Test
+    fun `validated route timeout covers receiving the request body`() =
+        testApplication {
+            application { installValidatedRoute() }
+
+            val response =
+                client.post("/slow-body-test") {
+                    setBody(SlowChunkedJsonContent())
+                }
+
+            assertEquals(HttpStatusCode.GatewayTimeout, response.status)
+            assertTrue(response.bodyAsText().contains("REQUEST_TIMEOUT"))
         }
 
     @Test
@@ -443,6 +460,13 @@ class RouteBuildersTest {
             validatedPost<DummyRequest>("/post-test", BodyLimit.TINY) { request ->
                 call.respondText(request.value)
             }
+            validatedPost<DummyRequest>(
+                "/slow-body-test",
+                BodyLimit.TINY,
+                RequestTimeout.FAST,
+            ) { request ->
+                call.respondText(request.value)
+            }
             validatedPost<DummyRequest>("/default-post-test") { request ->
                 call.respondText(request.value)
             }
@@ -502,6 +526,18 @@ class RouteBuildersTest {
         override val contentLength: Long? = null
 
         override fun readFrom() = ByteReadChannel(body)
+    }
+
+    private class SlowChunkedJsonContent : OutgoingContent.WriteChannelContent() {
+        override val contentType = ContentType.Application.Json
+        override val contentLength: Long? = null
+
+        override suspend fun writeTo(channel: ByteWriteChannel) {
+            channel.writeStringUtf8("""{"value":""" + '"')
+            channel.flush()
+            delay(RequestTimeout.FAST.duration.inWholeMilliseconds + 1_000)
+            channel.writeStringUtf8("""slow"}""")
+        }
     }
 
     private class ChunkedMultipartContent(

@@ -25,10 +25,12 @@ fun Application.configureRateLimit() {
     install(RateLimit) {
         global {
             rateLimiter(limit = 150, refillPeriod = 60.seconds)
+            requestKey { call -> call.request.origin.remoteHost }
         }
 
         register(RateLimitName(AUTH_LIMIT)) {
             rateLimiter(limit = 5, refillPeriod = 60.seconds)
+            requestKey { call -> call.request.origin.remoteHost }
         }
 
         register(RateLimitName(API_LIMIT)) {
@@ -45,6 +47,7 @@ fun Application.configureRateLimit() {
 
         register(RateLimitName(UPLOAD_LIMIT)) {
             rateLimiter(limit = 10, refillPeriod = 60.seconds)
+            requestKey { call -> call.request.origin.remoteHost }
         }
     }
 }

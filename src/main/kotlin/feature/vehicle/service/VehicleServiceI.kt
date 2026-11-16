@@ -341,12 +341,14 @@ class VehicleServiceI(
                 }
             }
 
-        if (transactionResult.isFailure) {
-            val failure = requireNotNull(transactionResult.exceptionOrNull())
-            deletePictureKeyIfUnreferenced(vehicleId, newStorageKey)
-            throw failure
-        }
-        val (result, previousStorageKey) = transactionResult.getOrThrow()
+        val (result, previousStorageKey) =
+            transactionResult.foldSuspend(
+                onSuccess = { it },
+                onError = { failure ->
+                    deletePictureKeyIfUnreferenced(vehicleId, newStorageKey)
+                    throw failure
+                },
+            )
 
         if (result is AppResult.Success) {
             if (previousStorageKey != null && previousStorageKey != newStorageKey) {
@@ -364,35 +366,32 @@ class VehicleServiceI(
     ) {
         val currentStorageKeyResult =
             runSuspendCatching { tx.transactional { vehicleRepository.findById(vehicleId)?.pictureStorageKey } }
-        if (currentStorageKeyResult.isFailure) {
-            currentStorageKeyResult.exceptionOrNull()?.let { failure ->
-                logger.warn(failure) {
-                    "Could not verify whether an uploaded image is referenced for vehicleId=$vehicleId; preserving it"
-                }
-            }
-            return
-        }
-
-        val currentStorageKey = currentStorageKeyResult.getOrThrow()
+        val currentStorageKey =
+            currentStorageKeyResult.fold(
+                onSuccess = { it },
+                onError = { failure ->
+                    logger.warn(failure) {
+                        "Could not verify whether an uploaded image is referenced for " +
+                            "vehicleId=$vehicleId; preserving it"
+                    }
+                    return
+                },
+            )
         if (currentStorageKey != storageKey) imageStorage.deleteBestEffort(listOf(storageKey))
     }
 
     override suspend fun getVehiclePicture(vehicleId: Int): AppResult<ByteArray, VehicleError> =
-        findVehicle(vehicleId).fold(
+        findVehicle(vehicleId).foldSuspend(
             onSuccess = { vehicle ->
-                if (vehicle.pictureUrl != pictureRoute(vehicleId)) {
-                    AppResult.Error(VehicleError.VEHICLE_NOT_FOUND)
-                } else {
-                    val storageKey = vehicle.pictureStorageKey
-                    if (storageKey == null) {
-                        AppResult.Error(VehicleError.VEHICLE_NOT_FOUND)
+                val bytes =
+                    if (vehicle.pictureUrl == pictureRoute(vehicleId)) {
+                        vehicle.pictureStorageKey?.let { imageStorage.read(it) }
                     } else {
-                        val bytes = imageStorage.read(storageKey)
-                        if (bytes == null) AppResult.Error(VehicleError.VEHICLE_NOT_FOUND) else AppResult.Success(bytes)
+                        null
                     }
-                }
+                bytes?.let { AppResult.Success(it) } ?: AppResult.Error(VehicleError.VEHICLE_NOT_FOUND)
             },
-            onError = { AppResult.Error(it) },
+            onError = { error -> AppResult.Error(error) },
         )
 
     private suspend fun checkCanUploadPicture(

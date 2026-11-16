@@ -118,7 +118,7 @@ class VehiclePingServiceI(
     override suspend fun dispatchPing(outcome: VehiclePingOutcome) {
         runSuspendCatching {
             pingHub.publish(outcome.vendorUserId, outcome.notification)
-        }.onFailure { failure ->
+        }.onError { failure ->
             logPostCommitDeliveryFailure(
                 channel = "live ping",
                 vendorUserId = outcome.vendorUserId,
@@ -128,7 +128,7 @@ class VehiclePingServiceI(
         }
         runSuspendCatching {
             notifyVendorViaPush(outcome.vendorUserId, outcome.notification)
-        }.onFailure { failure ->
+        }.onError { failure ->
             logPostCommitDeliveryFailure(
                 channel = "push",
                 vendorUserId = outcome.vendorUserId,

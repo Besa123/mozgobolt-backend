@@ -5,12 +5,16 @@
 package com.mozgobolt.feature.sync.routing
 
 import com.mozgobolt.core.domain.security.AccessTokenSessionValidator
+import com.mozgobolt.core.modules.plugin.SSE_EVENT_RECONNECT
+import com.mozgobolt.core.modules.plugin.SSE_HEARTBEAT_PERIOD
+import com.mozgobolt.core.modules.plugin.runSseCollectionWithReconnectWarning
 import com.mozgobolt.core.utility.functions.collectWhileAccessSessionActive
 import com.mozgobolt.core.utility.functions.currentDeviceIdOrNull
 import com.mozgobolt.core.utility.functions.currentTokenFamilyIdOrNull
 import com.mozgobolt.core.utility.functions.currentUserIdOrNull
 import com.mozgobolt.core.utility.functions.protectedApi
 import com.mozgobolt.core.utility.functions.remainingJwtValidityOrNull
+import com.mozgobolt.core.utility.functions.respondUnauthorized
 import com.mozgobolt.feature.sync.domain.SyncEventHub
 import com.mozgobolt.feature.sync.domain.SyncService
 import com.mozgobolt.feature.sync.routing.dto.response.toResponseDto
@@ -21,16 +25,12 @@ import io.ktor.server.routing.get
 import io.ktor.server.sse.heartbeat
 import io.ktor.server.sse.sse
 import io.ktor.sse.ServerSentEvent
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
 
 const val SYNC_LIVE_PATH = "/sync/live"
 
-private val SSE_HEARTBEAT_PERIOD = 30.seconds
-private val RECONNECT_WARNING_LEAD_TIME = 60.seconds
+private const val SSE_EVENT_CHANGED = "changed"
 
 fun Route.syncRoutes(
     syncService: SyncService,
@@ -39,7 +39,7 @@ fun Route.syncRoutes(
 ) {
     protectedApi {
         get("/sync") {
-            val userId = call.currentUserIdOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
+            val userId = call.currentUserIdOrNull() ?: return@get call.respondUnauthorized()
             val since = call.request.queryParameters["since"]?.toLongOrNull() ?: 0L
             val limit = call.request.queryParameters["limit"]?.toIntOrNull()
 
@@ -57,19 +57,19 @@ fun Route.syncRoutes(
 
             heartbeat { period = SSE_HEARTBEAT_PERIOD }
 
-            launch {
-                delay((remainingTokenValidity - RECONNECT_WARNING_LEAD_TIME).coerceAtLeast(Duration.ZERO))
-                send(ServerSentEvent(event = "reconnect"))
-            }
-
             withTimeoutOrNull(remainingTokenValidity) {
-                syncEventHub.subscribe(userId).collectWhileAccessSessionActive(
-                    userId = userId,
-                    familyId = familyId,
-                    validator = accessTokenSessionValidator,
-                ) { hint ->
-                    if (!hint.isOwnAction(myDeviceId)) {
-                        send(ServerSentEvent(data = hint.eventId.toString(), event = "changed"))
+                runSseCollectionWithReconnectWarning(
+                    remainingTokenValidity = remainingTokenValidity,
+                    sendReconnectEvent = { send(ServerSentEvent(event = SSE_EVENT_RECONNECT)) },
+                ) {
+                    syncEventHub.subscribe(userId).collectWhileAccessSessionActive(
+                        userId = userId,
+                        familyId = familyId,
+                        validator = accessTokenSessionValidator,
+                    ) { hint ->
+                        if (!hint.isOwnAction(myDeviceId)) {
+                            send(ServerSentEvent(data = hint.eventId.toString(), event = SSE_EVENT_CHANGED))
+                        }
                     }
                 }
             }

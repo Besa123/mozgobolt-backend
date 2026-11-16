@@ -4,6 +4,7 @@
 
 package com.mozgobolt.feature.sync.service
 
+import com.mozgobolt.core.database.TransactionOutcome
 import com.mozgobolt.core.database.TransactionalRunner
 import com.mozgobolt.feature.sync.domain.SyncRepository
 import com.mozgobolt.feature.sync.domain.model.SyncEntityType
@@ -38,6 +39,8 @@ class SyncServiceLimitTest {
 
     private object InlineTransactionalRunner : TransactionalRunner {
         override suspend fun <T> transactional(block: suspend () -> T): T = block()
+
+        override suspend fun <T> transactionalWithOutcome(block: suspend () -> TransactionOutcome<T>): T = block().value
     }
 
     @Test

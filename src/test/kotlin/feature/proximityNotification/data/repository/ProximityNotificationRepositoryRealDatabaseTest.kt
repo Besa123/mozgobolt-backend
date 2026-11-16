@@ -142,7 +142,7 @@ class ProximityNotificationRepositoryRealDatabaseTest {
 
             val afterExit =
                 tx.transactional {
-                    repository.markOutside(1, savedLocationId, vehicleId)
+                    repository.markOutside(vehicleId, listOf(savedLocationId))
                     repository.find(1, savedLocationId, vehicleId)
                 }
             assertNotNull(afterExit)
@@ -154,6 +154,77 @@ class ProximityNotificationRepositoryRealDatabaseTest {
             )
         }
     }
+
+    @Test
+    fun `markOutside updates only this vehicle's inside rows for the given locations in one statement`() {
+        skipIfNoDocker()
+
+        withRealDatabase { _, tx ->
+            val repository = ProximityNotificationRepositoryI()
+            val fixture =
+                tx.transactional {
+                    val company =
+                        CompanyRepositoryI().create(
+                            name = "Batch Company",
+                            inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
+                        )
+                    val vehicles = VehicleRepositoryI()
+                    val savedLocations = SavedLocationRepositoryI()
+
+                    suspend fun savedLocationId(label: String) =
+                        savedLocations.create(1, label, 47.4979, 19.0402, 1.0).id
+                    BatchFixture(
+                        vehicleId = vehicles.create(company.id, "Batch Truck", "PROX-BATCH-1")!!.id,
+                        otherVehicleId = vehicles.create(company.id, "Other Truck", "PROX-BATCH-2")!!.id,
+                        leaving = listOf(savedLocationId("Home"), savedLocationId("Work")),
+                        staying = savedLocationId("Park"),
+                    )
+                }
+            val attemptedAt = Instant.now()
+            tx.transactional {
+                (fixture.leaving + fixture.staying).forEach {
+                    repository.recordEntryAttempted(1, it, fixture.vehicleId, attemptedAt)
+                }
+                repository.recordEntryAttempted(1, fixture.leaving.first(), fixture.otherVehicleId, attemptedAt)
+            }
+
+            tx.transactional {
+                repository.markOutside(fixture.vehicleId, emptyList())
+                repository.markOutside(fixture.vehicleId, fixture.leaving)
+            }
+
+            suspend fun isInside(
+                savedLocationId: Int,
+                vehicleId: Int,
+            ) = tx.transactional { repository.find(1, savedLocationId, vehicleId) }!!.currentlyInside
+            assertTrue(
+                fixture.leaving.none { isInside(it, fixture.vehicleId) },
+                "requested locations are marked outside",
+            )
+            assertTrue(isInside(fixture.staying, fixture.vehicleId), "an unrequested location is untouched")
+            assertTrue(isInside(fixture.leaving.first(), fixture.otherVehicleId), "another vehicle is untouched")
+            assertEquals(
+                attemptedAt.epochSecond,
+                tx
+                    .transactional {
+                        repository.find(
+                            1,
+                            fixture.leaving.first(),
+                            fixture.vehicleId,
+                        )
+                    }!!
+                    .lastAttemptedAt.epochSecond,
+                "leaving must not touch lastAttemptedAt",
+            )
+        }
+    }
+
+    private data class BatchFixture(
+        val vehicleId: Int,
+        val otherVehicleId: Int,
+        val leaving: List<Int>,
+        val staying: Int,
+    )
 
     @Test
     fun `concurrent claims after cooldown allow only one reminder`() {
@@ -277,7 +348,7 @@ class ProximityNotificationRepositoryRealDatabaseTest {
                 "equality with the cutoff means the cooldown has elapsed",
             )
 
-            tx.transactional { repository.markOutside(1, savedLocationId, vehicleId) }
+            tx.transactional { repository.markOutside(vehicleId, listOf(savedLocationId)) }
             assertEquals(
                 true,
                 tx.transactional {

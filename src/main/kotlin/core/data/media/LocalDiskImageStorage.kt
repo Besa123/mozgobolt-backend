@@ -71,13 +71,12 @@ class LocalDiskImageStorage(
         }
     }
 
-    @Suppress("RedundantSuspendModifier") // withContext suspends inside the inline Result wrapper.
     private suspend fun deleteOne(key: String) {
         runSuspendCatching {
             withContext(ioDispatcher) {
                 Files.deleteIfExists(resolveWithinRoot(key))
             }
-        }.onFailure { error ->
+        }.onError { error ->
             logger.warn(error) { "Failed to remove orphaned image file for key=$key — leaving it in place" }
         }
     }

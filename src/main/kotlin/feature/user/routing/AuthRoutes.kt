@@ -19,6 +19,7 @@ import com.mozgobolt.core.utility.functions.currentTokenFamilyIdOrNull
 import com.mozgobolt.core.utility.functions.currentUserIdOrNull
 import com.mozgobolt.core.utility.functions.protectedApi
 import com.mozgobolt.core.utility.functions.publicRateLimitedApi
+import com.mozgobolt.core.utility.functions.respondUnauthorized
 import com.mozgobolt.feature.user.domain.UserService
 import com.mozgobolt.feature.user.domain.UserSessionService
 import com.mozgobolt.feature.user.domain.model.AccountDeletionError
@@ -131,7 +132,7 @@ private fun Route.authPublicRoutes(
                             }
 
                             LoginError.INVALID_CREDENTIALS -> {
-                                call.respond(HttpStatusCode.Unauthorized)
+                                call.respond(HttpStatusCode.Unauthorized, ErrorResponse(error = error.name))
                             }
                         }
                     },
@@ -160,7 +161,7 @@ private fun Route.authPublicRoutes(
                             }
 
                             RefreshError.INVALID_CREDENTIALS -> {
-                                call.respond(HttpStatusCode.Unauthorized)
+                                call.respond(HttpStatusCode.Unauthorized, ErrorResponse(error = error.name))
                             }
                         }
                     },
@@ -295,7 +296,7 @@ private fun Route.authProtectedRoutes(
             BodyLimit.TINY,
             RequestTimeout.FAST,
         ) { request ->
-            val userId = call.currentUserIdOrNull() ?: return@validatedPatch call.respond(HttpStatusCode.Unauthorized)
+            val userId = call.currentUserIdOrNull() ?: return@validatedPatch call.respondUnauthorized()
 
             userService.updateContactInfo(userId, request.toDomain()).fold(
                 onSuccess = { call.respond(HttpStatusCode.OK, it.toResponseDto()) },
@@ -319,7 +320,7 @@ private fun Route.authProtectedRoutes(
             get("/me") {
                 val userId =
                     call.currentUserIdOrNull()
-                        ?: return@get call.respond(HttpStatusCode.Unauthorized)
+                        ?: return@get call.respondUnauthorized()
                 val currentUser =
                     userService.findCurrentUser(userId)
                         ?: return@get call.respond(
@@ -332,31 +333,31 @@ private fun Route.authProtectedRoutes(
 
             registerAccountDeletionRoute(userSessionService)
 
-            limitedPost("/logout", timeout = RequestTimeout.FAST) {
+            limitedPost("/logout", limit = BodyLimit.TINY, timeout = RequestTimeout.FAST) {
                 val userId =
                     call.currentUserIdOrNull()
-                        ?: return@limitedPost call.respond(HttpStatusCode.Unauthorized)
+                        ?: return@limitedPost call.respondUnauthorized()
                 val familyId =
                     call.currentTokenFamilyIdOrNull()
-                        ?: return@limitedPost call.respond(HttpStatusCode.Unauthorized)
+                        ?: return@limitedPost call.respondUnauthorized()
 
                 userSessionService.logoutUser(userId = userId, familyId = familyId)
                 call.respond(HttpStatusCode.OK)
             }
 
-            limitedPost("/logout-all", timeout = RequestTimeout.FAST) {
+            limitedPost("/logout-all", limit = BodyLimit.TINY, timeout = RequestTimeout.FAST) {
                 val userId =
                     call.currentUserIdOrNull()
-                        ?: return@limitedPost call.respond(HttpStatusCode.Unauthorized)
+                        ?: return@limitedPost call.respondUnauthorized()
 
                 userSessionService.logoutAllSessions(userId)
                 call.respond(HttpStatusCode.OK)
             }
 
-            limitedPost("/resend-verification", timeout = RequestTimeout.FAST) {
+            limitedPost("/resend-verification", limit = BodyLimit.TINY, timeout = RequestTimeout.FAST) {
                 val userId =
                     call.currentUserIdOrNull()
-                        ?: return@limitedPost call.respond(HttpStatusCode.Unauthorized)
+                        ?: return@limitedPost call.respondUnauthorized()
 
                 idempotent(idempotencyStore, requestFingerprint = "resend-verification:$userId") {
                     userService.resendVerificationEmail(userId).fold(
@@ -385,7 +386,7 @@ private fun Route.registerAccountDeletionRoute(userSessionService: UserSessionSe
     ) { request ->
         val userId =
             call.currentUserIdOrNull()
-                ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
+                ?: return@validatedPost call.respondUnauthorized()
 
         userSessionService.deleteAccount(userId, request.currentPassword).fold(
             onSuccess = { call.respond(HttpStatusCode.NoContent) },

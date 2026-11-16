@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.time.Instant
+import java.util.UUID
 
 private val logger = KotlinLogging.logger {}
 
@@ -24,25 +25,29 @@ private val logger = KotlinLogging.logger {}
 // duplicating the literal — same convention as LiveRequestParser's MAX_RADIUS_KM.
 internal const val VEHICLE_LOCATION_CHANNEL = "mozgobolt:vehicle-locations"
 
+@Serializable
+private data class VehicleLocationRelayPosition(
+    val vehicleId: Int,
+    val vendorUserId: Int,
+    val latitude: Double,
+    val longitude: Double,
+    val recordedAt: String,
+    val cellId: String,
+    val assignmentId: Int?,
+    val sharesLocationWithCustomers: Boolean,
+    val idempotencyKey: String,
+)
+
 /**
- * Wire format for [VEHICLE_LOCATION_CHANNEL] — mirrors [com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLiveEvent]
- * one-for-one, since every instance must learn about both a vehicle's positions *and* its going
- * offline, not just positions — otherwise only the instance that happened to handle the
- * unlink/end-session call would ever clear its own [InMemoryVehicleLocationHub.latestByVehicleId]
- * entry, leaving every other instance holding a stale entry forever.
+ * Relay messages carry ordered position batches or assignment-scoped offline signals. Offline
+ * signals must reach every instance; otherwise only the instance handling unlink/end-session
+ * would clear its local [InMemoryVehicleLocationHub.latestByVehicleId] entry.
  */
 @Serializable
 private sealed interface VehicleLocationRelayMessage {
     @Serializable
-    data class Position(
-        val vehicleId: Int,
-        val vendorUserId: Int,
-        val latitude: Double,
-        val longitude: Double,
-        val recordedAt: String,
-        val cellId: String,
-        val assignmentId: Int? = null,
-        val sharesLocationWithCustomers: Boolean = false,
+    data class Batch(
+        val positions: List<VehicleLocationRelayPosition>,
     ) : VehicleLocationRelayMessage
 
     @Serializable
@@ -52,8 +57,8 @@ private sealed interface VehicleLocationRelayMessage {
     ) : VehicleLocationRelayMessage
 }
 
-private fun VehicleLocationUpdate.toRelayMessage() =
-    VehicleLocationRelayMessage.Position(
+private fun VehicleLocationUpdate.toRelayPosition() =
+    VehicleLocationRelayPosition(
         vehicleId = vehicleId,
         vendorUserId = vendorUserId,
         latitude = latitude,
@@ -62,9 +67,10 @@ private fun VehicleLocationUpdate.toRelayMessage() =
         cellId = cellId.value,
         assignmentId = assignmentId,
         sharesLocationWithCustomers = sharesLocationWithCustomers,
+        idempotencyKey = idempotencyKey.toString(),
     )
 
-private fun VehicleLocationRelayMessage.Position.toDomain() =
+private fun VehicleLocationRelayPosition.toDomain() =
     VehicleLocationUpdate(
         vehicleId = vehicleId,
         vendorUserId = vendorUserId,
@@ -74,15 +80,15 @@ private fun VehicleLocationRelayMessage.Position.toDomain() =
         cellId = CellId(cellId),
         assignmentId = assignmentId,
         sharesLocationWithCustomers = sharesLocationWithCustomers,
+        idempotencyKey = UUID.fromString(idempotencyKey),
     )
 
 /**
  * Decorates an in-memory [VehicleLocationHub] with cross-instance fanout over a [MessageRelay]:
- * every [publish] both updates this process's own local hub (for its own connected clients, exactly
- * as before) and relays the update to every other instance sharing the same relay; every relayed
- * update — including ones from other instances — is fed back into the local hub the same way, so
- * every instance's subscribers and snapshot cache converge to the same state regardless of which
- * instance a given vehicle's telemetry happened to land on.
+ * every accepted update first reaches this process's local hub, then is relayed to other instances.
+ * Every telemetry batch is sent as one relay message, avoiding a coroutine and Redis command per
+ * point. Receiving instances apply positions in input order. Relayed updates are fed into the local
+ * hub the same way, so each instance's subscribers and snapshot cache converge on incoming state.
  *
  * With a [com.mozgobolt.core.data.messaging.NoOpMessageRelay] (the single-instance default), the
  * relay side of both operations is a no-op, so this behaves exactly like the undecorated [delegate].
@@ -104,13 +110,32 @@ class RedisRelayVehicleLocationHub(
 
     override fun publishIfCurrent(update: VehicleLocationUpdate): Boolean {
         if (!delegate.publishIfCurrent(update)) return false
-        relayMessage(update.toRelayMessage(), failureContext = "a vehicle location update")
+        if (relay.isCrossInstanceRelaySupported) {
+            relayMessage(
+                VehicleLocationRelayMessage.Batch(listOf(update.toRelayPosition())),
+                failureContext = "a vehicle location update",
+            )
+        }
         return true
+    }
+
+    override fun publishBatchIfCurrent(updates: List<VehicleLocationUpdate>): List<VehicleLocationUpdate> {
+        val acceptedUpdates = updates.filter(delegate::publishIfCurrent)
+        if (relay.isCrossInstanceRelaySupported && acceptedUpdates.isNotEmpty()) {
+            val positions = acceptedUpdates.map(VehicleLocationUpdate::toRelayPosition)
+            relayMessage(
+                VehicleLocationRelayMessage.Batch(positions),
+                failureContext = "a vehicle location batch",
+            )
+        }
+        return acceptedUpdates
     }
 
     override fun markOffline(vehicleId: Int) {
         delegate.markOffline(vehicleId)
-        relayMessage(VehicleLocationRelayMessage.Offline(vehicleId), failureContext = "a vehicle offline signal")
+        if (relay.isCrossInstanceRelaySupported) {
+            relayMessage(VehicleLocationRelayMessage.Offline(vehicleId), failureContext = "a vehicle offline signal")
+        }
     }
 
     override fun markOffline(
@@ -118,10 +143,12 @@ class RedisRelayVehicleLocationHub(
         assignmentId: Int,
     ): Boolean {
         if (!delegate.markOffline(vehicleId, assignmentId)) return false
-        relayMessage(
-            VehicleLocationRelayMessage.Offline(vehicleId, assignmentId),
-            failureContext = "a vehicle offline signal",
-        )
+        if (relay.isCrossInstanceRelaySupported) {
+            relayMessage(
+                VehicleLocationRelayMessage.Offline(vehicleId, assignmentId),
+                failureContext = "a vehicle offline signal",
+            )
+        }
         return true
     }
 
@@ -130,14 +157,21 @@ class RedisRelayVehicleLocationHub(
         failureContext: String,
     ) {
         backgroundScope.launch(CoroutineName("vehicle-location-relay-publisher")) {
-            runSuspendCatching { relay.publish(VEHICLE_LOCATION_CHANNEL, Json.encodeToString(message)) }
-                .onFailure { logger.warn(it) { "Failed to relay $failureContext; other instances may miss it" } }
+            publishRelayMessage(message, failureContext)
         }
+    }
+
+    private suspend fun publishRelayMessage(
+        message: VehicleLocationRelayMessage,
+        failureContext: String,
+    ) {
+        runSuspendCatching { relay.publish(VEHICLE_LOCATION_CHANNEL, Json.encodeToString(message)) }
+            .onError { logger.warn(it) { "Failed to relay $failureContext; other instances may miss it" } }
     }
 
     @Synchronized
     fun start() {
-        if (job?.isActive == true) return
+        if (!relay.isCrossInstanceRelaySupported || job?.isActive == true) return
 
         job =
             backgroundScope.launch(CoroutineName("vehicle-location-relay-subscriber")) {
@@ -145,8 +179,10 @@ class RedisRelayVehicleLocationHub(
                     val decodeResult = runSuspendCatching { Json.decodeFromString<VehicleLocationRelayMessage>(raw) }
                     decodeResult.onSuccess { message ->
                         when (message) {
-                            is VehicleLocationRelayMessage.Position -> {
-                                delegate.publishIfCurrent(message.toDomain())
+                            is VehicleLocationRelayMessage.Batch -> {
+                                message.positions.forEach { position ->
+                                    delegate.publishIfCurrent(position.toDomain())
+                                }
                             }
 
                             is VehicleLocationRelayMessage.Offline -> {
@@ -156,10 +192,8 @@ class RedisRelayVehicleLocationHub(
                             }
                         }
                     }
-                    decodeResult.onFailure {
-                        logger.warn(
-                            it,
-                        ) { "Failed to process a relayed vehicle location update; skipping" }
+                    decodeResult.onError { failure ->
+                        logger.warn(failure) { "Failed to process a relayed vehicle location update; skipping" }
                     }
                 }
             }

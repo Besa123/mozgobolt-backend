@@ -4,6 +4,7 @@
 
 package com.mozgobolt.core.modules.plugin
 
+import com.mozgobolt.core.data.idempotency.IDEMPOTENCY_KEY_HEADER
 import com.mozgobolt.core.utility.functions.DEVICE_ID_HEADER
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -20,6 +21,7 @@ import io.ktor.server.testing.testApplication
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class CorsConfigTest {
     @Test
@@ -113,7 +115,7 @@ class CorsConfigTest {
         }
 
     @Test
-    fun `a preflight requesting device-id and request-id headers from an allowed origin is not rejected`() =
+    fun `a preflight requesting idempotency-key and device-id headers from an allowed origin is not rejected`() =
         testApplication {
             environment {
                 config =
@@ -124,18 +126,28 @@ class CorsConfigTest {
             }
             application { installCorsTestRoute() }
 
+            val requestedHeaders =
+                listOf(
+                    HttpHeaders.ContentType,
+                    IDEMPOTENCY_KEY_HEADER,
+                    DEVICE_ID_HEADER,
+                    HttpHeaders.XRequestId,
+                ).joinToString(", ")
             val response =
                 client.options("/cors-test") {
                     header(HttpHeaders.Origin, "https://allowed.example.com")
-                    header(HttpHeaders.AccessControlRequestMethod, HttpMethod.Get.value)
-                    header(
-                        HttpHeaders.AccessControlRequestHeaders,
-                        "$DEVICE_ID_HEADER, ${HttpHeaders.XRequestId}",
-                    )
+                    header(HttpHeaders.AccessControlRequestMethod, HttpMethod.Post.value)
+                    header(HttpHeaders.AccessControlRequestHeaders, requestedHeaders)
                 }
 
             assertEquals(HttpStatusCode.OK, response.status)
             assertEquals("https://allowed.example.com", response.headers[HttpHeaders.AccessControlAllowOrigin])
+            assertTrue(
+                response.headers[HttpHeaders.AccessControlAllowHeaders]
+                    .orEmpty()
+                    .split(",")
+                    .any { it.trim().equals(IDEMPOTENCY_KEY_HEADER, ignoreCase = true) },
+            )
         }
 
     private fun Application.installCorsTestRoute() {

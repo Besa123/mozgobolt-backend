@@ -4,6 +4,7 @@
 
 package com.mozgobolt.feature.vehicleAssignment.service
 
+import com.mozgobolt.core.database.TransactionOutcome
 import com.mozgobolt.core.database.TransactionalRunner
 import com.mozgobolt.core.domain.AppResult
 import com.mozgobolt.feature.company.domain.CompanyMembershipRepository
@@ -23,18 +24,6 @@ import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignmentError
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationHub
 import java.time.Instant
-
-/**
- * Thrown only within [VehicleAssignmentServiceI.link]'s own `tx.transactional { }` block, and
- * caught immediately around that call — never crosses `link`'s own boundary. Forces
- * [com.mozgobolt.core.database.TransactionalRunner.transactional] to roll back the whole
- * transaction (Exposed's `suspendTransaction` only rolls back on a thrown exception, not on a
- * returned [AppResult.Error]) when concurrent links for the same vendor in different companies
- * race on the global partial unique index: this undoes this call's own `endAssignment` of the
- * vendor's *previous* active assignment, which would otherwise silently commit even though the
- * call is reporting failure — leaving the vendor with no active assignment at all.
- */
-private class LostAssignmentRaceException : RuntimeException()
 
 class VehicleAssignmentServiceI(
     private val vehicleAssignmentRepository: VehicleAssignmentRepository,
@@ -58,85 +47,86 @@ class VehicleAssignmentServiceI(
         vehicleId: Int,
         shareLocationWithCustomers: Boolean,
     ): AppResult<VehicleAssignment, VehicleAssignmentError> {
-        val outcome: Pair<AppResult<VehicleAssignment, VehicleAssignmentError>, VehicleAssignment?> =
-            try {
-                tx.transactional {
-                    val vehicle =
-                        findLinkableVehicle(vendorUserId, vehicleId).fold(
-                            onSuccess = { it },
-                            onError = { error -> return@transactional AppResult.Error(error) to null },
-                        )
+        val (result, endedPreviousAssignment) =
+            tx.transactionalWithOutcome {
+                val vehicle =
+                    findLinkableVehicle(vendorUserId, vehicleId).fold(
+                        onSuccess = { it },
+                        onError = { error ->
+                            return@transactionalWithOutcome TransactionOutcome.Commit(
+                                AppResult.Error(error) to null,
+                            )
+                        },
+                    )
 
-                    val activeOnVehicle = vehicleAssignmentRepository.findActiveForVehicle(vehicle.id)
-                    if (activeOnVehicle != null && activeOnVehicle.vendorUserId != vendorUserId) {
-                        return@transactional AppResult.Error(VehicleAssignmentError.VEHICLE_ALREADY_ASSIGNED) to null
+                val activeOnVehicle = vehicleAssignmentRepository.findActiveForVehicle(vehicle.id)
+                if (activeOnVehicle != null && activeOnVehicle.vendorUserId != vendorUserId) {
+                    return@transactionalWithOutcome TransactionOutcome.Commit(
+                        AppResult.Error(VehicleAssignmentError.VEHICLE_ALREADY_ASSIGNED) to null,
+                    )
+                }
+                if (activeOnVehicle != null) {
+                    return@transactionalWithOutcome TransactionOutcome.Commit(
+                        AppResult.Success(activeOnVehicle) to null,
+                    )
+                }
+
+                val previousAssignment = vehicleAssignmentRepository.findActiveForVendor(vendorUserId)
+                val endedPreviousAssignment =
+                    previousAssignment?.takeIf {
+                        vehicleAssignmentRepository.endAssignment(it.id, Instant.now())
                     }
-                    if (activeOnVehicle != null) {
-                        return@transactional AppResult.Success(activeOnVehicle) to null
-                    }
 
-                    val previousAssignment = vehicleAssignmentRepository.findActiveForVendor(vendorUserId)
-                    val endedPreviousAssignment =
-                        previousAssignment?.takeIf {
-                            vehicleAssignmentRepository.endAssignment(it.id, Instant.now())
-                        }
-
-                    // A concurrent link() for the same vendor in another company can still race here;
-                    // the partial unique indexes are the final guard across independent company locks.
-                    val now = Instant.now()
-                    val created =
-                        vehicleAssignmentRepository.startAssignment(
-                            vehicleId = vehicle.id,
-                            vendorUserId = vendorUserId,
-                            startedAt = now,
-                            locationSharingConsentedAt = now.takeIf { shareLocationWithCustomers },
-                        )
-                            ?: run {
-                                // Lost the race — but if the winner turns out to be this same vendor (a
-                                // double-submitted request racing itself, the one case the checks above
-                                // couldn't have caught either), that's still a success, not an error.
-                                // Nothing new was created by *this* call, so no sync event for it either
-                                // — the winning call already recorded its own.
-                                val winner = vehicleAssignmentRepository.findActiveForVehicle(vehicle.id)
-                                if (winner != null && winner.vendorUserId == vendorUserId) {
-                                    endedPreviousAssignment?.let {
-                                        syncService.recordChange(
-                                            userId = vendorUserId,
-                                            entityType = SyncEntityType.VEHICLE_ASSIGNMENT,
-                                            entityId = it.id,
-                                            operation = SyncOperation.UPSERT,
-                                        )
-                                    }
-                                    return@transactional AppResult.Success(winner) to endedPreviousAssignment
+                // A concurrent link() for the same vendor in another company can still race here;
+                // the partial unique indexes are the final guard across independent company locks.
+                val now = Instant.now()
+                val created =
+                    vehicleAssignmentRepository.startAssignment(
+                        vehicleId = vehicle.id,
+                        vendorUserId = vendorUserId,
+                        startedAt = now,
+                        locationSharingConsentedAt = now.takeIf { shareLocationWithCustomers },
+                    )
+                        ?: run {
+                            // A same-vendor duplicate succeeds; the concurrent winner recorded its own event.
+                            val winner = vehicleAssignmentRepository.findActiveForVehicle(vehicle.id)
+                            if (winner != null && winner.vendorUserId == vendorUserId) {
+                                endedPreviousAssignment?.let {
+                                    syncService.recordChange(
+                                        userId = vendorUserId,
+                                        entityType = SyncEntityType.VEHICLE_ASSIGNMENT,
+                                        entityId = it.id,
+                                        operation = SyncOperation.UPSERT,
+                                    )
                                 }
-                                // Someone else won: throw (see LostAssignmentRaceException's kdoc) so
-                                // this transaction rolls back instead of committing the endAssignment
-                                // above — otherwise the vendor's previous session would be permanently
-                                // lost even though this call reports failure.
-                                throw LostAssignmentRaceException()
+                                return@transactionalWithOutcome TransactionOutcome.Commit(
+                                    AppResult.Success(winner) to endedPreviousAssignment,
+                                )
                             }
-                    endedPreviousAssignment?.let {
-                        syncService.recordChange(
-                            userId = vendorUserId,
-                            entityType = SyncEntityType.VEHICLE_ASSIGNMENT,
-                            entityId = it.id,
-                            operation = SyncOperation.UPSERT,
-                        )
-                    }
+
+                            // Roll back our prior session end if a different vendor won the new vehicle.
+                            return@transactionalWithOutcome TransactionOutcome.Rollback(
+                                AppResult.Error(VehicleAssignmentError.VEHICLE_ALREADY_ASSIGNED) to null,
+                            )
+                        }
+                endedPreviousAssignment?.let {
                     syncService.recordChange(
                         userId = vendorUserId,
                         entityType = SyncEntityType.VEHICLE_ASSIGNMENT,
-                        entityId = created.id,
+                        entityId = it.id,
                         operation = SyncOperation.UPSERT,
                     )
-
-                    AppResult.Success(created) to endedPreviousAssignment
                 }
-            } catch (_: LostAssignmentRaceException) {
-                AppResult.Error(VehicleAssignmentError.VEHICLE_ALREADY_ASSIGNED) to null
+                syncService.recordChange(
+                    userId = vendorUserId,
+                    entityType = SyncEntityType.VEHICLE_ASSIGNMENT,
+                    entityId = created.id,
+                    operation = SyncOperation.UPSERT,
+                )
+
+                TransactionOutcome.Commit(AppResult.Success(created) to endedPreviousAssignment)
             }
 
-        val (result, endedPreviousAssignment) = outcome
         if (result is AppResult.Success) endedPreviousAssignment?.let { notifyEndedAssignments(listOf(it)) }
         return result
     }

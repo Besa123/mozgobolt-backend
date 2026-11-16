@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.emptyFlow
  * exactly like the undecorated in-memory hub underneath it.
  */
 class NoOpMessageRelay : MessageRelay {
+    override val isCrossInstanceRelaySupported: Boolean = false
+
     override fun start() = Unit
 
     override fun stop() = Unit

@@ -16,15 +16,15 @@ class StandardPasswordValidator(
     override suspend fun validate(password: String): AppResult<Unit, PasswordValidationError> {
         if (!PasswordPolicy.isValid(password)) return AppResult.Error(PasswordValidationError.INVALID)
 
-        return passwordBreachChecker.isCompromised(password).fold(
-            onSuccess = { compromised ->
+        return passwordBreachChecker
+            .isCompromised(password)
+            .mapError { PasswordValidationError.BREACH_CHECK_UNAVAILABLE }
+            .flatMap { compromised ->
                 if (compromised) {
                     AppResult.Error(PasswordValidationError.INVALID)
                 } else {
                     AppResult.Success(Unit)
                 }
-            },
-            onError = { AppResult.Error(PasswordValidationError.BREACH_CHECK_UNAVAILABLE) },
-        )
+            }
     }
 }

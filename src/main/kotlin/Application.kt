@@ -17,7 +17,7 @@ import com.mozgobolt.feature.vehiclePing.di.configureVehiclePingIdleFlowSweeper
 import com.mozgobolt.feature.vehiclePing.di.configureVehiclePingRelay
 import com.mozgobolt.feature.vehiclePing.di.configureVehiclePingRetentionPurger
 import com.mozgobolt.feature.vehicleTracking.di.configureVehicleLocationBatchWriter
-import com.mozgobolt.feature.vehicleTracking.di.configureVehicleLocationIdleFlowSweeper
+import com.mozgobolt.feature.vehicleTracking.di.configureVehicleLocationHubMaintenance
 import com.mozgobolt.feature.vehicleTracking.di.configureVehicleLocationRelay
 import com.mozgobolt.feature.vehicleTracking.di.configureVehicleLocationRetentionPurger
 import io.ktor.server.application.Application
@@ -47,6 +47,6 @@ fun Application.rootModule() {
     configureVehicleLocationRelay()
     configureVehiclePingRelay()
 
-    configureVehicleLocationIdleFlowSweeper()
+    configureVehicleLocationHubMaintenance()
     configureVehiclePingIdleFlowSweeper()
 }

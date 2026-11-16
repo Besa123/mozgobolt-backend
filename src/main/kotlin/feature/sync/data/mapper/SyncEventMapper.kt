@@ -4,6 +4,7 @@
 
 package com.mozgobolt.feature.sync.data.mapper
 
+import com.mozgobolt.core.utility.functions.runSyncCatching
 import com.mozgobolt.feature.sync.data.database.SyncEventsTable
 import com.mozgobolt.feature.sync.domain.model.SyncEntityType
 import com.mozgobolt.feature.sync.domain.model.SyncEvent
@@ -18,7 +19,7 @@ fun ResultRow.toSyncEvent(): SyncEvent? {
     val entityType = this[SyncEventsTable.entityType]
     val operation = this[SyncEventsTable.operation]
 
-    return runCatching {
+    return runSyncCatching {
         SyncEvent(
             id = id,
             userId = this[SyncEventsTable.userId],
@@ -27,8 +28,8 @@ fun ResultRow.toSyncEvent(): SyncEvent? {
             operation = SyncOperation.valueOf(operation),
             occurredAt = this[SyncEventsTable.occurredAt],
         )
-    }.onFailure {
-        logger.error(it) {
+    }.onError { failure ->
+        logger.error(failure) {
             "Skipping unreadable sync_events row id=$id (entityType=$entityType, operation=$operation)"
         }
     }.getOrNull()

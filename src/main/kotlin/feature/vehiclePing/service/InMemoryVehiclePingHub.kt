@@ -15,17 +15,15 @@ import java.util.concurrent.ConcurrentHashMap
 private const val BROADCAST_BUFFER_CAPACITY = 64
 
 /**
- * [VehiclePingHub] keyed by vendor user id, using the same per-key `MutableSharedFlow` broadcast
- * shape `InMemoryVehicleLocationHub` already uses for per-cell partitioning — here partitioning
- * by *person* rather than geography, since a ping has exactly one intended recipient rather than
- * every buyer watching a region.
+ * [VehiclePingHub] keyed by vendor user id and backed by one bounded `MutableSharedFlow` per
+ * recipient, since a ping has exactly one intended recipient rather than every buyer watching a
+ * region.
  *
  * `flowsByVendorUserId` grows with the number of *distinct* vendors who have ever connected to
  * the live-pings stream — in practice bounded by this app's actual vendor count, not by ping
  * volume. A vendor's flow is reclaimed once nobody is subscribed to it (they've disconnected and
  * aren't currently listening) by a [com.mozgobolt.core.utility.IdleSharedFlowSweeper] wired over
- * this map (see the vehiclePing DI module) — same mechanism as
- * `InMemoryVehicleLocationHub.flowsByCell`. `internal`, not `private`, only so that sweeper can be
+ * this map (see the vehiclePing DI module). `internal`, not `private`, only so that sweeper can be
  * constructed with a reference to it.
  */
 class InMemoryVehiclePingHub : VehiclePingHub {

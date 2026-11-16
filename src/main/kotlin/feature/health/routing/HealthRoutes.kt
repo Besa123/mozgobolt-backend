@@ -30,8 +30,8 @@ fun Route.infrastructureRoutes(
                 withContext(ioDispatcher) {
                     dataSource.connection.use { it.isValid(DB_VALIDATION_TIMEOUT_SECONDS) }
                 }
-            }.onFailure { logger.warn(it) { "Health check database probe failed" } }
-                .getOrDefault(false)
+            }.onError { logger.warn(it) { "Health check database probe failed" } }
+                .getOrElse { false }
 
         if (dbHealthy) {
             call.respond(HttpStatusCode.OK, mapOf(STATUS_KEY to "healthy"))

@@ -4,15 +4,16 @@
 
 package com.mozgobolt.core.utility.functions
 
-import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
-/** Captures failures as [Result] while always rethrowing coroutine cancellation. */
-@Suppress("TooGenericExceptionCaught")
-inline fun <R> runSuspendCatching(block: () -> R): Result<R> =
-    try {
-        Result.success(block())
-    } catch (cancellationException: CancellationException) {
-        throw cancellationException
-    } catch (throwable: Throwable) {
-        Result.failure(throwable)
-    }
+/**
+ * Checks caller cancellation before [block] starts and before its result is returned. This cannot
+ * roll back side effects [block] already completed.
+ */
+suspend fun <T> runWhileActive(block: suspend () -> T): T {
+    currentCoroutineContext().ensureActive()
+    val value = block()
+    currentCoroutineContext().ensureActive()
+    return value
+}

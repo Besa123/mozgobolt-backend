@@ -56,10 +56,8 @@ class VehicleLocationRetentionPurger(
                     // loop, mirroring VehicleLocationBatchWriter's own reasoning — every future
                     // interval must still get a chance to run.
                     runSuspendCatching { purge() }
-                        .onFailure {
-                            logger.error(
-                                it,
-                            ) { "Failed to purge stale vehicle locations; retrying next interval" }
+                        .onError { failure ->
+                            logger.error(failure) { "Failed to purge stale vehicle locations; retrying next interval" }
                         }
                 }
             }

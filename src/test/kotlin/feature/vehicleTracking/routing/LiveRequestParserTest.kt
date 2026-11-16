@@ -99,6 +99,13 @@ class LiveRequestParserTest {
     }
 
     @Test
+    fun `a not-finite radius is invalid`() {
+        val result = parseLiveRequest(scope = "nearby", lat = "47.4979", lon = "19.0402", radiusKm = "NaN")
+
+        assertIs<LiveRequest.Invalid>(result)
+    }
+
+    @Test
     fun `a radius over the max is invalid`() {
         val result =
             parseLiveRequest(

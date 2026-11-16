@@ -18,21 +18,16 @@ class AppConfigValidationTest {
     }
 
     @Test
-    fun `password hash concurrency defaults to available CPU cores`() {
+    fun `CPU-bound concurrency defaults to half the available cores`() {
         val config = testConfig(baseUrl = "http://localhost:8080")
 
         assertEquals(
             RuntimeCapacityConfig.DEFAULT_DATABASE_POOL_SIZE,
             config.runtimeCapacity.databasePoolSize,
         )
-        assertEquals(
-            Runtime.getRuntime().availableProcessors().coerceAtLeast(1),
-            config.runtimeCapacity.passwordHashConcurrency,
-        )
-        assertEquals(
-            Runtime.getRuntime().availableProcessors().coerceAtLeast(1),
-            config.runtimeCapacity.imageProcessingConcurrency,
-        )
+        val halfTheCores = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
+        assertEquals(halfTheCores, config.runtimeCapacity.passwordHashConcurrency)
+        assertEquals(halfTheCores, config.runtimeCapacity.imageProcessingConcurrency)
     }
 
     @Test

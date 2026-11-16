@@ -2,6 +2,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+@file:Suppress("UnusedImports")
+
 package com.mozgobolt.core.utility.functions
 
 import com.mozgobolt.core.domain.security.AuthConstants
@@ -9,6 +11,8 @@ import com.mozgobolt.core.domain.security.AuthConstants.CLAIM_TOKEN_FAMILY_ID
 import com.mozgobolt.core.domain.security.AuthConstants.PROTECT_ENDPOINT_JWT
 import com.mozgobolt.core.modules.plugin.API_LIMIT
 import com.mozgobolt.core.modules.plugin.AUTH_LIMIT
+import com.mozgobolt.core.routing.dto.response.ErrorResponse
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.auth.authenticate
 import io.ktor.server.auth.jwt.JWTPrincipal
@@ -16,6 +20,7 @@ import io.ktor.server.auth.principal
 import io.ktor.server.plugins.ratelimit.RateLimitName
 import io.ktor.server.plugins.ratelimit.rateLimit
 import io.ktor.server.request.header
+import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -23,6 +28,12 @@ import kotlin.time.Duration.Companion.milliseconds
 /** HTTP header carrying the device installation identifier. */
 const val DEVICE_ID_HEADER = "X-Device-Id"
 private const val MAX_DEVICE_ID_LENGTH = 300
+
+/** Responds with the project's standard machine-readable authentication error envelope. */
+@Suppress("SuspendFunWithCoroutineScopeReceiver")
+suspend fun ApplicationCall.respondUnauthorized() {
+    respond(HttpStatusCode.Unauthorized, ErrorResponse(error = "UNAUTHORIZED"))
+}
 
 /** Returns the authenticated user's identifier from the JWT principal. */
 fun ApplicationCall.currentUserIdOrNull(): Int? =

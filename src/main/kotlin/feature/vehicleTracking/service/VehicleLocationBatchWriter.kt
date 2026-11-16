@@ -50,10 +50,8 @@ class VehicleLocationBatchWriter(
                     // A single failed flush must not permanently kill this loop. The buffer keeps
                     // the failed batch at the head of its bounded queue for the next interval.
                     runSuspendCatching { flush() }
-                        .onFailure {
-                            logger.error(
-                                it,
-                            ) { "Failed to persist a telemetry batch; retrying next interval" }
+                        .onError { failure ->
+                            logger.error(failure) { "Failed to persist a telemetry batch; retrying next interval" }
                         }
                 }
             }

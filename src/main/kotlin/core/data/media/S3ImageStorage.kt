@@ -97,7 +97,7 @@ class S3ImageStorage(
                     }
                 }
             }
-        }.onFailure { error ->
+        }.onError { error ->
             logger.warn(error) { "S3 image-object cleanup failed; requested objects may remain" }
         }
     }

@@ -11,7 +11,10 @@ import com.mozgobolt.core.utility.functions.protectedApi
 import com.mozgobolt.core.utility.functions.publicRateLimitedApi
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.plugins.ratelimit.RateLimitName
 import io.ktor.server.plugins.ratelimit.rateLimit
@@ -25,6 +28,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import io.ktor.server.routing.post as routePost
 
 class RateLimitConfigTest {
@@ -43,13 +47,20 @@ class RateLimitConfigTest {
             val userAToken = testAccessTokenFor(userId = 1)
             val userBToken = testAccessTokenFor(userId = 2)
 
-            val userAStatuses =
-                (1..61).map { client.get("/api-limit-test") { bearerAuth(userAToken) }.status }
-            val userBFirstRequest = client.get("/api-limit-test") { bearerAuth(userBToken) }.status
+            val userAResponses =
+                (1..61).map { client.get("/api-limit-test") { bearerAuth(userAToken) } }
+            val userBFirstRequest = client.get("/api-limit-test") { bearerAuth(userBToken) }
 
-            assertEquals(listOf(HttpStatusCode.OK), userAStatuses.take(60).distinct())
-            assertEquals(HttpStatusCode.TooManyRequests, userAStatuses.last())
-            assertEquals(HttpStatusCode.OK, userBFirstRequest, "a different user must have their own fresh budget")
+            assertEquals(listOf(HttpStatusCode.OK), userAResponses.take(60).map { it.status }.distinct())
+            val rateLimited = userAResponses.last()
+            assertEquals(HttpStatusCode.TooManyRequests, rateLimited.status)
+            assertTrue(rateLimited.bodyAsText().contains("RATE_LIMITED"))
+            assertTrue(rateLimited.headers[HttpHeaders.RetryAfter] != null)
+            assertEquals(
+                HttpStatusCode.OK,
+                userBFirstRequest.status,
+                "a different user must have their own fresh budget",
+            )
         }
 
     @Test
@@ -88,6 +99,37 @@ class RateLimitConfigTest {
 
             assertEquals(listOf(HttpStatusCode.OK), statuses.take(10).distinct())
             assertEquals(HttpStatusCode.TooManyRequests, statuses.last())
+        }
+
+    @Test
+    fun `UPLOAD_LIMIT gives each forwarded client IP an independent budget`() =
+        testApplication {
+            configureTestEnvironment()
+            application {
+                installTestModules()
+                routing {
+                    rateLimit(RateLimitName(UPLOAD_LIMIT)) {
+                        routePost("/upload-limit-per-ip-test") { call.respond(HttpStatusCode.OK) }
+                    }
+                }
+            }
+
+            val firstIpStatuses =
+                (1..11).map {
+                    client
+                        .post("/upload-limit-per-ip-test") {
+                            header("X-Forwarded-For", "198.51.100.20, 127.0.0.1")
+                        }.status
+                }
+            val secondIpStatus =
+                client
+                    .post("/upload-limit-per-ip-test") {
+                        header("X-Forwarded-For", "198.51.100.21, 127.0.0.1")
+                    }.status
+
+            assertEquals(10, firstIpStatuses.count { it == HttpStatusCode.OK })
+            assertEquals(HttpStatusCode.TooManyRequests, firstIpStatuses.last())
+            assertEquals(HttpStatusCode.OK, secondIpStatus)
         }
 
     @Test
@@ -137,6 +179,37 @@ class RateLimitConfigTest {
         }
 
     @Test
+    fun `AUTH_LIMIT gives each forwarded client IP an independent budget`() =
+        testApplication {
+            configureTestEnvironment()
+            application {
+                installTestModules()
+                routing {
+                    publicRateLimitedApi {
+                        routePost("/auth-limit-per-ip-test") { call.respond(HttpStatusCode.OK) }
+                    }
+                }
+            }
+
+            val firstIpStatuses =
+                (1..6).map {
+                    client
+                        .post("/auth-limit-per-ip-test") {
+                            header("X-Forwarded-For", "198.51.100.1, 127.0.0.1")
+                        }.status
+                }
+            val secondIpStatus =
+                client
+                    .post("/auth-limit-per-ip-test") {
+                        header("X-Forwarded-For", "198.51.100.2, 127.0.0.1")
+                    }.status
+
+            assertEquals(5, firstIpStatuses.count { it == HttpStatusCode.OK })
+            assertEquals(HttpStatusCode.TooManyRequests, firstIpStatuses.last())
+            assertEquals(HttpStatusCode.OK, secondIpStatus)
+        }
+
+    @Test
     fun `an unauthenticated request to protectedApi is rejected without consuming the rate-limit budget`() =
         testApplication {
             configureTestEnvironment()
@@ -171,5 +244,34 @@ class RateLimitConfigTest {
 
             assertEquals(listOf(HttpStatusCode.OK), statuses.take(150).distinct())
             assertEquals(HttpStatusCode.TooManyRequests, statuses.last())
+        }
+
+    @Test
+    fun `the global limit has an independent budget for each forwarded client IP`() =
+        testApplication {
+            configureTestEnvironment()
+            application {
+                installTestModules()
+                routing {
+                    get("/global-per-ip-test") { call.respond(HttpStatusCode.OK) }
+                }
+            }
+
+            val firstIpStatuses =
+                (1..151).map {
+                    client
+                        .get("/global-per-ip-test") {
+                            header("X-Forwarded-For", "198.51.100.10, 127.0.0.1")
+                        }.status
+                }
+            val secondIpStatus =
+                client
+                    .get("/global-per-ip-test") {
+                        header("X-Forwarded-For", "198.51.100.11, 127.0.0.1")
+                    }.status
+
+            assertEquals(150, firstIpStatuses.count { it == HttpStatusCode.OK })
+            assertEquals(HttpStatusCode.TooManyRequests, firstIpStatuses.last())
+            assertEquals(HttpStatusCode.OK, secondIpStatus)
         }
 }

@@ -8,6 +8,8 @@ import com.mozgobolt.core.TEST_JWT_AUDIENCE
 import com.mozgobolt.core.TEST_JWT_ISSUER
 import com.mozgobolt.core.TEST_JWT_SECRET
 import com.mozgobolt.core.configureTestEnvironment
+import com.mozgobolt.core.data.idempotency.FakeIdempotencyStore
+import com.mozgobolt.core.data.idempotency.IDEMPOTENCY_KEY_HEADER
 import com.mozgobolt.core.data.security.JwtTokenManager
 import com.mozgobolt.core.domain.AppResult
 import com.mozgobolt.core.installTestModules
@@ -19,12 +21,14 @@ import com.mozgobolt.feature.vehicleTracking.NoOpVehicleLocationHub
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationHub
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleTrackingService
 import com.mozgobolt.feature.vehicleTracking.domain.model.CellId
+import com.mozgobolt.feature.vehicleTracking.domain.model.TelemetryDispatchPlan
 import com.mozgobolt.feature.vehicleTracking.domain.model.TelemetryError
 import com.mozgobolt.feature.vehicleTracking.domain.model.TelemetryPoint
 import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLiveEvent
 import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationUpdate
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.routing.routing
@@ -43,16 +47,34 @@ class VehicleTrackingRoutesTest {
         var result: AppResult<Unit, TelemetryError> = AppResult.Success(Unit)
         var callCount = 0
             private set
+        var publishCount = 0
+            private set
         var lastCall: Pair<Int, List<TelemetryPoint>>? = null
             private set
 
-        override suspend fun ingestTelemetry(
+        override suspend fun prepareTelemetry(
             vendorUserId: Int,
             points: List<TelemetryPoint>,
-        ): AppResult<Unit, TelemetryError> {
+        ): AppResult<TelemetryDispatchPlan, TelemetryError> {
             callCount++
             lastCall = vendorUserId to points
-            return result
+            return result.fold(
+                onSuccess = {
+                    AppResult.Success(
+                        TelemetryDispatchPlan(
+                            vehicleId = 12,
+                            companyId = null,
+                            sharesLocationWithCustomers = false,
+                            updates = emptyList(),
+                        ),
+                    )
+                },
+                onError = { AppResult.Error(it) },
+            )
+        }
+
+        override suspend fun publishTelemetry(plan: TelemetryDispatchPlan) {
+            publishCount++
         }
     }
 
@@ -69,6 +91,7 @@ class VehicleTrackingRoutesTest {
                             service,
                             NoOpVehicleLocationHub(),
                             testAccessTokenSessionValidator(),
+                            FakeIdempotencyStore(),
                         )
                     }
                 }
@@ -104,6 +127,48 @@ class VehicleTrackingRoutesTest {
         }
 
     @Test
+    fun `telemetry retry with the same idempotency key publishes the batch only once`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeVehicleTrackingService()
+            val idempotencyStore = FakeIdempotencyStore()
+            application {
+                installTestModules()
+                routing {
+                    apiV1 {
+                        vehicleTrackingRoutes(
+                            service,
+                            NoOpVehicleLocationHub(),
+                            testAccessTokenSessionValidator(),
+                            idempotencyStore,
+                        )
+                    }
+                }
+            }
+            val token = testAccessTokenFor(userId = 42, role = "VENDOR")
+            val recordedAt = Instant.now().minusSeconds(30)
+            val body =
+                """{"points":[{"latitude":47.4979,"longitude":19.0402,"recordedAt":"$recordedAt"}]}"""
+
+            val first =
+                postJson("/api/v1/vehicle-tracking/telemetry", body) {
+                    bearerAuth(token)
+                    header(IDEMPOTENCY_KEY_HEADER, "telemetry-batch-1")
+                }
+            val replay =
+                postJson("/api/v1/vehicle-tracking/telemetry", body) {
+                    bearerAuth(token)
+                    header(IDEMPOTENCY_KEY_HEADER, "telemetry-batch-1")
+                }
+
+            assertEquals(HttpStatusCode.Accepted, first.status)
+            assertEquals(HttpStatusCode.Accepted, replay.status)
+            assertEquals("true", replay.headers["X-Idempotency-Replayed"])
+            assertEquals(1, service.callCount)
+            assertEquals(1, service.publishCount)
+        }
+
+    @Test
     fun `live route accepts nearby and rejects the nationwide feed`() =
         testApplication {
             configureTestEnvironment()
@@ -115,6 +180,7 @@ class VehicleTrackingRoutesTest {
                             FakeVehicleTrackingService(),
                             NoOpVehicleLocationHub(),
                             testAccessTokenSessionValidator(),
+                            FakeIdempotencyStore(),
                         )
                     }
                 }
@@ -153,6 +219,7 @@ class VehicleTrackingRoutesTest {
                             FakeVehicleTrackingService(),
                             NoOpVehicleLocationHub(),
                             testAccessTokenSessionValidator(),
+                            FakeIdempotencyStore(),
                         )
                     }
                 }
@@ -178,6 +245,7 @@ class VehicleTrackingRoutesTest {
                             FakeVehicleTrackingService(),
                             NoOpVehicleLocationHub(),
                             testAccessTokenSessionValidator(),
+                            FakeIdempotencyStore(),
                         )
                     }
                 }
@@ -215,6 +283,7 @@ class VehicleTrackingRoutesTest {
                             FakeVehicleTrackingService(),
                             LocationEventHub(update),
                             testAccessTokenSessionValidator(),
+                            FakeIdempotencyStore(),
                         )
                     }
                 }

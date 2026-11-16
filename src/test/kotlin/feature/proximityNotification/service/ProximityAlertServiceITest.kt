@@ -123,6 +123,9 @@ class ProximityAlertServiceITest {
         var recordWriteCount = 0
             private set
 
+        var markOutsideCallCount = 0
+            private set
+
         override suspend fun find(
             buyerUserId: Int,
             savedLocationId: Int,
@@ -170,12 +173,15 @@ class ProximityAlertServiceITest {
         }
 
         override suspend fun markOutside(
-            buyerUserId: Int,
-            savedLocationId: Int,
             vehicleId: Int,
+            savedLocationIds: Collection<Int>,
         ) {
-            val key = Triple(buyerUserId, savedLocationId, vehicleId)
-            records[key]?.let { records[key] = it.copy(currentlyInside = false) }
+            markOutsideCallCount++
+            records.entries
+                .filter { (key, record) ->
+                    key.third == vehicleId && key.second in savedLocationIds &&
+                        record.currentlyInside
+                }.forEach { (key, record) -> records[key] = record.copy(currentlyInside = false) }
         }
 
         override suspend fun deleteForUserAndCompany(
@@ -456,6 +462,38 @@ class ProximityAlertServiceITest {
 
             // Only "Home" should have fired — one push, not two, and not zero.
             assertEquals(1, fx.pushSender.sent.size)
+        }
+    }
+
+    @Test
+    fun `outside candidates are marked with one write per point, however many buyers watch the company`() {
+        runBlocking {
+            val fx = Fixture()
+            val (savedLat, savedLon) = savedPoint
+            val watchingBuyers = 25
+            repeat(watchingBuyers) { index ->
+                fx.favoriteRepository.seedFavorite(companyId = 1, userId = index)
+                fx.savedLocationRepository.seed(
+                    userId = index,
+                    label = "Home",
+                    latitude = savedLat,
+                    longitude = savedLon,
+                    radiusKm = 1.0,
+                )
+            }
+            val (outsideLat, outsideLon) = outsidePoint
+
+            fx.service.evaluateBatch(
+                vehicleId = 100,
+                companyId = 1,
+                points = List(3) { GeoPoint(outsideLat, outsideLon) },
+            )
+
+            assertEquals(
+                3,
+                fx.proximityNotificationRepository.markOutsideCallCount,
+                "$watchingBuyers outside candidates over 3 points must cost 3 writes, not ${watchingBuyers * 3}",
+            )
         }
     }
 

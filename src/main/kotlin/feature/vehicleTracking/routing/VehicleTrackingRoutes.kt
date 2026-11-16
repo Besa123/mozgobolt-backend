@@ -4,12 +4,16 @@
 
 package com.mozgobolt.feature.vehicleTracking.routing
 
+import com.mozgobolt.core.data.idempotency.IdempotencyStore
+import com.mozgobolt.core.data.idempotency.IdempotentResult
+import com.mozgobolt.core.data.idempotency.idempotent
+import com.mozgobolt.core.data.idempotency.idempotentResult
 import com.mozgobolt.core.domain.security.AccessTokenSessionValidator
 import com.mozgobolt.core.modules.plugin.BodyLimit
-import com.mozgobolt.core.modules.plugin.RECONNECT_WARNING_LEAD_TIME
 import com.mozgobolt.core.modules.plugin.RequestTimeout
 import com.mozgobolt.core.modules.plugin.SSE_EVENT_RECONNECT
 import com.mozgobolt.core.modules.plugin.SSE_HEARTBEAT_PERIOD
+import com.mozgobolt.core.modules.plugin.runSseCollectionWithReconnectWarning
 import com.mozgobolt.core.modules.plugin.validatedPost
 import com.mozgobolt.core.routing.dto.response.ErrorResponse
 import com.mozgobolt.core.utility.functions.collectWhileAccessSessionActive
@@ -17,8 +21,10 @@ import com.mozgobolt.core.utility.functions.currentTokenFamilyIdOrNull
 import com.mozgobolt.core.utility.functions.currentUserIdOrNull
 import com.mozgobolt.core.utility.functions.protectedApi
 import com.mozgobolt.core.utility.functions.remainingJwtValidityOrNull
+import com.mozgobolt.core.utility.functions.respondUnauthorized
 import com.mozgobolt.feature.user.domain.model.UserRole
 import com.mozgobolt.feature.user.routing.requireRole
+import com.mozgobolt.feature.vehicleTracking.domain.NearbyLocationFeed
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationHub
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleTrackingService
 import com.mozgobolt.feature.vehicleTracking.domain.model.TelemetryError
@@ -37,8 +43,6 @@ import io.ktor.server.routing.route
 import io.ktor.server.sse.heartbeat
 import io.ktor.server.sse.sse
 import io.ktor.sse.ServerSentEvent
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -62,21 +66,25 @@ fun Route.vehicleTrackingRoutes(
     vehicleTrackingService: VehicleTrackingService,
     hub: VehicleLocationHub,
     accessTokenSessionValidator: AccessTokenSessionValidator,
+    idempotencyStore: IdempotencyStore,
 ) {
     protectedApi {
-        vehicleTrackingTelemetryRoute(vehicleTrackingService)
+        vehicleTrackingTelemetryRoute(vehicleTrackingService, idempotencyStore)
         vehicleTrackingLiveRoute(hub, accessTokenSessionValidator)
     }
 }
 
-private fun Route.vehicleTrackingTelemetryRoute(vehicleTrackingService: VehicleTrackingService) {
+private fun Route.vehicleTrackingTelemetryRoute(
+    vehicleTrackingService: VehicleTrackingService,
+    idempotencyStore: IdempotencyStore,
+) {
     validatedPost<TelemetryBatchRequestDto>(
         "/vehicle-tracking/telemetry",
         BodyLimit.MEDIUM,
         RequestTimeout.STANDARD,
     ) { request ->
         if (!requireRole(UserRole.VENDOR)) return@validatedPost
-        val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
+        val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respondUnauthorized()
 
         val points =
             request.points.map { point ->
@@ -87,10 +95,27 @@ private fun Route.vehicleTrackingTelemetryRoute(vehicleTrackingService: VehicleT
                 )
             }
 
-        vehicleTrackingService.ingestTelemetry(userId, points).fold(
-            onSuccess = { call.respond(HttpStatusCode.Accepted) },
-            onError = { error -> call.respond(error.toHttpStatusCode(), ErrorResponse(error = error.name)) },
-        )
+        idempotent(
+            idempotencyStore,
+            requestFingerprint = "$userId:${Json.encodeToString(request)}",
+        ) {
+            vehicleTrackingService.prepareTelemetry(userId, points).fold(
+                onSuccess = { plan ->
+                    IdempotentResult(
+                        statusCode = HttpStatusCode.Accepted,
+                        body = "",
+                        afterCommitBestEffort = { vehicleTrackingService.publishTelemetry(plan) },
+                    )
+                },
+                onError = { error ->
+                    idempotentResult(
+                        statusCode = error.toHttpStatusCode(),
+                        body = ErrorResponse(error = error.name),
+                        shouldCacheResponse = false,
+                    )
+                },
+            )
+        }
     }
 }
 
@@ -126,40 +151,68 @@ private fun Route.vehicleTrackingLiveRoute(
                     lon = call.request.queryParameters[QUERY_PARAM_LON],
                     radiusKm = call.request.queryParameters[QUERY_PARAM_RADIUS_KM],
                 )
-
-            val (snapshotUpdates, liveUpdates) =
-                when (liveRequest) {
-                    is LiveRequest.Nearby -> {
-                        hub.snapshotNear(liveRequest.latitude, liveRequest.longitude, liveRequest.radiusKm) to
-                            hub.subscribeNear(liveRequest.latitude, liveRequest.longitude, liveRequest.radiusKm)
-                    }
-
-                    is LiveRequest.Invalid -> {
-                        val error = ErrorResponse(error = ERROR_CODE_INVALID_REQUEST, message = liveRequest.reason)
-                        send(ServerSentEvent(event = SSE_EVENT_ERROR, data = Json.encodeToString(error)))
-                        return@sse
-                    }
-                }
-
-            heartbeat { period = SSE_HEARTBEAT_PERIOD }
-
-            snapshotUpdates.forEach { update -> sendLocation(update) }
-
-            launch {
-                delay((remainingTokenValidity - RECONNECT_WARNING_LEAD_TIME).coerceAtLeast(Duration.ZERO))
-                send(ServerSentEvent(event = SSE_EVENT_RECONNECT))
+            if (liveRequest is LiveRequest.Invalid) {
+                val error = ErrorResponse(error = ERROR_CODE_INVALID_REQUEST, message = liveRequest.reason)
+                send(ServerSentEvent(event = SSE_EVENT_ERROR, data = Json.encodeToString(error)))
+                return@sse
             }
+            val nearbyRequest = liveRequest as LiveRequest.Nearby
 
-            withTimeoutOrNull(remainingTokenValidity) {
-                liveUpdates.collectWhileAccessSessionActive(
-                    userId = userId,
-                    familyId = familyId,
-                    validator = accessTokenSessionValidator,
-                ) { event ->
-                    when (event) {
-                        is VehicleLiveEvent.Position -> sendLocation(event.update)
-                        is VehicleLiveEvent.Offline -> sendOffline(event.vehicleId)
-                    }
+            val feed = hub.openNearby(nearbyRequest.latitude, nearbyRequest.longitude, nearbyRequest.radiusKm)
+            try {
+                heartbeat { period = SSE_HEARTBEAT_PERIOD }
+                feed.snapshot.forEach { update -> sendLocation(update) }
+
+                collectVehicleTrackingLiveEvents(
+                    feed = feed,
+                    session = AccessTokenSession(userId, familyId),
+                    remainingTokenValidity = remainingTokenValidity,
+                    accessTokenSessionValidator = accessTokenSessionValidator,
+                    sink =
+                        LiveEventSink(
+                            sendReconnectEvent = { send(ServerSentEvent(event = SSE_EVENT_RECONNECT)) },
+                            sendLocation = ::sendLocation,
+                            sendOffline = ::sendOffline,
+                        ),
+                )
+            } finally {
+                feed.close()
+            }
+        }
+    }
+}
+
+/** Which user and JWT session family a live connection belongs to, for the revocation recheck. */
+private data class AccessTokenSession(
+    val userId: Int,
+    val familyId: String,
+)
+
+/** The three ways this route's collection loop talks back to the client, bundled to keep the
+ * surrounding function's parameter list from growing with every event kind this route emits. */
+private data class LiveEventSink(
+    val sendReconnectEvent: suspend () -> Unit,
+    val sendLocation: suspend (VehicleLocationUpdate) -> Unit,
+    val sendOffline: suspend (Int) -> Unit,
+)
+
+private suspend fun collectVehicleTrackingLiveEvents(
+    feed: NearbyLocationFeed,
+    session: AccessTokenSession,
+    remainingTokenValidity: Duration,
+    accessTokenSessionValidator: AccessTokenSessionValidator,
+    sink: LiveEventSink,
+) {
+    withTimeoutOrNull(remainingTokenValidity) {
+        runSseCollectionWithReconnectWarning(remainingTokenValidity, sink.sendReconnectEvent) {
+            feed.events.collectWhileAccessSessionActive(
+                userId = session.userId,
+                familyId = session.familyId,
+                validator = accessTokenSessionValidator,
+            ) { event ->
+                when (event) {
+                    is VehicleLiveEvent.Position -> sink.sendLocation(event.update)
+                    is VehicleLiveEvent.Offline -> sink.sendOffline(event.vehicleId)
                 }
             }
         }

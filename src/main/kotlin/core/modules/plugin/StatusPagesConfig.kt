@@ -6,6 +6,7 @@ package com.mozgobolt.core.modules.plugin
 
 import com.mozgobolt.core.routing.dto.response.ErrorResponse
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
@@ -17,12 +18,15 @@ import io.ktor.server.plugins.requestvalidation.RequestValidationException
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.request.path
 import io.ktor.server.response.respond
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 
 private val logger = KotlinLogging.logger {}
 
 fun Application.configureStatusPages() {
     install(StatusPages) {
+        status(HttpStatusCode.TooManyRequests) { call, status -> respondRateLimited(call, status) }
+
         exception<RequestValidationException> { call, cause ->
             logger.warn { "Request validation failed" }
             call.respond(
@@ -50,7 +54,7 @@ fun Application.configureStatusPages() {
         }
 
         exception<PayloadTooLargeException> { call, _ ->
-            respondPayloadTooLarge(call)
+            call.respondPayloadTooLarge()
         }
 
         exception<BadRequestException> { call, cause ->
@@ -74,6 +78,7 @@ fun Application.configureStatusPages() {
         }
 
         exception<Throwable> { call, cause ->
+            if (cause is CancellationException) throw cause
             logger.error(cause) { "Unhandled exception" }
             call.respond(
                 HttpStatusCode.InternalServerError,
@@ -86,14 +91,19 @@ fun Application.configureStatusPages() {
     }
 }
 
-private suspend fun respondPayloadTooLarge(call: ApplicationCall) {
-    call.respond(
-        HttpStatusCode.PayloadTooLarge,
-        ErrorResponse(
-            error = "PAYLOAD_TOO_LARGE",
-            message = "Request body exceeds the allowed size",
-        ),
-    )
+private suspend fun respondRateLimited(
+    call: ApplicationCall,
+    status: HttpStatusCode,
+) {
+    if (call.response.headers[HttpHeaders.RetryAfter] != null) {
+        call.respond(
+            status,
+            ErrorResponse(
+                error = "RATE_LIMITED",
+                message = "Too many requests; try again later",
+            ),
+        )
+    }
 }
 
 private suspend fun respondRequestBodyFailure(
@@ -104,7 +114,7 @@ private suspend fun respondRequestBodyFailure(
     logMessage: String,
 ) {
     if (cause.containsPayloadTooLarge()) {
-        respondPayloadTooLarge(call)
+        call.respondPayloadTooLarge()
     } else {
         logger.warn { logMessage }
         call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = error, message = message))

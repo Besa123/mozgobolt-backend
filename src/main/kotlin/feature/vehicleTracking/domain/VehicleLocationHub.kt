@@ -7,6 +7,22 @@ package com.mozgobolt.feature.vehicleTracking.domain
 import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLiveEvent
 import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationUpdate
 import kotlinx.coroutines.flow.Flow
+import java.util.concurrent.atomic.AtomicBoolean
+
+/** An initial nearby snapshot and its already-registered live subscription. */
+class NearbyLocationFeed(
+    /** Current buyer-visible vehicle positions in the requested area. */
+    val snapshot: List<VehicleLocationUpdate>,
+    /** Live position/offline events captured after the snapshot handoff. */
+    val events: Flow<VehicleLiveEvent>,
+    private val onClose: () -> Unit = {},
+) : AutoCloseable {
+    private val closed = AtomicBoolean(false)
+
+    override fun close() {
+        if (closed.compareAndSet(false, true)) onClose()
+    }
+}
 
 /**
  * Fast path: the latest known location per vehicle, broadcast in-memory with no database
@@ -31,6 +47,13 @@ interface VehicleLocationHub {
         publish(update)
         return true
     }
+
+    /**
+     * Publishes updates in input order and returns the subset accepted by this hub.
+     * This is not an all-or-nothing operation; implementations may batch their downstream delivery.
+     */
+    fun publishBatchIfCurrent(updates: List<VehicleLocationUpdate>): List<VehicleLocationUpdate> =
+        updates.filter(::publishIfCurrent)
 
     /**
      * Signals that [vehicleId]'s driving session just ended: removes it from nearby snapshots
@@ -74,4 +97,18 @@ interface VehicleLocationHub {
         longitude: Double,
         radiusKm: Double,
     ): List<VehicleLocationUpdate>
+
+    /**
+     * Opens a live subscription and captures its initial snapshot as one handoff. Implementations
+     * with concurrent publishers should register the subscription before returning the snapshot.
+     */
+    fun openNearby(
+        latitude: Double,
+        longitude: Double,
+        radiusKm: Double,
+    ): NearbyLocationFeed =
+        NearbyLocationFeed(
+            snapshot = snapshotNear(latitude, longitude, radiusKm),
+            events = subscribeNear(latitude, longitude, radiusKm),
+        )
 }

@@ -20,6 +20,7 @@ import com.mozgobolt.core.modules.plugin.validatedPost
 import com.mozgobolt.core.routing.dto.response.ErrorResponse
 import com.mozgobolt.core.utility.functions.currentUserIdOrNull
 import com.mozgobolt.core.utility.functions.protectedApi
+import com.mozgobolt.core.utility.functions.respondUnauthorized
 import com.mozgobolt.feature.user.domain.UserService
 import com.mozgobolt.feature.user.domain.model.UserRole
 import com.mozgobolt.feature.user.routing.requireRole
@@ -66,7 +67,11 @@ fun Route.vehicleRoutes(
     // A stricter rate limit than the rest of this feature, matching this codebase's established
     // convention for file uploads (UPLOAD_LIMIT, 10/min).
     protectedApi(limitName = UPLOAD_LIMIT) {
-        limitedFileUploadPost("/companies/{companyId}/vehicles/{id}/picture", BodyLimit.LARGE) { bytes ->
+        limitedFileUploadPost(
+            "/companies/{companyId}/vehicles/{id}/picture",
+            BodyLimit.LARGE,
+            timeout = RequestTimeout.UPLOAD,
+        ) { bytes ->
             handleUploadVehiclePicture(vehicleService, bytes)
         }
     }
@@ -82,7 +87,7 @@ private fun Route.registerCreateVehicleRoute(
         RequestTimeout.STANDARD,
     ) { request ->
         if (!requireRole(UserRole.VENDOR)) return@validatedPost
-        val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
+        val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respondUnauthorized()
         val companyId =
             call.parameters["id"]?.toIntOrNull()
                 ?: return@validatedPost call.respond(
@@ -119,7 +124,7 @@ private fun Route.registerUpdateVehicleRoute(vehicleService: VehicleService) {
         RequestTimeout.STANDARD,
     ) { request ->
         if (!requireRole(UserRole.VENDOR)) return@validatedPatch
-        val userId = call.currentUserIdOrNull() ?: return@validatedPatch call.respond(HttpStatusCode.Unauthorized)
+        val userId = call.currentUserIdOrNull() ?: return@validatedPatch call.respondUnauthorized()
         val companyId =
             call.parameters[PARAM_COMPANY_ID]?.toIntOrNull()
                 ?: return@validatedPatch call.respond(
@@ -153,7 +158,11 @@ private fun Route.registerArchiveVehicleRoute(vehicleService: VehicleService) {
     // No idempotent{} wrapper: archiving is already naturally idempotent at the service layer
     // (an already-archived vehicle short-circuits to Success), the same reasoning already
     // applied to company member promote/demote.
-    limitedPost("/companies/{companyId}/vehicles/{id}/archive", timeout = RequestTimeout.STANDARD) {
+    limitedPost(
+        "/companies/{companyId}/vehicles/{id}/archive",
+        limit = BodyLimit.TINY,
+        timeout = RequestTimeout.STANDARD,
+    ) {
         handleArchiveVehicle(vehicleService)
     }
 }
@@ -165,7 +174,7 @@ private fun Route.registerCompanyVehicleListRoute(
 ) {
     get("/companies/{id}/vehicles") {
         if (!requireRole(UserRole.VENDOR)) return@get
-        val userId = call.currentUserIdOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
+        val userId = call.currentUserIdOrNull() ?: return@get call.respondUnauthorized()
         val companyId =
             call.parameters["id"]?.toIntOrNull()
                 ?: return@get call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = INVALID_COMPANY_ID))
@@ -191,7 +200,7 @@ private suspend fun RoutingContext.handleUploadVehiclePicture(
     bytes: ByteArray,
 ) {
     if (!requireRole(UserRole.VENDOR)) return
-    val userId = call.currentUserIdOrNull() ?: return call.respond(HttpStatusCode.Unauthorized)
+    val userId = call.currentUserIdOrNull() ?: return call.respondUnauthorized()
     val companyId =
         call.parameters[PARAM_COMPANY_ID]?.toIntOrNull()
             ?: return call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = INVALID_COMPANY_ID))
@@ -217,7 +226,7 @@ private suspend fun RoutingContext.handleGetVehicle(
     vehicleAssignmentService: VehicleAssignmentService,
     userService: UserService,
 ) {
-    call.currentUserIdOrNull() ?: return call.respond(HttpStatusCode.Unauthorized)
+    call.currentUserIdOrNull() ?: return call.respondUnauthorized()
     val vehicleId =
         call.parameters["id"]?.toIntOrNull()
             ?: return call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = INVALID_VEHICLE_ID))
@@ -231,7 +240,7 @@ private suspend fun RoutingContext.handleGetVehicle(
 }
 
 private suspend fun RoutingContext.handleGetVehiclePicture(vehicleService: VehicleService) {
-    call.currentUserIdOrNull() ?: return call.respond(HttpStatusCode.Unauthorized)
+    call.currentUserIdOrNull() ?: return call.respondUnauthorized()
     val vehicleId =
         call.parameters["id"]?.toIntOrNull()
             ?: return call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = INVALID_VEHICLE_ID))
@@ -244,7 +253,7 @@ private suspend fun RoutingContext.handleGetVehiclePicture(vehicleService: Vehic
 
 private suspend fun RoutingContext.handleArchiveVehicle(vehicleService: VehicleService) {
     if (!requireRole(UserRole.VENDOR)) return
-    val userId = call.currentUserIdOrNull() ?: return call.respond(HttpStatusCode.Unauthorized)
+    val userId = call.currentUserIdOrNull() ?: return call.respondUnauthorized()
     val companyId =
         call.parameters[PARAM_COMPANY_ID]?.toIntOrNull()
             ?: return call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = INVALID_COMPANY_ID))

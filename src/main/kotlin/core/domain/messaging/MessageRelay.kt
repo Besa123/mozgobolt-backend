@@ -17,6 +17,10 @@ import kotlinx.coroutines.flow.Flow
  * [com.mozgobolt.core.utility.ApplicationBackgroundScope].
  */
 interface MessageRelay {
+    /** Whether this relay forwards messages to other application instances. */
+    val isCrossInstanceRelaySupported: Boolean
+        get() = true
+
     /** Opens the shared relay connection and begins its lifecycle. */
     fun start()
 

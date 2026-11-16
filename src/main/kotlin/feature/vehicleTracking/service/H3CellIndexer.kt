@@ -51,7 +51,7 @@ class H3CellIndexer(
     }
 
     companion object {
-        // Res 7 ≈ 1.22km average edge — fine enough for a "who's in my neighborhood" query
+        // Res 7 ≈ 1.41km average edge — fine enough for a "who's in my neighborhood" query
         // without the k-ring growing huge at the request's max allowed radius (see
         // MAX_RING_COUNT below and VehicleTrackingRoutes' MAX_RADIUS_KM).
 

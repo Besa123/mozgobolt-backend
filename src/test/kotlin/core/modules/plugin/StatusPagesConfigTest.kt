@@ -21,6 +21,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.Serializable
@@ -90,6 +91,25 @@ class StatusPagesConfigTest {
 
             assertEquals(HttpStatusCode.GatewayTimeout, response.status)
             assertEquals(true, response.bodyAsText().contains("REQUEST_TIMEOUT"))
+        }
+
+    @Test
+    fun `a non-timeout cancellation is not converted into the application error envelope`() =
+        testApplication {
+            application {
+                install(ContentNegotiation) { json() }
+                configureStatusPages()
+                routing {
+                    get("/cancel-test") {
+                        throw CancellationException("request was cancelled")
+                    }
+                }
+            }
+
+            val response = client.get("/cancel-test")
+
+            assertEquals(HttpStatusCode.InternalServerError, response.status)
+            assertFalse(response.bodyAsText().contains("INTERNAL_SERVER_ERROR"))
         }
 
     @Test

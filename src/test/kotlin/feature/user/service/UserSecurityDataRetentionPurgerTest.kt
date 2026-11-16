@@ -4,6 +4,7 @@
 
 package com.mozgobolt.feature.user.service
 
+import com.mozgobolt.core.database.TransactionOutcome
 import com.mozgobolt.core.database.TransactionalRunner
 import com.mozgobolt.core.utility.ApplicationBackgroundScope
 import java.time.Clock
@@ -23,6 +24,9 @@ class UserSecurityDataRetentionPurgerTest {
             callCount++
             return block()
         }
+
+        override suspend fun <T> transactionalWithOutcome(block: suspend () -> TransactionOutcome<T>): T =
+            transactional { block().value }
     }
 
     @Test

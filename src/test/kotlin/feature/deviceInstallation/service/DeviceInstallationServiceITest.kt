@@ -8,11 +8,14 @@ import com.mozgobolt.core.data.push.FakePushNotificationSender
 import com.mozgobolt.core.data.push.InvalidPushTargetException
 import com.mozgobolt.core.data.push.TransientPushDeliveryException
 import com.mozgobolt.core.domain.push.PushNotificationSender
+import com.mozgobolt.core.resilience.PUSH_MAX_CONCURRENT_CALLS
 import com.mozgobolt.feature.deviceInstallation.domain.FakeDeviceInstallationRepository
 import com.mozgobolt.feature.deviceInstallation.domain.model.DeviceInstallationError
 import com.mozgobolt.feature.deviceInstallation.domain.model.DevicePlatform
 import com.mozgobolt.feature.user.service.NoopTransactionalRunner
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -287,6 +290,87 @@ class DeviceInstallationServiceITest {
             fx.service.sendPush(userId = 1, data = mapOf("k" to "v"))
 
             assertTrue(fx.pushSender.sent.isEmpty())
+        }
+    }
+
+    @Test
+    fun `sendPush does not include installations registered after dispatch starts`() {
+        runBlocking {
+            val repository = FakeDeviceInstallationRepository()
+            val registrationService =
+                DeviceInstallationServiceI(repository, NoopTransactionalRunner(), FakePushNotificationSender())
+            val sent = mutableListOf<String>()
+            val sender =
+                object : PushNotificationSender {
+                    override suspend fun send(
+                        installationId: String,
+                        data: Map<String, String>,
+                    ) {
+                        sent += installationId
+                        if (installationId == "original") {
+                            registrationService.registerInstallation(
+                                userId = 1,
+                                installationId = "registered-during-send",
+                                platform = DevicePlatform.ANDROID,
+                            )
+                        }
+                    }
+                }
+            val service = DeviceInstallationServiceI(repository, NoopTransactionalRunner(), sender)
+            registrationService.registerInstallation(
+                userId = 1,
+                installationId = "original",
+                platform = DevicePlatform.ANDROID,
+            )
+
+            service.sendPush(userId = 1, data = mapOf("k" to "v"))
+
+            assertEquals(listOf("original"), sent)
+            assertEquals(
+                setOf("original", "registered-during-send"),
+                repository.findAllForUser(1).map { it.installationId }.toSet(),
+            )
+        }
+    }
+
+    @Test
+    fun `sendPush bounds concurrent delivery work to the configured bulkhead size`() {
+        runBlocking {
+            val repository = FakeDeviceInstallationRepository()
+            val activeSends = AtomicInteger()
+            val maximumConcurrentSends = AtomicInteger()
+            val completedSends = AtomicInteger()
+            val sender =
+                object : PushNotificationSender {
+                    override suspend fun send(
+                        installationId: String,
+                        data: Map<String, String>,
+                    ) {
+                        val active = activeSends.incrementAndGet()
+                        maximumConcurrentSends.updateAndGet { current -> maxOf(current, active) }
+                        try {
+                            delay(10)
+                            completedSends.incrementAndGet()
+                        } finally {
+                            activeSends.decrementAndGet()
+                        }
+                    }
+                }
+            val service = DeviceInstallationServiceI(repository, NoopTransactionalRunner(), sender)
+            val installationCount = PUSH_MAX_CONCURRENT_CALLS * 3
+
+            repeat(installationCount) { index ->
+                service.registerInstallation(
+                    userId = 1,
+                    installationId = "device-$index",
+                    platform = DevicePlatform.ANDROID,
+                )
+            }
+
+            service.sendPush(userId = 1, data = mapOf("k" to "v"))
+
+            assertEquals(installationCount, completedSends.get())
+            assertTrue(maximumConcurrentSends.get() in 2..PUSH_MAX_CONCURRENT_CALLS)
         }
     }
 }

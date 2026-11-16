@@ -25,6 +25,20 @@ interface DeviceInstallationRepository {
     /** Lists the device installations currently owned by [userId]. */
     suspend fun findAllForUser(userId: Int): List<DeviceInstallation>
 
+    /** Returns the greatest persisted installation ID currently owned by [userId], or `null` when none exist. */
+    suspend fun findLatestIdForUser(userId: Int): Int?
+
+    /**
+     * Reads at most [limit] installations for [userId], ordered by ID, after [afterId] and no later than
+     * [throughId]. The upper bound lets a caller page a finite snapshot without holding a transaction open.
+     */
+    suspend fun findPageForUser(
+        userId: Int,
+        afterId: Int?,
+        throughId: Int,
+        limit: Int,
+    ): List<DeviceInstallation>
+
     /** `true` if a matching row owned by [userId] existed and was deleted. */
     suspend fun deleteForUser(
         userId: Int,

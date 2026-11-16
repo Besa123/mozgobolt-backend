@@ -9,7 +9,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-private const val EARTH_RADIUS_KM = 6371.0088
+internal const val EARTH_RADIUS_KM = 6371.0088
 
 /**
  * Great-circle distance between two points, in kilometers (Haversine formula). Not worth a

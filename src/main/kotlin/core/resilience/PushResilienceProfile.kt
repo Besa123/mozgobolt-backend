@@ -9,7 +9,7 @@ import com.mozgobolt.core.data.push.PermanentPushDeliveryException
 import com.mozgobolt.core.data.push.TransientPushDeliveryException
 import java.time.Duration
 
-private const val PUSH_MAX_CONCURRENT_CALLS = 16
+internal const val PUSH_MAX_CONCURRENT_CALLS = 16
 private const val PUSH_MINIMUM_NUMBER_OF_CALLS = 10
 private const val PUSH_CIRCUIT_BREAKER_WINDOW_SIZE = 20
 private const val PUSH_SLOW_CALL_THRESHOLD_SECONDS = 5L

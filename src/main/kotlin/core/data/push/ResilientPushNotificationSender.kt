@@ -29,9 +29,11 @@ class ResilientPushNotificationSender(
     override suspend fun send(
         installationId: String,
         data: Map<String, String>,
-    ) = runSuspendCatching {
-        resilience.execute { delegate.send(installationId, data) }
-    }.onFailure { logDeliveryFailure(it) }.getOrThrow()
+    ) {
+        runSuspendCatching {
+            resilience.execute { delegate.send(installationId, data) }
+        }.onError { logDeliveryFailure(it) }.getOrThrow { it }
+    }
 
     private fun logDeliveryFailure(throwable: Throwable) {
         when (throwable) {

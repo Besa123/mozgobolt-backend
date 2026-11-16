@@ -12,6 +12,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import java.time.Instant
+import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -77,6 +78,39 @@ class RedisRelayVehicleLocationHubTest {
             assertEquals(VEHICLE_LOCATION_CHANNEL, relay.published.single().channel)
         }
 
+    @Test
+    fun `batch publish relays one ordered message and updates the receiving instance`() =
+        runBlocking {
+            val relay = FakeMessageRelay()
+            val hubA = relayHub(relay)
+            val hubB = relayHub(relay)
+            val first = update(vehicleId = 42).copy(sharesLocationWithCustomers = true)
+            val updates =
+                (0L until 100L).map { offset ->
+                    first.copy(
+                        recordedAt = first.recordedAt.plusMillis(offset),
+                        idempotencyKey = UUID.randomUUID(),
+                    )
+                }
+
+            hubB.start()
+            try {
+                withTimeout(TEST_AWAIT_TIMEOUT) { relay.awaitSubscriber(VEHICLE_LOCATION_CHANNEL) }
+
+                assertEquals(updates, hubA.publishBatchIfCurrent(updates))
+                awaitRelayCount(relay, expectedCount = 1)
+                withTimeout(TEST_AWAIT_TIMEOUT) {
+                    while (hubB.lastKnownLocation(vehicleId = 42)?.recordedAt != updates.last().recordedAt) {
+                        delay(10)
+                    }
+                }
+                assertEquals(1, relay.published.size)
+                assertEquals(updates.last(), hubB.lastKnownLocation(vehicleId = 42))
+            } finally {
+                hubB.stop()
+            }
+        }
+
     // hubA's publish() relays to a real background dispatcher (Dispatchers.IO), and hubB's own
     // relay-consuming loop runs on another — a cross-thread hop, unlike this test suite's other
     // single-dispatcher hubs where a yield() is enough. lastKnownLocation() is a plain
@@ -109,9 +143,11 @@ class RedisRelayVehicleLocationHubTest {
             hubB.start()
             withTimeout(TEST_AWAIT_TIMEOUT) { relay.awaitSubscriber(VEHICLE_LOCATION_CHANNEL) }
 
-            hubA.publish(update(vehicleId = 42))
+            val update = update(vehicleId = 42)
+            hubA.publish(update)
 
-            assertEquals(42, pollLastKnownLocation(hubB, vehicleId = 42)?.vehicleId)
+            assertEquals(update, pollLastKnownLocation(hubB, vehicleId = 42))
+            assertEquals(1, relay.published.size)
             hubB.stop()
         }
 

@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "MozgoBolt API",
-    "description": "Backend API for MozgoBolt \u2014 real-time GPS tracking for mobile vendors (e.g. moving food trucks/bakeries) so buyers can see nearby vendor vehicles on a live map, ping a vehicle they're interested in, and get notified when a favorited company's vehicle enters an area they've saved.\n\nDomain model: a vendor's first company creation makes them its admin; other vendors join via invite code. A company owns vehicles; a vendor links themself to a vehicle for a driving session (an active `VehicleAssignment`) and unlinks at the end of it \u2014 all GPS telemetry is tied to whichever vehicle currently has an active assignment for the calling vendor, never directly to the vendor. A buyer favorites companies (not individual vehicles) and can save named locations to be notified about.\n\nRate limits: a global 150 requests/minute per client; every `/api/v1/auth/*` endpoint additionally enforces 5 requests/minute (429); every other authenticated endpoint enforces 60 requests/minute keyed by user id (429); file-upload endpoints enforce a stricter 10 requests/minute. POST/PATCH bodies are size-limited (413 when exceeded) and requests time out server-side (504). Error bodies, where present, use the `ErrorResponse` shape; `error` is the machine-readable code to switch on, `message`/`details` are human-readable context only.\n\nTwo endpoints are Server-Sent Events (SSE) streams, not typical request/response \u2014 `GET /vehicle-tracking/live` and `GET /vehicle-tracking/pings/live` \u2014 documented below with the event types each one emits, since OpenAPI has no first-class SSE modeling.",
+    "description": "Backend API for MozgoBolt \u2014 real-time GPS tracking for mobile vendors (e.g. moving food trucks/bakeries) so buyers can see nearby vendor vehicles on a live map, ping a vehicle they're interested in, and get notified when a favorited company's vehicle enters an area they've saved.\n\nDomain model: a vendor's first company creation makes them its admin; other vendors join via invite code. A company owns vehicles; a vendor links themself to a vehicle for a driving session (an active `VehicleAssignment`) and unlinks at the end of it \u2014 all GPS telemetry is tied to whichever vehicle currently has an active assignment for the calling vendor, never directly to the vendor. A buyer favorites companies (not individual vehicles) and can save named locations to be notified about.\n\nRate limits: a global 150 requests/minute per client; public authentication endpoints use `AUTH_LIMIT` (5 requests/minute); authenticated API endpoints, including protected auth endpoints, use `API_LIMIT` (60 requests/minute keyed by user id); file-upload endpoints use `UPLOAD_LIMIT` (10 requests/minute). These limiter responses use `429 RATE_LIMITED`; domain 429s retain their specific codes, such as `ACCOUNT_LOCKED` and `COOLDOWN_ACTIVE`. POST/PATCH bodies are size-limited (413 when exceeded) and requests time out server-side (504). All API errors use the `ErrorResponse` envelope; authentication failures use generic `UNAUTHORIZED`, `INVALID_CREDENTIALS`, or `TOKEN_REUSE_DETECTED` codes. `error` is the machine-readable code to switch on; `message`/`details` are human-readable context only.\n\nThree endpoints are Server-Sent Events (SSE) streams, not typical request/response \u2014 `GET /api/v1/vehicle-tracking/live`, `GET /api/v1/vehicle-tracking/pings/live`, and `GET /api/v1/sync/live` \u2014 documented below with the event types each one emits, since OpenAPI has no first-class SSE modeling.",
     "version": "1.0.0"
   },
   "servers": [
@@ -514,7 +514,17 @@
             }
           },
           "429": {
-            "description": "Rate limit exceeded"
+            "description": "Authentication rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "RATE_LIMITED"
+                }
+              }
+            }
           }
         }
       }
@@ -569,7 +579,17 @@
             }
           },
           "401": {
-            "description": "Invalid credentials"
+            "description": "Invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "INVALID_CREDENTIALS"
+                }
+              }
+            }
           },
           "429": {
             "description": "Account temporarily locked after too many failed attempts, or rate limited",
@@ -578,8 +598,17 @@
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
-                "example": {
-                  "error": "ACCOUNT_LOCKED"
+                "examples": {
+                  "accountLocked": {
+                    "value": {
+                      "error": "ACCOUNT_LOCKED"
+                    }
+                  },
+                  "rateLimited": {
+                    "value": {
+                      "error": "RATE_LIMITED"
+                    }
+                  }
                 }
               }
             }
@@ -639,7 +668,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "404": {
             "description": "The authenticated user no longer exists",
@@ -708,7 +747,7 @@
             }
           },
           "401": {
-            "description": "Invalid credentials, or reuse of an already-rotated token detected",
+            "description": "Invalid credentials (`INVALID_CREDENTIALS`), or reuse of an already-rotated token detected (`TOKEN_REUSE_DETECTED`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -957,14 +996,23 @@
             }
           },
           "429": {
-            "description": "Account locked",
+            "description": "Account locked or authentication rate limit exceeded",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
-                "example": {
-                  "error": "ACCOUNT_LOCKED"
+                "examples": {
+                  "accountLocked": {
+                    "value": {
+                      "error": "ACCOUNT_LOCKED"
+                    }
+                  },
+                  "rateLimited": {
+                    "value": {
+                      "error": "RATE_LIMITED"
+                    }
+                  }
                 }
               }
             }
@@ -1003,7 +1051,17 @@
             "description": "Logged out"
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1026,7 +1084,17 @@
             "description": "All sessions revoked"
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1173,7 +1241,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1226,7 +1304,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "403": {
             "description": "Caller must have the VENDOR account role",
@@ -1311,7 +1399,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "403": {
             "description": "Caller's role is not permitted, or not an admin of this company"
@@ -1388,7 +1486,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "403": {
             "description": "Caller must have the VENDOR account role"
@@ -1489,7 +1597,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "403": {
             "description": "Caller's role is not permitted, or not an admin of this company"
@@ -1526,7 +1644,17 @@
             "description": "Deleted"
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "403": {
             "description": "Caller's role is not permitted, or not an admin of this company"
@@ -1606,7 +1734,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "403": {
             "description": "Caller is not a company admin",
@@ -1682,7 +1820,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "403": {
             "description": "Caller's role is not permitted, or not an admin of this company"
@@ -1742,7 +1890,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "403": {
             "description": "Caller must have the VENDOR account role and belong to this company",
@@ -1798,7 +1956,17 @@
             "description": "Promoted"
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "403": {
             "description": "Caller's role is not permitted, or not an admin of this company"
@@ -1857,7 +2025,17 @@
             "description": "Demoted"
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "403": {
             "description": "Caller's role is not permitted, or not an admin of this company"
@@ -1929,7 +2107,17 @@
             "description": "Removed"
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "403": {
             "description": "Caller's role is not permitted, or not an admin of this company"
@@ -1992,7 +2180,17 @@
             "description": "Left"
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "404": {
             "description": "Not a member of this company",
@@ -2052,7 +2250,17 @@
             "description": "Favorited"
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "404": {
             "description": "Company not found",
@@ -2097,7 +2305,17 @@
             "description": "Unfavorited"
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "404": {
             "description": "Company not found",
@@ -2143,7 +2361,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2223,7 +2451,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "403": {
             "description": "Not a member/admin of this company"
@@ -2294,7 +2532,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "403": {
             "description": "Not a member/admin of this company"
@@ -2414,7 +2662,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "403": {
             "description": "Not a member/admin of this company"
@@ -2486,7 +2744,17 @@
             "description": "Archived"
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "403": {
             "description": "Not a member/admin of this company"
@@ -2566,7 +2834,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "400": {
             "description": "Not an image, corrupt, or infected",
@@ -2664,7 +2942,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "403": {
             "description": "Caller must have the VENDOR account role",
@@ -2718,7 +3006,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "404": {
             "description": "Vehicle not found or archived",
@@ -2773,7 +3071,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "404": {
             "description": "Vehicle not found, archived, or has no picture",
@@ -2827,7 +3135,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "403": {
             "description": "Not a member of this vehicle's company"
@@ -2890,7 +3208,17 @@
             "description": "Ended"
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "409": {
             "description": "Not currently linked to this vehicle",
@@ -2937,7 +3265,17 @@
             "description": "Ended"
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "403": {
             "description": "Caller's role is not permitted, or not an admin of this company"
@@ -2979,11 +3317,24 @@
     "/api/v1/vehicle-tracking/telemetry": {
       "post": {
         "summary": "Submit a GPS telemetry batch",
-        "description": "Vendor-only. Tied to the caller's currently active vehicle assignment \u2014 there is no vehicle id parameter; the backend resolves it server-side, so a vendor cannot report telemetry for a vehicle they're not driving. Points implausible relative to the previous accepted point (e.g. faster than 200 km/h, allowing ~500m of GPS jitter for ambiguously-ordered timestamps) are silently dropped, not rejected. Max 100 points per batch.",
+        "description": "Vendor-only. Tied to the caller's currently active vehicle assignment \u2014 there is no vehicle id parameter; the backend resolves it server-side, so a vendor cannot report telemetry for a vehicle they're not driving. Points implausible relative to the previous accepted point (e.g. faster than 200 km/h, allowing ~500m of GPS jitter for ambiguously-ordered timestamps) are silently dropped, not rejected. Max 100 points per batch. For an uncertain network retry, an optional Idempotency-Key replays the accepted response without publishing the batch twice.",
         "tags": [
           "Vehicle Tracking"
         ],
         "operationId": "ingestTelemetry",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Reuse the same key only when retrying the identical telemetry batch after an uncertain response.",
+            "schema": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -3016,14 +3367,33 @@
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
-                "example": {
-                  "error": "VALIDATION_FAILED"
+                "examples": {
+                  "validationFailed": {
+                    "value": {
+                      "error": "VALIDATION_FAILED"
+                    }
+                  },
+                  "invalidIdempotencyKey": {
+                    "value": {
+                      "error": "INVALID_IDEMPOTENCY_KEY"
+                    }
+                  }
                 }
               }
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "409": {
             "description": "Caller has no active vehicle assignment",
@@ -3032,8 +3402,43 @@
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
+                "examples": {
+                  "notLinked": {
+                    "value": {
+                      "error": "NOT_LINKED_TO_VEHICLE"
+                    }
+                  },
+                  "requestInProgress": {
+                    "value": {
+                      "error": "REQUEST_IN_PROGRESS"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The Idempotency-Key was already used with a different telemetry batch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
                 "example": {
-                  "error": "NOT_LINKED_TO_VEHICLE"
+                  "error": "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "RATE_LIMITED"
                 }
               }
             }
@@ -3046,10 +3451,10 @@
         ]
       }
     },
-    "/vehicle-tracking/live": {
+    "/api/v1/vehicle-tracking/live": {
       "get": {
         "summary": "Live vehicle positions (SSE)",
-        "description": "Server-Sent Events stream. Any authenticated user. Query params: `scope` (`nearby`, the default, or `all` \u2014 the explicit opt-in \"see everything nationwide\" mode, never a default), `lat`/`lon`/`radiusKm` (required when scope=nearby; radiusKm defaults to 5, max 25).\n\nOn connect, sends the current snapshot as a burst of `location` events, then streams live updates. Event types:\n- `location`: a `VehicleLocation` \u2014 a vehicle moved.\n- `offline`: `{\"vehicleId\": <int>}` \u2014 a vehicle's driving session ended; the client should remove its pin immediately rather than waiting for it to go stale.\n- `reconnect`: no data \u2014 sent shortly before the access token expires, so the client reconnects with a fresh one.\n- `error`: an `ErrorResponse` \u2014 sent once and the stream ends, if `scope`/`lat`/`lon`/`radiusKm` failed validation.",
+        "description": "Server-Sent Events stream. Buyer-only. Only `scope=nearby` is supported (the default); there is no nationwide `scope=all` mode. `lat` and `lon` are required. `radiusKm` defaults to 5 and must be greater than 0 and no more than 25.\n\nOn connect, sends the current snapshot as a burst of `location` events, then streams live updates. Only vehicle assignments with customer-sharing consent are included. Event types:\n- `location`: a `VehicleLocation` \u2014 a vehicle moved.\n- `offline`: `{\"vehicleId\": <int>}` \u2014 a vehicle's driving session ended; the client should remove its pin immediately rather than waiting for it to go stale.\n- `reconnect`: no data \u2014 sent shortly before the access token expires, so the client reconnects with a fresh one.\n- `error`: an `ErrorResponse` \u2014 sent once and the stream ends, if `scope`/`lat`/`lon`/`radiusKm` failed validation.",
         "tags": [
           "Vehicle Tracking"
         ],
@@ -3064,27 +3469,33 @@
             "name": "scope",
             "in": "query",
             "required": false,
-            "description": "nearby (default) or all",
+            "description": "Only nearby is supported; defaults to nearby",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "nearby"
+              ],
+              "default": "nearby"
             }
           },
           {
             "name": "lat",
             "in": "query",
-            "required": false,
+            "required": true,
             "description": "Required when scope=nearby",
             "schema": {
-              "type": "string"
+              "type": "number",
+              "format": "double"
             }
           },
           {
             "name": "lon",
             "in": "query",
-            "required": false,
+            "required": true,
             "description": "Required when scope=nearby",
             "schema": {
-              "type": "string"
+              "type": "number",
+              "format": "double"
             }
           },
           {
@@ -3093,7 +3504,9 @@
             "required": false,
             "description": "Default 5, max 25",
             "schema": {
-              "type": "string"
+              "type": "number",
+              "format": "double",
+              "default": 5
             }
           }
         ],
@@ -3104,6 +3517,32 @@
               "text/event-stream": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not a buyer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "FORBIDDEN"
                 }
               }
             }
@@ -3172,7 +3611,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "404": {
             "description": "Vehicle not found",
@@ -3221,7 +3670,7 @@
         ]
       }
     },
-    "/vehicle-tracking/pings/live": {
+    "/api/v1/vehicle-tracking/pings/live": {
       "get": {
         "summary": "Live pings for the driving vendor (SSE)",
         "description": "Server-Sent Events stream. Vendor-only. Streams `ping` events (a `VehiclePingNotification`) as buyers ping whichever vehicle the caller is currently driving. Also emits `reconnect` (no data) shortly before token expiry. A ping while the vendor isn't connected here is still delivered via push notification separately \u2014 this stream is the real-time-while-open complement, not the only delivery path.",
@@ -3241,6 +3690,32 @@
               "text/event-stream": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not a vendor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "FORBIDDEN"
                 }
               }
             }
@@ -3307,7 +3782,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3341,7 +3826,17 @@
             "description": "Unregistered"
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "404": {
             "description": "Not found",
@@ -3430,7 +3925,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3461,7 +3966,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3495,7 +4010,17 @@
             "description": "Deleted"
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           },
           "404": {
             "description": "Not found",
@@ -3558,7 +4083,17 @@
             }
           },
           "401": {
-            "description": "Missing or invalid access token"
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3568,10 +4103,10 @@
         ]
       }
     },
-    "/sync/live": {
+    "/api/v1/sync/live": {
       "get": {
         "summary": "Live sync hint stream (SSE)",
-        "description": "Server-Sent Events stream. Emits a `changed` event (data: the sync event id) as a hint to re-pull via `GET /api/v1/sync` \u2014 never the changed data itself. Skips hints for the connecting device's own actions. Also emits `reconnect` (no data) shortly before token expiry. Backed by Postgres LISTEN/NOTIFY, so this works across multiple backend instances without needing Redis.",
+        "description": "Server-Sent Events stream. Emits a `changed` event (data: the sync event id) as a hint to re-pull via `GET /api/v1/sync` \u2014 never the changed data itself. A hint is suppressed when its recorded origin device ID matches the connecting device ID; most current mutations do not supply an origin device ID, so clients must still deduplicate by cursor/event ID. Also emits `reconnect` (no data) shortly before token expiry. Backed by Postgres LISTEN/NOTIFY, so this works across multiple backend instances without needing Redis.",
         "tags": [
           "Sync"
         ],
@@ -3588,6 +4123,19 @@
               "text/event-stream": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": "UNAUTHORIZED"
                 }
               }
             }

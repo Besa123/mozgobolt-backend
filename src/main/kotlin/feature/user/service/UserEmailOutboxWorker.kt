@@ -15,7 +15,6 @@ import com.mozgobolt.feature.user.domain.model.UserEmailOutboxDelivery
 import com.mozgobolt.feature.user.domain.model.UserEmailType
 import com.mozgobolt.feature.user.domain.model.userEmailOutboxEncryptionContext
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -53,9 +52,9 @@ class UserEmailOutboxWorker(
             backgroundScope.launch(CoroutineName("user-email-outbox-worker")) {
                 while (isActive) {
                     runSuspendCatching { processAvailableOnce() }
-                        .onFailure { failure ->
+                        .onError { failure ->
                             logger.error {
-                                "Email outbox polling failed (${failure::class.simpleName}); retrying next poll"
+                                "Email outbox polling failed (${failure.javaClass.simpleName}); retrying next poll"
                             }
                         }
                     delay(pollInterval)
@@ -120,7 +119,7 @@ class UserEmailOutboxWorker(
                     UserEmailType.VERIFICATION -> emailService.sendVerificationEmail(delivery.recipientEmail, token)
                     UserEmailType.PASSWORD_RESET -> emailService.sendPasswordResetEmail(delivery.recipientEmail, token)
                 }
-            }.exceptionOrNull()
+            }.errorOrNull()
 
         if (failure == null) {
             val wasMarkedDelivered = tx.transactional { repository.markDelivered(delivery.id, delivery.leaseToken) }
@@ -138,7 +137,6 @@ class UserEmailOutboxWorker(
             return
         }
 
-        if (failure is CancellationException) throw failure
         if (failure !is Exception) throw failure
 
         if (failure is PermanentEmailDeliveryException) {

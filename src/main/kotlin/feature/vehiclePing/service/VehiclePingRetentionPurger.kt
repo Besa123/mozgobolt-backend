@@ -40,7 +40,7 @@ class VehiclePingRetentionPurger(
             backgroundScope.launch(CoroutineName("vehicle-ping-retention-purger")) {
                 while (isActive) {
                     runSuspendCatching { purge() }
-                        .onFailure {
+                        .onError {
                             logger.error(it) { "Failed to purge expired vehicle ping state; retrying next interval" }
                         }
                     delay(checkInterval)

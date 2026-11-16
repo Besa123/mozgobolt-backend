@@ -12,8 +12,12 @@ import com.mozgobolt.feature.deviceInstallation.domain.model.DevicePlatform
 import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.core.greater
+import org.jetbrains.exposed.v1.core.lessEq
 import org.jetbrains.exposed.v1.core.plus
+import org.jetbrains.exposed.v1.jdbc.andWhere
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
+import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.upsert
 import java.nio.charset.StandardCharsets
@@ -65,6 +69,40 @@ class DeviceInstallationRepositoryI : DeviceInstallationRepository {
             .where { DeviceInstallationsTable.userId eq userId }
             .orderBy(DeviceInstallationsTable.id to SortOrder.ASC)
             .map { it.toDeviceInstallation() }
+
+    override suspend fun findLatestIdForUser(userId: Int): Int? =
+        DeviceInstallationsTable
+            .select(DeviceInstallationsTable.id)
+            .where { DeviceInstallationsTable.userId eq userId }
+            .orderBy(DeviceInstallationsTable.id to SortOrder.DESC)
+            .limit(1)
+            .firstOrNull()
+            ?.let { row -> row[DeviceInstallationsTable.id].value }
+
+    override suspend fun findPageForUser(
+        userId: Int,
+        afterId: Int?,
+        throughId: Int,
+        limit: Int,
+    ): List<DeviceInstallation> {
+        require(limit > 0) { "Device installation page limit must be positive" }
+
+        val query =
+            DeviceInstallationsTable
+                .selectAll()
+                .where {
+                    (DeviceInstallationsTable.userId eq userId) and
+                        (DeviceInstallationsTable.id lessEq throughId)
+                }
+        afterId?.let { cursor ->
+            query.andWhere { DeviceInstallationsTable.id greater cursor }
+        }
+
+        return query
+            .orderBy(DeviceInstallationsTable.id to SortOrder.ASC)
+            .limit(limit)
+            .map { it.toDeviceInstallation() }
+    }
 
     override suspend fun deleteForUser(
         userId: Int,

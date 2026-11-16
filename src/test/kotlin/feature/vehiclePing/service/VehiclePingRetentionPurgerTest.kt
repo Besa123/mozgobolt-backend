@@ -4,6 +4,7 @@
 
 package com.mozgobolt.feature.vehiclePing.service
 
+import com.mozgobolt.core.database.TransactionOutcome
 import com.mozgobolt.core.database.TransactionalRunner
 import com.mozgobolt.core.utility.ApplicationBackgroundScope
 import com.mozgobolt.feature.vehiclePing.domain.VehiclePingRepository
@@ -31,6 +32,9 @@ class VehiclePingRetentionPurgerTest {
             callCount++
             return block()
         }
+
+        override suspend fun <T> transactionalWithOutcome(block: suspend () -> TransactionOutcome<T>): T =
+            transactional { block().value }
     }
 
     private class FakeVehiclePingRepository : VehiclePingRepository {

@@ -14,6 +14,7 @@ import com.mozgobolt.core.modules.plugin.validatedPost
 import com.mozgobolt.core.routing.dto.response.ErrorResponse
 import com.mozgobolt.core.utility.functions.currentUserIdOrNull
 import com.mozgobolt.core.utility.functions.protectedApi
+import com.mozgobolt.core.utility.functions.respondUnauthorized
 import com.mozgobolt.feature.savedLocation.domain.SavedLocationService
 import com.mozgobolt.feature.savedLocation.domain.model.SavedLocationError
 import com.mozgobolt.feature.savedLocation.routing.dto.request.CreateSavedLocationRequestDto
@@ -37,7 +38,7 @@ fun Route.savedLocationRoutes(
             BodyLimit.TINY,
             RequestTimeout.STANDARD,
         ) { request ->
-            val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
+            val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respondUnauthorized()
 
             // A network retry re-sending the same "save this location" request must not create a
             // second, identical saved location.
@@ -55,7 +56,7 @@ fun Route.savedLocationRoutes(
         }
 
         get("/saved-locations") {
-            val userId = call.currentUserIdOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
+            val userId = call.currentUserIdOrNull() ?: return@get call.respondUnauthorized()
 
             call.respond(
                 HttpStatusCode.OK,
@@ -63,8 +64,8 @@ fun Route.savedLocationRoutes(
             )
         }
 
-        limitedDelete("/saved-locations/{id}", timeout = RequestTimeout.FAST) {
-            val userId = call.currentUserIdOrNull() ?: return@limitedDelete call.respond(HttpStatusCode.Unauthorized)
+        limitedDelete("/saved-locations/{id}", limit = BodyLimit.TINY, timeout = RequestTimeout.FAST) {
+            val userId = call.currentUserIdOrNull() ?: return@limitedDelete call.respondUnauthorized()
             val savedLocationId =
                 call.parameters["id"]?.toIntOrNull()
                     ?: return@limitedDelete call.respond(

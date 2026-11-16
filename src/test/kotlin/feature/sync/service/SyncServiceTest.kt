@@ -253,7 +253,7 @@ class SyncServiceTest {
                     harness.awaitWaitingForUserSyncLock(userId = 1)
                     allowRollback.complete(Unit)
 
-                    assertTrue(withTimeout(5.seconds) { first.await() }.isFailure)
+                    checkNotNull(withTimeout(5.seconds) { first.await() }.errorOrNull())
                     second.await()
 
                     val page = harness.service.changesSince(userId = 1, cursor = 0, limit = 10)

@@ -371,8 +371,8 @@ class VehicleLocationRepositoryRealDatabaseTest {
                     allowDeletionToCommit.complete(Unit)
                     assertEquals(1, deletion.await())
                     val insertionResult = withTimeout(5_000) { insertion.await() }
-                    assertTrue(insertionResult.isFailure, "the deleted assignment must reject the late history row")
-                    assertSqlState(checkNotNull(insertionResult.exceptionOrNull()), "23503")
+                    val insertionFailure = checkNotNull(insertionResult.errorOrNull())
+                    assertSqlState(insertionFailure, "23503")
                     assertEquals(0L, harness.countLocations())
                 } finally {
                     allowDeletionToCommit.complete(Unit)

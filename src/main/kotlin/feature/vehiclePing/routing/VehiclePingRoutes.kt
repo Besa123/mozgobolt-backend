@@ -9,10 +9,10 @@ import com.mozgobolt.core.data.idempotency.idempotent
 import com.mozgobolt.core.data.idempotency.idempotentResult
 import com.mozgobolt.core.domain.security.AccessTokenSessionValidator
 import com.mozgobolt.core.modules.plugin.BodyLimit
-import com.mozgobolt.core.modules.plugin.RECONNECT_WARNING_LEAD_TIME
 import com.mozgobolt.core.modules.plugin.RequestTimeout
 import com.mozgobolt.core.modules.plugin.SSE_EVENT_RECONNECT
 import com.mozgobolt.core.modules.plugin.SSE_HEARTBEAT_PERIOD
+import com.mozgobolt.core.modules.plugin.runSseCollectionWithReconnectWarning
 import com.mozgobolt.core.modules.plugin.validatedPost
 import com.mozgobolt.core.routing.dto.response.ErrorResponse
 import com.mozgobolt.core.utility.functions.collectWhileAccessSessionActive
@@ -20,6 +20,7 @@ import com.mozgobolt.core.utility.functions.currentTokenFamilyIdOrNull
 import com.mozgobolt.core.utility.functions.currentUserIdOrNull
 import com.mozgobolt.core.utility.functions.protectedApi
 import com.mozgobolt.core.utility.functions.remainingJwtValidityOrNull
+import com.mozgobolt.core.utility.functions.respondUnauthorized
 import com.mozgobolt.feature.user.domain.model.UserRole
 import com.mozgobolt.feature.user.routing.requireRole
 import com.mozgobolt.feature.vehiclePing.domain.VehiclePingHub
@@ -36,8 +37,6 @@ import io.ktor.server.routing.route
 import io.ktor.server.sse.heartbeat
 import io.ktor.server.sse.sse
 import io.ktor.sse.ServerSentEvent
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -65,7 +64,7 @@ fun Route.vehiclePingRoutes(
         ) { request ->
             if (!requireRole(UserRole.BUYER)) return@validatedPost
             val buyerUserId =
-                call.currentUserIdOrNull() ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
+                call.currentUserIdOrNull() ?: return@validatedPost call.respondUnauthorized()
             val vehicleId =
                 call.parameters["id"]?.toIntOrNull()
                     ?: return@validatedPost call.respond(
@@ -121,23 +120,23 @@ private fun Route.vehiclePingLiveRoute(
 
             heartbeat { period = SSE_HEARTBEAT_PERIOD }
 
-            launch {
-                delay((remainingTokenValidity - RECONNECT_WARNING_LEAD_TIME).coerceAtLeast(Duration.ZERO))
-                send(ServerSentEvent(event = SSE_EVENT_RECONNECT))
-            }
-
             withTimeoutOrNull(remainingTokenValidity) {
-                hub.subscribe(vendorUserId).collectWhileAccessSessionActive(
-                    userId = vendorUserId,
-                    familyId = familyId,
-                    validator = accessTokenSessionValidator,
-                ) { notification ->
-                    send(
-                        ServerSentEvent(
-                            data = Json.encodeToString(notification.toResponseDto()),
-                            event = SSE_EVENT_PING,
-                        ),
-                    )
+                runSseCollectionWithReconnectWarning(
+                    remainingTokenValidity = remainingTokenValidity,
+                    sendReconnectEvent = { send(ServerSentEvent(event = SSE_EVENT_RECONNECT)) },
+                ) {
+                    hub.subscribe(vendorUserId).collectWhileAccessSessionActive(
+                        userId = vendorUserId,
+                        familyId = familyId,
+                        validator = accessTokenSessionValidator,
+                    ) { notification ->
+                        send(
+                            ServerSentEvent(
+                                data = Json.encodeToString(notification.toResponseDto()),
+                                event = SSE_EVENT_PING,
+                            ),
+                        )
+                    }
                 }
             }
         }

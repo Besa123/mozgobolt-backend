@@ -46,6 +46,7 @@ import com.mozgobolt.feature.vehiclePing.domain.model.VehiclePingOutcome
 import com.mozgobolt.feature.vehiclePing.service.InMemoryVehiclePingHub
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationHub
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleTrackingService
+import com.mozgobolt.feature.vehicleTracking.domain.model.TelemetryDispatchPlan
 import com.mozgobolt.feature.vehicleTracking.domain.model.TelemetryError
 import com.mozgobolt.feature.vehicleTracking.domain.model.TelemetryPoint
 import com.mozgobolt.feature.vehicleTracking.service.H3CellIndexer
@@ -53,6 +54,7 @@ import com.mozgobolt.feature.vehicleTracking.service.InMemoryVehicleLocationHub
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.post
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.plugins.di.dependencies
 import io.ktor.server.testing.testApplication
@@ -65,6 +67,7 @@ import java.time.Instant
 import java.util.logging.Logger
 import javax.sql.DataSource
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 
 class RoutingWiringTest {
@@ -145,6 +148,10 @@ class RoutingWiringTest {
                 val response = client.delete(path)
                 assertNotEquals(HttpStatusCode.NotFound, response.status, "expected $path to be a registered route")
             }
+
+            val unknownApiRoute = client.get("/api/v1/not-a-route")
+            assertEquals(HttpStatusCode.NotFound, unknownApiRoute.status)
+            assertEquals(true, unknownApiRoute.bodyAsText().contains("NOT_FOUND"))
         }
 }
 
@@ -340,10 +347,12 @@ private class FakeVehicleAssignmentService : VehicleAssignmentService {
 }
 
 private class FakeVehicleTrackingService : VehicleTrackingService {
-    override suspend fun ingestTelemetry(
+    override suspend fun prepareTelemetry(
         vendorUserId: Int,
         points: List<TelemetryPoint>,
-    ): AppResult<Unit, TelemetryError> = AppResult.Error(TelemetryError.NOT_LINKED_TO_VEHICLE)
+    ): AppResult<TelemetryDispatchPlan, TelemetryError> = AppResult.Error(TelemetryError.NOT_LINKED_TO_VEHICLE)
+
+    override suspend fun publishTelemetry(plan: TelemetryDispatchPlan) = Unit
 }
 
 private class FakeVehiclePingService : VehiclePingService {

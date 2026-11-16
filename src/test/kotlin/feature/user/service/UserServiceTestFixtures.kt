@@ -5,6 +5,7 @@
 package com.mozgobolt.feature.user.service
 
 import com.mozgobolt.core.data.validator.StandardEmailValidator
+import com.mozgobolt.core.database.TransactionOutcome
 import com.mozgobolt.core.database.TransactionalRunner
 import com.mozgobolt.core.domain.AppResult
 import com.mozgobolt.core.domain.security.PasswordBreachCheckError
@@ -269,6 +270,8 @@ class RecordingUserEmailOutboxRepository : UserEmailOutboxRepository {
 
 class NoopTransactionalRunner : TransactionalRunner {
     override suspend fun <T> transactional(block: suspend () -> T): T = block()
+
+    override suspend fun <T> transactionalWithOutcome(block: suspend () -> TransactionOutcome<T>): T = block().value
 }
 
 class FakeUserRepository : UserRepository {

@@ -7,6 +7,7 @@ package com.mozgobolt.feature.vehiclePing.service
 import com.mozgobolt.core.data.push.FakePushNotificationSender
 import com.mozgobolt.core.data.push.InvalidPushTargetException
 import com.mozgobolt.core.data.push.PermanentPushDeliveryException
+import com.mozgobolt.core.database.TransactionOutcome
 import com.mozgobolt.core.database.TransactionalRunner
 import com.mozgobolt.core.domain.AppResult
 import com.mozgobolt.core.domain.push.PUSH_DATA_KEY_LATITUDE
@@ -540,6 +541,11 @@ class VehiclePingServiceITest {
 
     private class CommitFailingTransactionalRunner : TransactionalRunner {
         override suspend fun <T> transactional(block: suspend () -> T): T {
+            block()
+            error("synthetic commit failure")
+        }
+
+        override suspend fun <T> transactionalWithOutcome(block: suspend () -> TransactionOutcome<T>): T {
             block()
             error("synthetic commit failure")
         }

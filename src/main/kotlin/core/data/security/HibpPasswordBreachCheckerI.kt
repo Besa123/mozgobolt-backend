@@ -59,16 +59,20 @@ class HibpPasswordBreachCheckerI internal constructor(
         val prefix = passwordHash.take(SHA1_PREFIX_LENGTH)
         val suffix = passwordHash.drop(SHA1_PREFIX_LENGTH)
 
-        return runSuspendCatching {
+        return runSuspendCatching(
+            mapException = { failure ->
+                if (failure.isExpectedUnavailableFailure()) {
+                    logger.warn { "Password breach check unavailable" }
+                    PasswordBreachCheckError.UNAVAILABLE
+                } else {
+                    throw failure
+                }
+            },
+        ) {
             resilience.execute {
                 fetchHashRange(prefix).containsPositiveSuffix(suffix)
             }
-        }.fold(
-            onSuccess = { AppResult.Success(it) },
-            onFailure = { failure ->
-                if (failure.isExpectedUnavailableFailure()) unavailable() else throw failure
-            },
-        )
+        }
     }
 
     private suspend fun fetchHashRange(prefix: String): String {
@@ -98,11 +102,6 @@ class HibpPasswordBreachCheckerI internal constructor(
         } catch (failure: IOException) {
             throw TransientPasswordBreachException(failure)
         }
-
-    private fun unavailable(): AppResult.Error<PasswordBreachCheckError> {
-        logger.warn { "Password breach check unavailable" }
-        return AppResult.Error(PasswordBreachCheckError.UNAVAILABLE)
-    }
 
     private fun Throwable.isExpectedUnavailableFailure(): Boolean =
         this is TransientPasswordBreachException ||

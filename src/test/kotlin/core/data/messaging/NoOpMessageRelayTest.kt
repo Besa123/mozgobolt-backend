@@ -7,9 +7,15 @@ package com.mozgobolt.core.data.messaging
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class NoOpMessageRelayTest {
+    @Test
+    fun `reports that cross-instance relay is disabled`() {
+        assertFalse(NoOpMessageRelay().isCrossInstanceRelaySupported)
+    }
+
     @Test
     fun `start and stop are safe to call, in any order, any number of times`() {
         val relay = NoOpMessageRelay()

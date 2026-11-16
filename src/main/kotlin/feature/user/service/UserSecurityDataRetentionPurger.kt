@@ -43,8 +43,8 @@ class UserSecurityDataRetentionPurger(
             backgroundScope.launch(CoroutineName("user-security-data-retention-purger")) {
                 while (isActive) {
                     runSuspendCatching { purge() }
-                        .onFailure {
-                            logger.error(it) {
+                        .onError { failure ->
+                            logger.error(failure) {
                                 "Failed to purge expired authentication data; retrying next interval"
                             }
                         }

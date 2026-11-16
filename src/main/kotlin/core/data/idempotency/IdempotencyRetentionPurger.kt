@@ -35,8 +35,8 @@ class IdempotencyRetentionPurger(
             backgroundScope.launch(CoroutineName("idempotency-retention-purger")) {
                 while (isActive) {
                     runSuspendCatching { purge() }
-                        .onFailure {
-                            logger.error(it) {
+                        .onError { failure ->
+                            logger.error(failure) {
                                 "Failed to purge expired idempotency records; retrying next interval"
                             }
                         }

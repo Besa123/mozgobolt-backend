@@ -120,6 +120,34 @@ tasks.register<Copy>("promoteExposedInitialV1") {
     into(layout.projectDirectory.dir("src/main/resources/db/migration"))
 }
 
+tasks.register<JavaExec>("seedLiveLoadTestData") {
+    group = "verification"
+    description = "Seed test-only vendor, vehicle, assignment, and buyer accounts in a disposable *_loadtest database."
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("com.mozgobolt.loadtest.SeedLiveLoadDataKt")
+    workingDir = projectDir
+}
+
+tasks.register<JavaExec>("runSecurityProbes") {
+    group = "verification"
+    description =
+        "Run the OWASP API Security Top 10-shaped probe suite against a local app. Args: [baseUrl] [reportPath]."
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("com.mozgobolt.securityprobe.SecurityProbeRunnerKt")
+    workingDir = projectDir
+}
+
+tasks.register<JavaExec>("runLiveLoadTest") {
+    group = "verification"
+    description = "Run the live-location workload against a local app. Pass options with --args=\"--profile hotspot\"."
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("com.mozgobolt.loadtest.LiveWorkloadKt")
+    workingDir = projectDir
+}
+
 dependencies {
     implementation(ktorLibs.server.core)
     implementation(ktorLibs.server.netty)
@@ -144,7 +172,6 @@ dependencies {
     implementation(libs.logback.classic)
     implementation(libs.kotlin.logging)
     implementation(libs.logstash.logback.encoder)
-    implementation(libs.janino)
     implementation(libs.sentry.logback)
     implementation(libs.exposed.core)
     implementation(libs.exposed.jdbc)
@@ -178,6 +205,8 @@ dependencies {
 
     testImplementation(kotlin("test"))
     testImplementation(ktorLibs.server.testHost)
+    testImplementation(ktorLibs.client.core)
+    testImplementation(ktorLibs.client.cio)
     testImplementation(libs.testcontainers.core)
     testImplementation(libs.testcontainers.postgresql)
     testImplementation(libs.s3mock.testcontainers)

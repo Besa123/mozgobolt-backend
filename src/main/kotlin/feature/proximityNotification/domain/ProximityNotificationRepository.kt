@@ -42,15 +42,17 @@ interface ProximityNotificationRepository {
     ): Boolean
 
     /**
-     * Marks an existing triple as no longer inside, without touching
-     * [ProximityNotificationRecord.lastAttemptedAt] — so the next entry is judged against the
-     * last attempt, not when the vehicle happened to leave. A no-op if no
-     * record exists yet for this triple (nothing to mark).
+     * Marks every record of [vehicleId] at one of [savedLocationIds] that is still inside as no
+     * longer inside, in a single statement, without touching
+     * [ProximityNotificationRecord.lastAttemptedAt] — so the next entry is judged against the last
+     * attempt, not when the vehicle happened to leave. Records that are already outside, or that
+     * do not exist yet, are left alone (nothing to mark), and an empty [savedLocationIds] does not
+     * touch the database. One statement for all locations keeps a telemetry point's cost
+     * independent of how many buyers watch the vehicle's company.
      */
     suspend fun markOutside(
-        buyerUserId: Int,
-        savedLocationId: Int,
         vehicleId: Int,
+        savedLocationIds: Collection<Int>,
     )
 
     /** Removes notification state for a buyer and company and returns the number removed. */

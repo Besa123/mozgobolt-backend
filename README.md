@@ -3,21 +3,19 @@
 A Kotlin backend built on [Ktor](https://ktor.io), following feature-based Clean Architecture, powering real-time
 GPS tracking for mobile vendors (buyers see where a vendor's vehicle currently is). See
 [ARCHITECTURE.md](ARCHITECTURE.md) for how the code is organized and why, [CONTRIBUTING.md](CONTRIBUTING.md)
-for local setup and the checks a PR needs to pass, and [docs/adr/](docs/adr/) for the reasoning behind specific
-decisions (refresh-token rotation, results-over-exceptions, etc.).
+for local setup and the checks a PR needs to pass.
 
 ## Stack
 
 - **Kotlin** 2.4.10 / **JVM** 21, **Ktor** 3.5.2 (Netty engine)
 - **PostgreSQL** via **Exposed** (ORM) + **HikariCP** (connection pooling) + **Flyway** (migrations, run automatically
   on startup)
-- **JWT** auth (access + refresh tokens, refresh-token family rotation with theft detection — see
-  [ADR 0004](docs/adr/0004-refresh-token-family-rotation.md))
+- **JWT** auth (access + refresh tokens, refresh-token family rotation with theft detection in
+  `feature/user/service/UserServiceI.kt`)
 - Structured JSON request logs (Logback + Logstash encoder) include request IDs and authenticated user IDs. Production
   writes to stdout and rolling files under `LOG_DIR` (default `./logs`); request logs omit IPs, user agents, device IDs,
   request bodies, emails, and tokens.
-- **Resilience4j** retry + circuit-breaker around external API calls (email today — see
-  [ADR 0005](docs/adr/0005-resilience4j-for-external-calls.md))
+- **Resilience4j** retry + circuit-breaker around external API calls (see `core/resilience/`)
 - **detekt** + **ktlint** (zero-tolerance, gated in CI) + **Kover** line and branch coverage reporting and gates
 
 ## Features
@@ -27,13 +25,15 @@ decisions (refresh-token rotation, results-over-exceptions, etc.).
 | Auth          | Register (buyer/vendor role), login, current-account profile, refresh (rotating), logout, logout-all, email verification/resend, password reset |
 | Vendors       | Companies (create/join/list memberships), vehicles, vehicle link/delink (`vehicle_assignments`)                   |
 | Tracking      | Batched GPS telemetry ingestion, live SSE feed for buyers, in-memory fast path + durable slow-path history          |
-| Rate limiting | Global 150 req/min baseline + tiered named limits (`AUTH_LIMIT`, `API_LIMIT`, `UPLOAD_LIMIT`)                      |
+| Rate limiting | Global 150 req/min per trusted source IP + tiered named limits (`AUTH_LIMIT`, `API_LIMIT`, `UPLOAD_LIMIT`)             |
 | Security      | CORS, CSP/HSTS/security headers, password peppering (password4j), account lockout policy                           |
 | Reliability   | Idempotency keys, request timeouts, body-size limits, graceful shutdown, retry + circuit-breaker on external calls |
 | Observability | `/health` (DB connectivity) and `/ready` endpoints, structured logs, request correlation IDs                       |
 
 Telemetry history uses a bounded in-memory buffer (up to 50,000 pending points). Failed batches retry in FIFO order
 with per-point idempotency; when the buffer is full, only the history copy is dropped and live updates continue.
+For multi-instance deployments, Redis relays each accepted telemetry batch as one best-effort Pub/Sub message.
+Relay delivery is volatile and is not a durable history mechanism.
 
 ## Getting started
 
@@ -44,6 +44,20 @@ cp .env.example .env      # fill in DB credentials, JWT secret, password pepper,
 
 The server listens on `http://localhost:8080` (`PORT` env var to override). Leaving `RESEND_API_KEY` blank falls back to
 a logging-only email service for local dev.
+
+## Live-location load testing
+
+See [load-tests/README.md](load-tests/README.md) for the opt-in disposable local workload, a Kotlin coroutine/Flow runner
+(`./gradlew runLiveLoadTest`): 100 moving vehicles, 500 buyers with skewed geography and map-session churn, proximity
+alerts, and concurrent login bursts. It is intentionally restricted to loopback targets and reports measurements
+without inventing latency SLOs.
+
+## Security probe suite
+
+See [security-probes/README.md](security-probes/README.md) for the opt-in disposable local probe suite
+(`./gradlew runSecurityProbes`): black-box checks against the OWASP API Security Top 10 and CLAUDE.md's stated
+invariants, run against the real app with disposable throwaway accounts. It found and led to fixes for two real bugs —
+see that README's "What it found" section.
 
 ## Exposed migration preview
 

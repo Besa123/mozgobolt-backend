@@ -1,0 +1,136 @@
+{
+  "trucks": 100,
+  "buyers": 500,
+  "loginBurst": 150,
+  "authLimitPerMinute": 5,
+  "maxRadiusKm": 25.0,
+  "maxPointsPerBatch": 100,
+  "regionSkew": 1.0,
+  "cityRadiusKm": 4.0,
+  "routeRadiusKm": 9.0,
+  "buyerBehavior": {
+    "favoritesPerBuyer": 3,
+    "favoriteSkew": 0.7,
+    "savedLocationsPerBuyer": 2,
+    "savedLocationRadiusKm": 3.0
+  },
+  "defaults": {
+    "durationSeconds": 180,
+    "truckIntervalSeconds": 5.0,
+    "pointsPerBatch": 1,
+    "radiusKm": 5.0,
+    "viewerSessionSeconds": 60
+  },
+  "profiles": {
+    "city-skew": {
+      "viewers": 500,
+      "placement": "seeded"
+    },
+    "hotspot": {
+      "viewers": 500,
+      "placement": "single-region"
+    }
+  },
+  "regions": [
+    {
+      "name": "Budapest",
+      "latitude": 47.4979,
+      "longitude": 19.0402
+    },
+    {
+      "name": "Gyor",
+      "latitude": 47.6875,
+      "longitude": 17.6504
+    },
+    {
+      "name": "Szekesfehervar",
+      "latitude": 47.186,
+      "longitude": 18.4221
+    },
+    {
+      "name": "Pecs",
+      "latitude": 46.0727,
+      "longitude": 18.2323
+    },
+    {
+      "name": "Szeged",
+      "latitude": 46.253,
+      "longitude": 20.1414
+    },
+    {
+      "name": "Debrecen",
+      "latitude": 47.5316,
+      "longitude": 21.6273
+    },
+    {
+      "name": "Miskolc",
+      "latitude": 48.1035,
+      "longitude": 20.7784
+    },
+    {
+      "name": "Nyiregyhaza",
+      "latitude": 47.9554,
+      "longitude": 21.7167
+    },
+    {
+      "name": "Kecskemet",
+      "latitude": 46.8964,
+      "longitude": 19.6897
+    },
+    {
+      "name": "Eger",
+      "latitude": 47.9025,
+      "longitude": 20.3772
+    },
+    {
+      "name": "Sopron",
+      "latitude": 47.6817,
+      "longitude": 16.5845
+    },
+    {
+      "name": "Szombathely",
+      "latitude": 47.2307,
+      "longitude": 16.6218
+    },
+    {
+      "name": "Tatabanya",
+      "latitude": 47.5692,
+      "longitude": 18.4048
+    },
+    {
+      "name": "Veszprem",
+      "latitude": 47.1028,
+      "longitude": 17.9093
+    },
+    {
+      "name": "Bekescsaba",
+      "latitude": 46.6736,
+      "longitude": 21.0877
+    },
+    {
+      "name": "Kaposvar",
+      "latitude": 46.3594,
+      "longitude": 17.7968
+    },
+    {
+      "name": "Szolnok",
+      "latitude": 47.1621,
+      "longitude": 20.1825
+    },
+    {
+      "name": "Zalaegerszeg",
+      "latitude": 46.8417,
+      "longitude": 16.8416
+    },
+    {
+      "name": "Salgotarjan",
+      "latitude": 48.0937,
+      "longitude": 19.7999
+    },
+    {
+      "name": "Satoraljaujhely",
+      "latitude": 48.3949,
+      "longitude": 21.6555
+    }
+  ]
+}

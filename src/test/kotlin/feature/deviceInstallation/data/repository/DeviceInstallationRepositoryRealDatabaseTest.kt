@@ -75,6 +75,52 @@ class DeviceInstallationRepositoryRealDatabaseTest {
     }
 
     @Test
+    fun `installation pages preserve user scope, order, and the captured upper bound`() {
+        skipIfNoDocker()
+
+        withRealDatabase { _, tx ->
+            val repository = DeviceInstallationRepositoryI()
+            val now = Instant.parse("2026-01-01T10:00:00Z")
+            val expected =
+                tx.transactional {
+                    val first = repository.register(1, "first", DevicePlatform.ANDROID, now)
+                    repository.register(2, "another-user", DevicePlatform.IOS, now)
+                    val second = repository.register(1, "second", DevicePlatform.ANDROID, now)
+                    val third = repository.register(1, "third", DevicePlatform.IOS, now)
+                    listOf(first, second, third)
+                }
+            val throughId = tx.transactional { repository.findLatestIdForUser(1) }
+            val firstPage =
+                tx.transactional {
+                    repository.findPageForUser(
+                        userId = 1,
+                        afterId = null,
+                        throughId = requireNotNull(throughId),
+                        limit = 2,
+                    )
+                }
+            val lateRegistration =
+                tx.transactional {
+                    repository.register(1, "late", DevicePlatform.ANDROID, now.plusSeconds(1))
+                }
+            val secondPage =
+                tx.transactional {
+                    repository.findPageForUser(
+                        userId = 1,
+                        afterId = firstPage.last().id,
+                        throughId = requireNotNull(throughId),
+                        limit = 2,
+                    )
+                }
+
+            assertEquals(expected.map { it.id }, (firstPage + secondPage).map { it.id })
+            assertEquals(2, firstPage.size)
+            assertEquals(1, secondPage.size)
+            assertTrue((firstPage + secondPage).none { it.id == lateRegistration.id })
+        }
+    }
+
+    @Test
     fun `registering the same installation id for another user transfers its ownership`() {
         skipIfNoDocker()
 

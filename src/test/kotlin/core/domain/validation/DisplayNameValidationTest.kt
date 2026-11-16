@@ -47,6 +47,32 @@ class DisplayNameValidationTest {
     }
 
     @Test
+    fun `a NUL byte is rejected, not merely accepted and left to break storage later`() {
+        // Postgres text/varchar storage cannot hold an embedded NUL at all, and this validator is
+        // the one place meant to catch that before it ever reaches a repository; regression guard
+        // for the gap a security probe found (a saved-location label with a NUL byte reached the
+        // database and surfaced as an uncaught HTTP 500 instead of a clean 400).
+        assertTrue(validateDisplayName("Jane\u0000Doe", maxLength = 100).isNotEmpty())
+    }
+
+    @Test
+    fun `other C0 and C1 control characters are rejected`() {
+        assertTrue(validateDisplayName("Jane\u0007Doe", maxLength = 100).isNotEmpty(), "BEL")
+        assertTrue(validateDisplayName("Jane\u001BDoe", maxLength = 100).isNotEmpty(), "ESC")
+        assertTrue(validateDisplayName("Jane\u007FDoe", maxLength = 100).isNotEmpty(), "DEL")
+        assertTrue(validateDisplayName("Jane\u0085Doe", maxLength = 100).isNotEmpty(), "NEL (a C1 control)")
+    }
+
+    @Test
+    fun `ordinary whitespace such as newlines and tabs is not a control-character violation`() {
+        // Tab and newline are still control characters by the Unicode Cc category, and this app has
+        // no stated need to allow multi-line names, so confirming the intended behavior here (rather
+        // than assuming) protects against a future accidental UX regression if that changes.
+        assertTrue(validateDisplayName("Jane\tDoe", maxLength = 100).isNotEmpty())
+        assertTrue(validateDisplayName("Jane\nDoe", maxLength = 100).isNotEmpty())
+    }
+
+    @Test
     fun `the field label is used in the returned messages`() {
         val errors = validateDisplayName("", maxLength = 100, fieldLabel = "Product name")
 

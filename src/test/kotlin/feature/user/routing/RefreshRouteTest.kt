@@ -35,7 +35,7 @@ class RefreshRouteTest {
         }
 
     @Test
-    fun `invalid credentials return 401 with no body detail`() =
+    fun `invalid credentials return a structured 401`() =
         testApplication {
             configureTestEnvironment()
             val userService =
@@ -48,6 +48,7 @@ class RefreshRouteTest {
             val response = postJson(AuthPaths.REFRESH, """{"refreshToken":"garbage"}""")
 
             assertEquals(HttpStatusCode.Unauthorized, response.status)
+            assertEquals("INVALID_CREDENTIALS", response.errorBody().error)
         }
 
     @Test

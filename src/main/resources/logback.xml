@@ -83,7 +83,11 @@
     <logger name="com.zaxxer.hikari" level="INFO" />
     <logger name="org.flywaydb" level="INFO" />
 
-    <if condition='p("ENVIRONMENT").equals("production")'>
+    <condition class="ch.qos.logback.core.boolex.PropertyEqualityCondition">
+        <key>ENVIRONMENT</key>
+        <value>production</value>
+    </condition>
+    <if>
         <then>
             <logger name="com.mozgobolt" level="INFO"/>
             <root level="WARN">

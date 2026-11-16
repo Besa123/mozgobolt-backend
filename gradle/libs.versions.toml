@@ -1,16 +1,15 @@
 [versions]
 kotlin = "2.4.21"
-logback = "1.6.6"
+logback = "1.6.7"
 exposed = "1.6.1"
 postgresql = "42.7.14"
 hikariCP = "7.1.0"
 dotenv = "6.5.1"
 password4j = "1.8.4"
-flyway = "13.12.1"
+flyway = "13.12.2"
 ktlint-cli = "1.8.0"
-kotlin-logging = "8.0.6"
+kotlin-logging = "8.0.7"
 logstash-logback-encoder = "9.0"
-janino = "3.1.12"
 konsist = "0.18.1"
 resend = "4.30.0"
 resilience4j = "2.4.0"
@@ -21,13 +20,13 @@ kover = "0.9.11"
 testcontainers = "2.0.5"
 thumbnailator = "0.4.21"
 clamav-client = "2.1.2"
-aws-sdk = "2.57.11"
+aws-sdk = "2.59.4"
 s3mock-testcontainers = "5.2.3"
-sentry = "8.63.0"
-sentry-gradle-plugin = "6.26.0"
+sentry = "8.65.0"
+sentry-gradle-plugin = "6.27.0"
 h3 = "4.5.1"
 libphonenumber = "9.0.43"
-firebase-admin = "9.11.0"
+firebase-admin = "9.12.0"
 lettuce = "7.9.0.RELEASE"
 kotlinx-coroutines-reactive = "1.11.0"
 
@@ -35,7 +34,6 @@ kotlinx-coroutines-reactive = "1.11.0"
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 kotlin-logging = { module = "io.github.oshai:kotlin-logging-jvm", version.ref = "kotlin-logging" }
 logstash-logback-encoder = { module = "net.logstash.logback:logstash-logback-encoder", version.ref = "logstash-logback-encoder" }
-janino = { module = "org.codehaus.janino:janino", version.ref = "janino" }
 konsist = { module = "com.lemonappdev:konsist", version.ref = "konsist" }
 exposed-core = { module = "org.jetbrains.exposed:exposed-core", version.ref = "exposed" }
 exposed-jdbc = { module = "org.jetbrains.exposed:exposed-jdbc", version.ref = "exposed" }

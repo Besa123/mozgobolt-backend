@@ -52,6 +52,7 @@ class RedisRelayVehiclePingHub(
         notification: VehiclePingNotification,
     ) {
         delegate.publish(vendorUserId, notification)
+        if (!relay.isCrossInstanceRelaySupported) return
 
         val relayMessage =
             VehiclePingRelayMessage(
@@ -63,30 +64,32 @@ class RedisRelayVehiclePingHub(
             )
         backgroundScope.launch(CoroutineName("vehicle-ping-relay-publisher")) {
             runSuspendCatching { relay.publish(VEHICLE_PING_CHANNEL, Json.encodeToString(relayMessage)) }
-                .onFailure { logger.warn(it) { "Failed to relay a ping; other instances may miss it" } }
+                .onError { logger.warn(it) { "Failed to relay a ping; other instances may miss it" } }
         }
     }
 
     @Synchronized
     fun start() {
-        if (job?.isActive == true) return
+        if (!relay.isCrossInstanceRelaySupported || job?.isActive == true) return
 
         job =
             backgroundScope.launch(CoroutineName("vehicle-ping-relay-subscriber")) {
                 relay.subscribe(VEHICLE_PING_CHANNEL).collect { raw ->
                     val decodeResult = runSuspendCatching { Json.decodeFromString<VehiclePingRelayMessage>(raw) }
-                    decodeResult.onSuccess {
+                    decodeResult.onSuccess { message ->
                         delegate.publish(
-                            it.vendorUserId,
+                            message.vendorUserId,
                             VehiclePingNotification(
-                                vehicleId = it.vehicleId,
-                                sentAt = Instant.parse(it.sentAt),
-                                latitude = it.latitude,
-                                longitude = it.longitude,
+                                vehicleId = message.vehicleId,
+                                sentAt = Instant.parse(message.sentAt),
+                                latitude = message.latitude,
+                                longitude = message.longitude,
                             ),
                         )
                     }
-                    decodeResult.onFailure { logger.warn(it) { "Failed to process a relayed ping; skipping" } }
+                    decodeResult.onError { failure ->
+                        logger.warn(failure) { "Failed to process a relayed ping; skipping" }
+                    }
                 }
             }
     }

@@ -2,12 +2,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+@file:Suppress("UnusedImports")
+
 package com.mozgobolt
 
 import com.mozgobolt.core.data.idempotency.IdempotencyStore
 import com.mozgobolt.core.domain.security.AccessTokenSessionValidator
 import com.mozgobolt.core.modules.plugin.installGlobalRequestBodyLimit
 import com.mozgobolt.core.routing.apiV1
+import com.mozgobolt.core.routing.dto.response.ErrorResponse
 import com.mozgobolt.feature.company.domain.CompanyService
 import com.mozgobolt.feature.company.routing.companyRoutes
 import com.mozgobolt.feature.companyFavorite.domain.CompanyFavoriteService
@@ -33,8 +36,11 @@ import com.mozgobolt.feature.vehiclePing.routing.vehiclePingRoutes
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationHub
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleTrackingService
 import com.mozgobolt.feature.vehicleTracking.routing.vehicleTrackingRoutes
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.plugins.di.dependencies
+import io.ktor.server.response.respond
+import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import javax.sql.DataSource
 
@@ -75,7 +81,12 @@ fun Application.configureRouting() {
                 idempotencyStore = idempotencyStore,
             )
             vehicleAssignmentRoutes(vehicleAssignmentService)
-            vehicleTrackingRoutes(vehicleTrackingService, vehicleLocationHub, accessTokenSessionValidator)
+            vehicleTrackingRoutes(
+                vehicleTrackingService = vehicleTrackingService,
+                hub = vehicleLocationHub,
+                accessTokenSessionValidator = accessTokenSessionValidator,
+                idempotencyStore = idempotencyStore,
+            )
             vehiclePingRoutes(
                 vehiclePingService = vehiclePingService,
                 hub = vehiclePingHub,
@@ -83,6 +94,15 @@ fun Application.configureRouting() {
                 accessTokenSessionValidator = accessTokenSessionValidator,
             )
             deviceInstallationRoutes(deviceInstallationService)
+
+            route("/{...}") {
+                handle {
+                    call.response.status(HttpStatusCode.NotFound)
+                    call.respond(
+                        ErrorResponse(error = "NOT_FOUND", message = "The requested API resource was not found"),
+                    )
+                }
+            }
         }
     }
 }

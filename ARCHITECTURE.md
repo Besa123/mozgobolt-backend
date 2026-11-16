@@ -24,8 +24,9 @@ rationale: [docs/adr/](docs/adr/).
    `StatusPages` into a generic `ErrorResponse`.
 5. `core/data/idempotency/` wraps creation/mutation endpoints where a retry could otherwise duplicate state.
 
-Caveat: body-size limits are enforced via `Content-Length` — a chunked request without one bypasses them (file uploads
-use a streaming byte-count cap instead — see
+Request-body limits have two layers: an early `Content-Length` rejection and Ktor's streaming `RequestBodyLimit`
+installed globally and at route builders, so chunked requests without a declared length are still bounded. File
+uploads additionally count multipart/file bytes while reading (see
 [ADR 0007](docs/adr/0007-pantry-entry-image-storage-and-sanitization.md)).
 
 ## Load-bearing decisions — don't simplify these away without reading the ADR
@@ -36,8 +37,9 @@ use a streaming byte-count cap instead — see
   [ADR 0005](docs/adr/0005-resilience4j-for-external-calls.md).
 - Multi-device sync: pull (`GET /sync?since=`) is the only source of truth; SSE push is a liveness hint, never required
   for correctness — [ADR 0006](docs/adr/0006-multi-device-sync-outbox-and-cursor-pull.md).
-- Image uploads are unconditionally re-encoded from decoded pixels — the primary defense, not ClamAV (optional, off by
-  default) — [ADR 0007](docs/adr/0007-pantry-entry-image-storage-and-sanitization.md).
+- Image uploads are decoded, size-limited, and re-encoded from pixels; production also requires ClamAV and fails
+  closed if scanning is unavailable. These are complementary controls —
+  [ADR 0007](docs/adr/0007-pantry-entry-image-storage-and-sanitization.md).
 
 ## Configuration
 

@@ -4,6 +4,7 @@
 
 package com.mozgobolt.core.modules.plugin
 
+import com.mozgobolt.core.data.idempotency.IDEMPOTENCY_KEY_HEADER
 import com.mozgobolt.core.modules.AppConfig
 import com.mozgobolt.core.modules.hosts
 import com.mozgobolt.core.utility.functions.DEVICE_ID_HEADER
@@ -37,6 +38,7 @@ fun Application.configureCors() {
         allowHeader(HttpHeaders.Authorization)
         allowHeader(HttpHeaders.ContentType)
         allowHeader(HttpHeaders.Accept)
+        allowHeader(IDEMPOTENCY_KEY_HEADER)
         allowHeader(DEVICE_ID_HEADER)
         allowHeader(HttpHeaders.XRequestId)
 

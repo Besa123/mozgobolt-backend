@@ -10,7 +10,6 @@ import com.mozgobolt.core.modules.AppConfig
 import com.mozgobolt.core.resilience.ResiliencePolicy
 import com.mozgobolt.core.utility.functions.runSuspendCatching
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
@@ -23,7 +22,6 @@ import java.util.concurrent.TimeoutException
 
 private val logger = KotlinLogging.logger {}
 
-@Suppress("TooGenericExceptionCaught")
 class ClamAvVirusScanner(
     private val config: AppConfig.ClamAv,
     private val resilience: ResiliencePolicy,
@@ -33,13 +31,14 @@ class ClamAvVirusScanner(
     private val scanResilience = resilience.withTimeLimiter("clamAvScan", Duration.ofMillis(config.timeoutMs))
 
     override suspend fun scan(bytes: ByteArray): VirusScanResult =
-        try {
+        runSuspendCatching {
             scanResilience.execute { scanInterruptibly(bytes) }.toVirusScanResult()
-        } catch (failure: Exception) {
-            when (failure) {
-                is CancellationException -> throw failure
-                is TimeoutException -> logger.warn(failure) { "ClamAV scan timed out after ${config.timeoutMs}ms" }
-                else -> logger.warn(failure) { "ClamAV scan unavailable" }
+        }.getOrElse { failure ->
+            if (failure !is Exception) throw failure
+            if (failure is TimeoutException) {
+                logger.warn(failure) { "ClamAV scan timed out after ${config.timeoutMs}ms" }
+            } else {
+                logger.warn(failure) { "ClamAV scan unavailable" }
             }
             VirusScanResult.Unavailable
         }
@@ -55,7 +54,6 @@ class ClamAvVirusScanner(
             }
         }
 
-    @Suppress("RedundantSuspendModifier") // runInterruptible suspends inside the inline Result block.
     private suspend fun scanInterruptibly(bytes: ByteArray): ScanResult =
         runSuspendCatching {
             runInterruptible(ioDispatcher) { client.scan(ByteArrayInputStream(bytes)) }

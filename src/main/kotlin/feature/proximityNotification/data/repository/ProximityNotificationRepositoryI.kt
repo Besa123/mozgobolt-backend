@@ -11,6 +11,7 @@ import com.mozgobolt.feature.vehicle.data.database.VehiclesTable
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.core.inSubQuery
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insertIgnore
@@ -112,15 +113,16 @@ class ProximityNotificationRepositoryI : ProximityNotificationRepository {
     }
 
     override suspend fun markOutside(
-        buyerUserId: Int,
-        savedLocationId: Int,
         vehicleId: Int,
+        savedLocationIds: Collection<Int>,
     ) {
+        if (savedLocationIds.isEmpty()) return
+
         ProximityNotificationsTable.update(
             where = {
-                (ProximityNotificationsTable.buyerUserId eq buyerUserId) and
-                    (ProximityNotificationsTable.savedLocationId eq savedLocationId) and
-                    (ProximityNotificationsTable.vehicleId eq vehicleId)
+                (ProximityNotificationsTable.vehicleId eq vehicleId) and
+                    (ProximityNotificationsTable.savedLocationId inList savedLocationIds) and
+                    (ProximityNotificationsTable.currentlyInside eq true)
             },
         ) {
             it[ProximityNotificationsTable.currentlyInside] = false

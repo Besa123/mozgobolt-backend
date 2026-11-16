@@ -129,7 +129,9 @@ private class ResendEmailSender(
             .build()
 
     override suspend fun send(email: OutgoingEmail): String =
-        runSuspendCatching {
+        runSuspendCatching(
+            mapException = { failure -> failure.toEmailDeliveryExceptionOrNull() ?: failure },
+        ) {
             runInterruptible(ioDispatcher) {
                 val params =
                     CreateEmailOptions
@@ -148,10 +150,7 @@ private class ResendEmailSender(
                         .build()
                 resend.emails().send(params, requestOptions).id
             }
-        }.fold(
-            onSuccess = { it },
-            onFailure = { failure -> throw failure.toEmailDeliveryExceptionOrNull() ?: failure },
-        )
+        }.getOrThrow { it }
 }
 
 private fun emailIdempotencyKey(

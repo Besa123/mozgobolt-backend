@@ -10,6 +10,7 @@ import com.mozgobolt.core.domain.media.ImageSanitizer
 import com.mozgobolt.core.domain.media.SanitizedImage
 import com.mozgobolt.core.modules.AppConfig
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -68,6 +69,8 @@ class JavaImageSanitizer(
         val dimensions =
             try {
                 reader.getWidth(0) to reader.getHeight(0)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logger.debug(e) { "Failed to read image dimensions — treating as corrupt" }
                 return AppResult.Error(ImageSanitizationError.CORRUPT)
@@ -91,6 +94,8 @@ class JavaImageSanitizer(
                 }
 
             AppResult.Success(reader.read(0, readParameters))
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.debug(e) { "Failed to decode image — treating as corrupt" }
             AppResult.Error(ImageSanitizationError.CORRUPT)

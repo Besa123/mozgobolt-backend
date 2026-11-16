@@ -39,6 +39,7 @@ class AuthRoutesSecurityTest {
             val response = client.post(AuthPaths.LOGOUT_ALL)
 
             assertEquals(HttpStatusCode.Unauthorized, response.status)
+            assertEquals("UNAUTHORIZED", response.errorBody().error)
         }
 
     @Test

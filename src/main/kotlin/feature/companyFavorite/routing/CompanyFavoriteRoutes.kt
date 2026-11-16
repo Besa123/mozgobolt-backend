@@ -4,12 +4,14 @@
 
 package com.mozgobolt.feature.companyFavorite.routing
 
+import com.mozgobolt.core.modules.plugin.BodyLimit
 import com.mozgobolt.core.modules.plugin.RequestTimeout
 import com.mozgobolt.core.modules.plugin.limitedDelete
 import com.mozgobolt.core.modules.plugin.limitedPost
 import com.mozgobolt.core.routing.dto.response.ErrorResponse
 import com.mozgobolt.core.utility.functions.currentUserIdOrNull
 import com.mozgobolt.core.utility.functions.protectedApi
+import com.mozgobolt.core.utility.functions.respondUnauthorized
 import com.mozgobolt.feature.companyFavorite.domain.CompanyFavoriteService
 import com.mozgobolt.feature.companyFavorite.domain.model.CompanyFavoriteError
 import com.mozgobolt.feature.companyFavorite.routing.dto.response.toResponseDto
@@ -28,8 +30,8 @@ private const val INVALID_COMPANY_ID = "INVALID_COMPANY_ID"
  */
 fun Route.companyFavoriteRoutes(companyFavoriteService: CompanyFavoriteService) {
     protectedApi {
-        limitedPost("/companies/{id}/favorite", timeout = RequestTimeout.STANDARD) {
-            val userId = call.currentUserIdOrNull() ?: return@limitedPost call.respond(HttpStatusCode.Unauthorized)
+        limitedPost("/companies/{id}/favorite", limit = BodyLimit.TINY, timeout = RequestTimeout.STANDARD) {
+            val userId = call.currentUserIdOrNull() ?: return@limitedPost call.respondUnauthorized()
             val companyId =
                 call.parameters["id"]?.toIntOrNull()
                     ?: return@limitedPost call.respond(
@@ -43,8 +45,8 @@ fun Route.companyFavoriteRoutes(companyFavoriteService: CompanyFavoriteService) 
             )
         }
 
-        limitedDelete("/companies/{id}/favorite", timeout = RequestTimeout.FAST) {
-            val userId = call.currentUserIdOrNull() ?: return@limitedDelete call.respond(HttpStatusCode.Unauthorized)
+        limitedDelete("/companies/{id}/favorite", limit = BodyLimit.TINY, timeout = RequestTimeout.FAST) {
+            val userId = call.currentUserIdOrNull() ?: return@limitedDelete call.respondUnauthorized()
             val companyId =
                 call.parameters["id"]?.toIntOrNull()
                     ?: return@limitedDelete call.respond(
@@ -59,7 +61,7 @@ fun Route.companyFavoriteRoutes(companyFavoriteService: CompanyFavoriteService) 
         }
 
         get("/favorites") {
-            val userId = call.currentUserIdOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
+            val userId = call.currentUserIdOrNull() ?: return@get call.respondUnauthorized()
 
             call.respond(HttpStatusCode.OK, companyFavoriteService.listFavorites(userId).map { it.toResponseDto() })
         }

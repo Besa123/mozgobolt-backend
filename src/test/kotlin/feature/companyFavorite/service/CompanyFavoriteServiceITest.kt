@@ -75,9 +75,8 @@ class CompanyFavoriteServiceITest {
         ): Boolean = error("not exercised by this test")
 
         override suspend fun markOutside(
-            buyerUserId: Int,
-            savedLocationId: Int,
             vehicleId: Int,
+            savedLocationIds: Collection<Int>,
         ) = error("not exercised by this test")
 
         override suspend fun deleteForUserAndCompany(

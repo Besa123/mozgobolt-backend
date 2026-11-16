@@ -11,6 +11,7 @@ import com.mozgobolt.core.modules.plugin.validatedPost
 import com.mozgobolt.core.routing.dto.response.ErrorResponse
 import com.mozgobolt.core.utility.functions.currentUserIdOrNull
 import com.mozgobolt.core.utility.functions.protectedApi
+import com.mozgobolt.core.utility.functions.respondUnauthorized
 import com.mozgobolt.feature.deviceInstallation.domain.DeviceInstallationService
 import com.mozgobolt.feature.deviceInstallation.domain.model.DeviceInstallationError
 import com.mozgobolt.feature.deviceInstallation.domain.model.DevicePlatform
@@ -34,7 +35,7 @@ fun Route.deviceInstallationRoutes(deviceInstallationService: DeviceInstallation
             BodyLimit.TINY,
             RequestTimeout.FAST,
         ) { request ->
-            val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
+            val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respondUnauthorized()
 
             val deviceInstallation =
                 deviceInstallationService.registerInstallation(
@@ -45,8 +46,12 @@ fun Route.deviceInstallationRoutes(deviceInstallationService: DeviceInstallation
             call.respond(HttpStatusCode.OK, deviceInstallation.toResponseDto())
         }
 
-        limitedDelete("/device-installations/{installationId}", timeout = RequestTimeout.FAST) {
-            val userId = call.currentUserIdOrNull() ?: return@limitedDelete call.respond(HttpStatusCode.Unauthorized)
+        limitedDelete(
+            "/device-installations/{installationId}",
+            limit = BodyLimit.TINY,
+            timeout = RequestTimeout.FAST,
+        ) {
+            val userId = call.currentUserIdOrNull() ?: return@limitedDelete call.respondUnauthorized()
             val installationId =
                 call.parameters["installationId"]
                     ?: return@limitedDelete call.respond(

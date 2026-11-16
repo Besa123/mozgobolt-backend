@@ -4,6 +4,7 @@
 
 package com.mozgobolt.feature.vehicleTracking.service
 
+import com.mozgobolt.core.database.TransactionOutcome
 import com.mozgobolt.core.database.TransactionalRunner
 import com.mozgobolt.core.utility.ApplicationBackgroundScope
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationRepository
@@ -32,6 +33,9 @@ class VehicleLocationBatchWriterTest {
             callCount++
             return block()
         }
+
+        override suspend fun <T> transactionalWithOutcome(block: suspend () -> TransactionOutcome<T>): T =
+            transactional { block().value }
     }
 
     private class FakeVehicleLocationRepository : VehicleLocationRepository {

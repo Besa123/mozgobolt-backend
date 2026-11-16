@@ -4,6 +4,7 @@
 
 package com.mozgobolt.feature.vehicleAssignment.service
 
+import com.mozgobolt.core.database.TransactionOutcome
 import com.mozgobolt.core.database.TransactionalRunner
 import com.mozgobolt.core.utility.ApplicationBackgroundScope
 import com.mozgobolt.feature.sync.domain.model.SyncEntityType
@@ -176,4 +177,6 @@ private class RecordingVehicleLocationHub : VehicleLocationHub {
 
 private object InlineTransactionalRunner : TransactionalRunner {
     override suspend fun <T> transactional(block: suspend () -> T): T = block()
+
+    override suspend fun <T> transactionalWithOutcome(block: suspend () -> TransactionOutcome<T>): T = block().value
 }

@@ -11,6 +11,7 @@ import com.mozgobolt.core.modules.plugin.validatedPost
 import com.mozgobolt.core.routing.dto.response.ErrorResponse
 import com.mozgobolt.core.utility.functions.currentUserIdOrNull
 import com.mozgobolt.core.utility.functions.protectedApi
+import com.mozgobolt.core.utility.functions.respondUnauthorized
 import com.mozgobolt.feature.user.domain.model.UserRole
 import com.mozgobolt.feature.user.routing.requireRole
 import com.mozgobolt.feature.vehicleAssignment.domain.VehicleAssignmentService
@@ -37,7 +38,7 @@ fun Route.vehicleAssignmentRoutes(vehicleAssignmentService: VehicleAssignmentSer
 private fun Route.registerCurrentAssignmentRoute(service: VehicleAssignmentService) {
     get("/vehicles/assignments/me") {
         if (!requireRole(UserRole.VENDOR)) return@get
-        val userId = call.currentUserIdOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
+        val userId = call.currentUserIdOrNull() ?: return@get call.respondUnauthorized()
 
         val activeAssignment = service.findActiveDetailsForVendor(userId)
         call.respond(
@@ -54,7 +55,7 @@ private fun Route.registerLinkVehicleRoute(service: VehicleAssignmentService) {
         RequestTimeout.STANDARD,
     ) { request ->
         if (!requireRole(UserRole.VENDOR)) return@validatedPost
-        val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
+        val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respondUnauthorized()
         val vehicleId =
             call.parameters["id"]?.toIntOrNull()
                 ?: return@validatedPost call.respond(
@@ -76,9 +77,9 @@ private fun Route.registerLinkVehicleRoute(service: VehicleAssignmentService) {
 }
 
 private fun Route.registerUnlinkVehicleRoute(service: VehicleAssignmentService) {
-    limitedPost("/vehicles/{id}/unlink", timeout = RequestTimeout.STANDARD) {
+    limitedPost("/vehicles/{id}/unlink", limit = BodyLimit.TINY, timeout = RequestTimeout.STANDARD) {
         if (!requireRole(UserRole.VENDOR)) return@limitedPost
-        val userId = call.currentUserIdOrNull() ?: return@limitedPost call.respond(HttpStatusCode.Unauthorized)
+        val userId = call.currentUserIdOrNull() ?: return@limitedPost call.respondUnauthorized()
         val vehicleId =
             call.parameters["id"]?.toIntOrNull()
                 ?: return@limitedPost call.respond(
@@ -94,9 +95,9 @@ private fun Route.registerUnlinkVehicleRoute(service: VehicleAssignmentService) 
 }
 
 private fun Route.registerEndActiveAssignmentRoute(service: VehicleAssignmentService) {
-    limitedPost("/vehicles/{id}/assignments/end-active", timeout = RequestTimeout.STANDARD) {
+    limitedPost("/vehicles/{id}/assignments/end-active", limit = BodyLimit.TINY, timeout = RequestTimeout.STANDARD) {
         if (!requireRole(UserRole.VENDOR)) return@limitedPost
-        val adminUserId = call.currentUserIdOrNull() ?: return@limitedPost call.respond(HttpStatusCode.Unauthorized)
+        val adminUserId = call.currentUserIdOrNull() ?: return@limitedPost call.respondUnauthorized()
         val vehicleId =
             call.parameters["id"]?.toIntOrNull()
                 ?: return@limitedPost call.respond(

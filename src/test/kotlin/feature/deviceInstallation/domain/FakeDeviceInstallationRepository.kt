@@ -60,6 +60,27 @@ class FakeDeviceInstallationRepository : DeviceInstallationRepository {
     override suspend fun findAllForUser(userId: Int): List<DeviceInstallation> =
         installationsById.values.filter { it.userId == userId }
 
+    override suspend fun findLatestIdForUser(userId: Int): Int? =
+        installationsById.values
+            .asSequence()
+            .filter { it.userId == userId }
+            .maxOfOrNull(DeviceInstallation::id)
+
+    override suspend fun findPageForUser(
+        userId: Int,
+        afterId: Int?,
+        throughId: Int,
+        limit: Int,
+    ): List<DeviceInstallation> {
+        require(limit > 0) { "Device installation page limit must be positive" }
+        return installationsById.values
+            .asSequence()
+            .filter { it.userId == userId && it.id <= throughId && (afterId == null || it.id > afterId) }
+            .sortedBy(DeviceInstallation::id)
+            .take(limit)
+            .toList()
+    }
+
     override suspend fun deleteForUser(
         userId: Int,
         installationId: String,

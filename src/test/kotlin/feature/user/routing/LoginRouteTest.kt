@@ -34,7 +34,7 @@ class LoginRouteTest {
         }
 
     @Test
-    fun `invalid credentials return 401 with no body detail`() =
+    fun `invalid credentials return a generic structured 401`() =
         testApplication {
             configureTestEnvironment()
             val userService = FakeUserService().apply { signInResult = AppResult.Error(LoginError.INVALID_CREDENTIALS) }
@@ -43,6 +43,7 @@ class LoginRouteTest {
             val response = postJson(AuthPaths.LOGIN, """{"email":"user@example.com","password":"wrong"}""")
 
             assertEquals(HttpStatusCode.Unauthorized, response.status)
+            assertEquals("INVALID_CREDENTIALS", response.errorBody().error)
         }
 
     @Test

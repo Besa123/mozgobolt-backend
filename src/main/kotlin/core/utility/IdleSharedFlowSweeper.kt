@@ -27,10 +27,9 @@ internal val DEFAULT_SWEEP_INTERVAL = 15.minutes
 
 /**
  * Periodically reclaims entries from a `ConcurrentHashMap` of per-key broadcast
- * [MutableSharedFlow]s (e.g. `InMemoryVehicleLocationHub.flowsByCell`,
- * `InMemoryVehiclePingHub.flowsByVendorUserId`) once nobody is subscribed to them anymore, so the
- * map doesn't hold one entry forever per distinct key ever seen (a geographic cell, a vendor id,
- * ...).
+ * [MutableSharedFlow]s (e.g. `InMemoryVehiclePingHub.flowsByVendorUserId`) once nobody is
+ * subscribed to them anymore, so the map doesn't hold one entry forever per distinct key ever
+ * seen (a vendor id, ...).
  * An optional [additionalSweep] can reclaim related in-memory state on the same application-owned
  * maintenance loop.
  *
@@ -72,7 +71,7 @@ class IdleSharedFlowSweeper<K : Any, T>(
                     // interval still gets a chance to run, mirroring this codebase's other
                     // periodic background loops (e.g. VehicleLocationRetentionPurger).
                     runSuspendCatching { sweepOnce() }
-                        .onFailure { logger.error(it) { "Failed to sweep idle flows; retrying next interval" } }
+                        .onError { logger.error(it) { "Failed to sweep idle flows; retrying next interval" } }
                 }
             }
     }

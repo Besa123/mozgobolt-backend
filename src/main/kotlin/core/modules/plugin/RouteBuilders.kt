@@ -30,9 +30,11 @@ inline fun <reified T : ValidatedRequest> Route.validatedPost(
     crossinline handler: suspend RoutingContext.(T) -> Unit,
 ) {
     withRequestBodyLimit(path, HttpMethod.Post, limit) {
-        if (exceedsLimit(limit)) return@withRequestBodyLimit
-        val request = call.receive<T>()
-        withTimeout(timeout.duration) { handler(request) }
+        withTimeout(timeout.duration) {
+            if (exceedsLimit(limit)) return@withTimeout
+            val request = call.receive<T>()
+            handler(request)
+        }
     }
 }
 
@@ -43,9 +45,11 @@ inline fun <reified T : ValidatedRequest> Route.validatedPut(
     crossinline handler: suspend RoutingContext.(T) -> Unit,
 ) {
     withRequestBodyLimit(path, HttpMethod.Put, limit) {
-        if (exceedsLimit(limit)) return@withRequestBodyLimit
-        val request = call.receive<T>()
-        withTimeout(timeout.duration) { handler(request) }
+        withTimeout(timeout.duration) {
+            if (exceedsLimit(limit)) return@withTimeout
+            val request = call.receive<T>()
+            handler(request)
+        }
     }
 }
 
@@ -56,9 +60,11 @@ inline fun <reified T : ValidatedRequest> Route.validatedPatch(
     crossinline handler: suspend RoutingContext.(T) -> Unit,
 ) {
     withRequestBodyLimit(path, HttpMethod.Patch, limit) {
-        if (exceedsLimit(limit)) return@withRequestBodyLimit
-        val request = call.receive<T>()
-        withTimeout(timeout.duration) { handler(request) }
+        withTimeout(timeout.duration) {
+            if (exceedsLimit(limit)) return@withTimeout
+            val request = call.receive<T>()
+            handler(request)
+        }
     }
 }
 
@@ -89,7 +95,7 @@ fun Route.limitedDelete(
 suspend fun RoutingContext.exceedsLimit(limit: BodyLimit): Boolean {
     val contentLength = call.request.contentLength()
     if (contentLength != null && contentLength > limit.bytes) {
-        call.respond(HttpStatusCode.PayloadTooLarge)
+        call.respondPayloadTooLarge()
         return true
     }
     return false
@@ -129,7 +135,7 @@ private suspend fun RoutingContext.handleFileUpload(
         }
 
         FilePartResult.TooLarge -> {
-            call.respond(HttpStatusCode.PayloadTooLarge)
+            call.respondPayloadTooLarge()
         }
 
         FilePartResult.Missing -> {

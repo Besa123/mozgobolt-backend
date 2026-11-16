@@ -16,6 +16,7 @@ import com.mozgobolt.core.modules.plugin.validatedPost
 import com.mozgobolt.core.routing.dto.response.ErrorResponse
 import com.mozgobolt.core.utility.functions.currentUserIdOrNull
 import com.mozgobolt.core.utility.functions.protectedApi
+import com.mozgobolt.core.utility.functions.respondUnauthorized
 import com.mozgobolt.feature.company.domain.CompanyService
 import com.mozgobolt.feature.company.domain.model.CompanyError
 import com.mozgobolt.feature.company.routing.dto.request.CreateCompanyRequestDto
@@ -64,7 +65,7 @@ private fun Route.registerCompanyCrudRoutes(
 private fun Route.registerCompanyReadRoutes(companyService: CompanyService) {
     get("/companies") {
         if (!requireRole(UserRole.VENDOR)) return@get
-        val userId = call.currentUserIdOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
+        val userId = call.currentUserIdOrNull() ?: return@get call.respondUnauthorized()
 
         companyService.listCompaniesForUser(userId).fold(
             onSuccess = { companies ->
@@ -76,7 +77,7 @@ private fun Route.registerCompanyReadRoutes(companyService: CompanyService) {
 
     get("/companies/{id}/invite-code") {
         if (!requireRole(UserRole.VENDOR)) return@get
-        val adminUserId = call.currentUserIdOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
+        val adminUserId = call.currentUserIdOrNull() ?: return@get call.respondUnauthorized()
         val companyId =
             call.parameters["id"]?.toIntOrNull()
                 ?: return@get call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = INVALID_COMPANY_ID))
@@ -100,7 +101,7 @@ private fun Route.registerCompanyCreateRoute(
         RequestTimeout.STANDARD,
     ) { request ->
         if (!requireRole(UserRole.VENDOR)) return@validatedPost
-        val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
+        val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respondUnauthorized()
 
         // A network retry re-sending the same "create my company" request must not create a
         // second company — same convention as /auth/register.
@@ -120,7 +121,7 @@ private fun Route.registerCompanyJoinRoute(
 ) {
     validatedPost<JoinCompanyRequestDto>("/companies/join", BodyLimit.TINY, RequestTimeout.STANDARD) { request ->
         if (!requireRole(UserRole.VENDOR)) return@validatedPost
-        val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respond(HttpStatusCode.Unauthorized)
+        val userId = call.currentUserIdOrNull() ?: return@validatedPost call.respondUnauthorized()
 
         // This is an idempotency namespace, not an SQL query.
         idempotent(idempotencyStore, requestFingerprint = "join-company:$userId:${Json.encodeToString(request)}") {
@@ -135,7 +136,7 @@ private fun Route.registerCompanyJoinRoute(
 private fun Route.registerCompanyRenameRoute(companyService: CompanyService) {
     validatedPatch<RenameCompanyRequestDto>("/companies/{id}", BodyLimit.TINY, RequestTimeout.STANDARD) { request ->
         if (!requireRole(UserRole.VENDOR)) return@validatedPatch
-        val userId = call.currentUserIdOrNull() ?: return@validatedPatch call.respond(HttpStatusCode.Unauthorized)
+        val userId = call.currentUserIdOrNull() ?: return@validatedPatch call.respondUnauthorized()
         val companyId =
             call.parameters["id"]?.toIntOrNull()
                 ?: return@validatedPatch call.respond(
@@ -154,9 +155,13 @@ private fun Route.registerInviteCodeRegenerationRoute(
     companyService: CompanyService,
     idempotencyStore: IdempotencyStore,
 ) {
-    limitedPost("/companies/{id}/invite-code/regenerate", timeout = RequestTimeout.STANDARD) {
+    limitedPost(
+        "/companies/{id}/invite-code/regenerate",
+        limit = BodyLimit.TINY,
+        timeout = RequestTimeout.STANDARD,
+    ) {
         if (!requireRole(UserRole.VENDOR)) return@limitedPost
-        val userId = call.currentUserIdOrNull() ?: return@limitedPost call.respond(HttpStatusCode.Unauthorized)
+        val userId = call.currentUserIdOrNull() ?: return@limitedPost call.respondUnauthorized()
         val companyId =
             call.parameters["id"]?.toIntOrNull()
                 ?: return@limitedPost call.respond(
@@ -176,9 +181,9 @@ private fun Route.registerInviteCodeRegenerationRoute(
 }
 
 private fun Route.registerCompanyDeleteRoute(companyService: CompanyService) {
-    limitedDelete("/companies/{id}", timeout = RequestTimeout.STANDARD) {
+    limitedDelete("/companies/{id}", limit = BodyLimit.TINY, timeout = RequestTimeout.STANDARD) {
         if (!requireRole(UserRole.VENDOR)) return@limitedDelete
-        val userId = call.currentUserIdOrNull() ?: return@limitedDelete call.respond(HttpStatusCode.Unauthorized)
+        val userId = call.currentUserIdOrNull() ?: return@limitedDelete call.respondUnauthorized()
         val companyId =
             call.parameters["id"]?.toIntOrNull()
                 ?: return@limitedDelete call.respond(
@@ -196,7 +201,7 @@ private fun Route.registerCompanyDeleteRoute(companyService: CompanyService) {
 private fun Route.registerCompanyMembershipRoutes(companyService: CompanyService) {
     get("/companies/{id}/members") {
         if (!requireRole(UserRole.VENDOR)) return@get
-        val userId = call.currentUserIdOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
+        val userId = call.currentUserIdOrNull() ?: return@get call.respondUnauthorized()
         val companyId =
             call.parameters["id"]?.toIntOrNull()
                 ?: return@get call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = INVALID_COMPANY_ID))
@@ -207,17 +212,29 @@ private fun Route.registerCompanyMembershipRoutes(companyService: CompanyService
         )
     }
 
-    limitedPost("/companies/{id}/members/{userId}/promote", timeout = RequestTimeout.STANDARD) {
+    limitedPost(
+        "/companies/{id}/members/{userId}/promote",
+        limit = BodyLimit.TINY,
+        timeout = RequestTimeout.STANDARD,
+    ) {
         handleRoleChange(companyService, RoleChange.PROMOTE)
     }
 
-    limitedPost("/companies/{id}/members/{userId}/demote", timeout = RequestTimeout.STANDARD) {
+    limitedPost(
+        "/companies/{id}/members/{userId}/demote",
+        limit = BodyLimit.TINY,
+        timeout = RequestTimeout.STANDARD,
+    ) {
         handleRoleChange(companyService, RoleChange.DEMOTE)
     }
 
-    limitedDelete("/companies/{id}/members/{userId}", timeout = RequestTimeout.STANDARD) {
+    limitedDelete(
+        "/companies/{id}/members/{userId}",
+        limit = BodyLimit.TINY,
+        timeout = RequestTimeout.STANDARD,
+    ) {
         if (!requireRole(UserRole.VENDOR)) return@limitedDelete
-        val adminUserId = call.currentUserIdOrNull() ?: return@limitedDelete call.respond(HttpStatusCode.Unauthorized)
+        val adminUserId = call.currentUserIdOrNull() ?: return@limitedDelete call.respondUnauthorized()
         val companyId =
             call.parameters["id"]?.toIntOrNull()
                 ?: return@limitedDelete call.respond(
@@ -234,9 +251,13 @@ private fun Route.registerCompanyMembershipRoutes(companyService: CompanyService
         )
     }
 
-    limitedDelete("/companies/{id}/members/$SELF_MEMBER_PATH_SEGMENT", timeout = RequestTimeout.STANDARD) {
+    limitedDelete(
+        "/companies/{id}/members/$SELF_MEMBER_PATH_SEGMENT",
+        limit = BodyLimit.TINY,
+        timeout = RequestTimeout.STANDARD,
+    ) {
         if (!requireRole(UserRole.VENDOR)) return@limitedDelete
-        val userId = call.currentUserIdOrNull() ?: return@limitedDelete call.respond(HttpStatusCode.Unauthorized)
+        val userId = call.currentUserIdOrNull() ?: return@limitedDelete call.respondUnauthorized()
         val companyId =
             call.parameters["id"]?.toIntOrNull()
                 ?: return@limitedDelete call.respond(
@@ -258,7 +279,7 @@ private suspend fun RoutingContext.handleRoleChange(
     change: RoleChange,
 ) {
     if (!requireRole(UserRole.VENDOR)) return
-    val adminUserId = call.currentUserIdOrNull() ?: return call.respond(HttpStatusCode.Unauthorized)
+    val adminUserId = call.currentUserIdOrNull() ?: return call.respondUnauthorized()
     val companyId =
         call.parameters["id"]?.toIntOrNull()
             ?: return call.respond(HttpStatusCode.BadRequest, ErrorResponse(error = INVALID_COMPANY_ID))

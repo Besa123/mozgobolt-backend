@@ -87,11 +87,10 @@ private fun ApplicationCall.extractIdempotencyKey(): String? {
     return key?.takeIf { it.isNotBlank() }
 }
 
-@Suppress("RedundantSuspendModifier") // The callback is suspend and invoked inside the inline Result wrapper.
 private suspend fun IdempotentResult.runAfterCommitBestEffort() {
     afterCommitBestEffort?.let { action ->
         runSuspendCatching { action() }
-            .onFailure { failure ->
+            .onError { failure ->
                 logger.error {
                     "Idempotent post-commit action failed (${failure.javaClass.simpleName})"
                 }

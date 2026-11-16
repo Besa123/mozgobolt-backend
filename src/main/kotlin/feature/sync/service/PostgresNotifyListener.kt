@@ -10,6 +10,7 @@ import com.mozgobolt.feature.sync.data.repository.SYNC_NOTIFY_CHANNEL
 import com.mozgobolt.feature.sync.domain.SyncEventHub
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.github.resilience4j.core.IntervalFunction
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.Dispatchers
@@ -112,6 +113,8 @@ class PostgresNotifyListener(
             }
 
             syncEventHub.publish(userId, eventId, originDeviceId)
+        } catch (e: CancellationException) {
+            throw e
         } catch (
             @Suppress("TooGenericExceptionCaught") e: Exception,
         ) {

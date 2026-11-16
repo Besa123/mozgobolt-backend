@@ -49,7 +49,7 @@ class VehicleAssignmentStaleSessionReaper(
                 while (isActive) {
                     delay(checkInterval)
                     runSuspendCatching { expireStaleAssignments() }
-                        .onFailure {
+                        .onError {
                             logger.error(it) { "Failed to expire stale vehicle assignments; retrying next interval" }
                         }
                 }

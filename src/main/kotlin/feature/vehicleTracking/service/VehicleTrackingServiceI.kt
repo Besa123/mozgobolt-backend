@@ -15,6 +15,7 @@ import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationBuffer
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationHub
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleTrackingService
 import com.mozgobolt.feature.vehicleTracking.domain.model.GeoPoint
+import com.mozgobolt.feature.vehicleTracking.domain.model.TelemetryDispatchPlan
 import com.mozgobolt.feature.vehicleTracking.domain.model.TelemetryError
 import com.mozgobolt.feature.vehicleTracking.domain.model.TelemetryPoint
 import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationUpdate
@@ -32,10 +33,10 @@ class VehicleTrackingServiceI(
     private val proximityAlertService: ProximityAlertService,
     private val tx: TransactionalRunner,
 ) : VehicleTrackingService {
-    override suspend fun ingestTelemetry(
+    override suspend fun prepareTelemetry(
         vendorUserId: Int,
         points: List<TelemetryPoint>,
-    ): AppResult<Unit, TelemetryError> {
+    ): AppResult<TelemetryDispatchPlan, TelemetryError> {
         val activeAssignment =
             vehicleAssignmentService.findActiveForVendor(vendorUserId)
                 ?: return AppResult.Error(TelemetryError.NOT_LINKED_TO_VEHICLE)
@@ -48,7 +49,6 @@ class VehicleTrackingServiceI(
             }
 
         val acceptedUpdates = mutableListOf<VehicleLocationUpdate>()
-        val acceptedPoints = mutableListOf<GeoPoint>()
         var previous = hub.lastKnownLocation(activeAssignment.vehicleId)
 
         points.forEach { point ->
@@ -84,7 +84,6 @@ class VehicleTrackingServiceI(
                     sharesLocationWithCustomers = activeAssignment.sharesLocationWithCustomers,
                 )
             acceptedUpdates += update
-            acceptedPoints += GeoPoint(point.latitude, point.longitude)
             previous = update
         }
 
@@ -98,13 +97,23 @@ class VehicleTrackingServiceI(
             return AppResult.Error(TelemetryError.NOT_LINKED_TO_VEHICLE)
         }
 
+        return AppResult.Success(
+            TelemetryDispatchPlan(
+                vehicleId = activeAssignment.vehicleId,
+                companyId = companyId,
+                sharesLocationWithCustomers = activeAssignment.sharesLocationWithCustomers,
+                updates = acceptedUpdates.toList(),
+            ),
+        )
+    }
+
+    override suspend fun publishTelemetry(plan: TelemetryDispatchPlan) {
         var droppedHistoryPoints = 0
         val publishedPoints = mutableListOf<GeoPoint>()
-        acceptedUpdates.forEachIndexed { index, update ->
-            if (hub.publishIfCurrent(update)) {
-                if (!buffer.enqueue(update)) droppedHistoryPoints++
-                publishedPoints += acceptedPoints[index]
-            }
+        val publishedUpdates = hub.publishBatchIfCurrent(plan.updates)
+        for (update in publishedUpdates) {
+            if (!buffer.enqueue(update)) droppedHistoryPoints++
+            publishedPoints += GeoPoint(update.latitude, update.longitude)
         }
 
         if (droppedHistoryPoints > 0) {
@@ -113,12 +122,9 @@ class VehicleTrackingServiceI(
             }
         }
 
-        val shouldEvaluateProximityAlerts =
-            activeAssignment.sharesLocationWithCustomers && publishedPoints.isNotEmpty()
-        if (companyId != null && shouldEvaluateProximityAlerts) {
-            proximityAlertService.evaluateBatch(activeAssignment.vehicleId, companyId, publishedPoints)
+        val shouldEvaluateProximityAlerts = plan.sharesLocationWithCustomers && publishedPoints.isNotEmpty()
+        if (plan.companyId != null && shouldEvaluateProximityAlerts) {
+            proximityAlertService.evaluateBatch(plan.vehicleId, plan.companyId, publishedPoints)
         }
-
-        return AppResult.Success(Unit)
     }
 }

@@ -8,6 +8,7 @@ import com.mozgobolt.core.data.push.InvalidPushTargetException
 import com.mozgobolt.core.database.TransactionalRunner
 import com.mozgobolt.core.domain.AppResult
 import com.mozgobolt.core.domain.push.PushNotificationSender
+import com.mozgobolt.core.resilience.PUSH_MAX_CONCURRENT_CALLS
 import com.mozgobolt.core.utility.functions.runSuspendCatching
 import com.mozgobolt.feature.deviceInstallation.domain.DeviceInstallationRepository
 import com.mozgobolt.feature.deviceInstallation.domain.DeviceInstallationService
@@ -57,31 +58,46 @@ class DeviceInstallationServiceI(
         userId: Int,
         data: Map<String, String>,
     ) {
-        val installations = tx.transactional { deviceInstallationRepository.findAllForUser(userId) }
+        val throughId = tx.transactional { deviceInstallationRepository.findLatestIdForUser(userId) } ?: return
+        var afterId: Int? = null
 
-        coroutineScope {
-            val sends =
-                installations.map { installation ->
-                    async {
-                        runSuspendCatching {
-                            pushNotificationSender.send(installation.installationId, data)
-                        }.onFailure { throwable ->
-                            if (throwable is InvalidPushTargetException) {
-                                runSuspendCatching {
-                                    tx.transactional {
-                                        deviceInstallationRepository.deleteIfCurrent(installation)
-                                    }
-                                }.onFailure { cleanupFailure ->
-                                    logger.warn {
-                                        "Failed to clean up an invalid push target for user ${installation.userId} " +
-                                            "(${cleanupFailure.javaClass.simpleName})"
+        while (afterId == null || afterId < throughId) {
+            val batch =
+                tx.transactional {
+                    deviceInstallationRepository.findPageForUser(
+                        userId = userId,
+                        afterId = afterId,
+                        throughId = throughId,
+                        limit = PUSH_MAX_CONCURRENT_CALLS,
+                    )
+                }
+            if (batch.isEmpty()) break
+            afterId = batch.last().id
+
+            coroutineScope {
+                val sends =
+                    batch.map { installation ->
+                        async {
+                            runSuspendCatching {
+                                pushNotificationSender.send(installation.installationId, data)
+                            }.onError { throwable ->
+                                if (throwable is InvalidPushTargetException) {
+                                    runSuspendCatching {
+                                        tx.transactional {
+                                            deviceInstallationRepository.deleteIfCurrent(installation)
+                                        }
+                                    }.onError { cleanupFailure ->
+                                        logger.warn {
+                                            "Failed to clean up invalid push target for user ${installation.userId} " +
+                                                "(${cleanupFailure.javaClass.simpleName})"
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
-            sends.awaitAll()
+                sends.awaitAll()
+            }
         }
     }
 }
