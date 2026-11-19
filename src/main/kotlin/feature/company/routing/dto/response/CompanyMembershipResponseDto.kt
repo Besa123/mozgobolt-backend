@@ -12,6 +12,7 @@ data class CompanyMembershipResponseDto(
     val userId: Int,
     val name: String,
     val role: String,
+    val hasActiveShiftInCompany: Boolean? = null,
 )
 
 fun CompanyMemberSummary.toResponseDto() =
@@ -19,4 +20,5 @@ fun CompanyMemberSummary.toResponseDto() =
         userId = userId,
         name = name,
         role = role.name,
+        hasActiveShiftInCompany = hasActiveShiftInCompany,
     )

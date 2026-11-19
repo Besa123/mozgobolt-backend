@@ -4,8 +4,9 @@
 
 package com.mozgobolt.feature.user.domain.model
 
-/** A driver's optional contact methods, resolved together in one lookup for a vehicle's response. */
+/** A driver's public identity and optional contact methods for a vehicle response. */
 data class DriverContactInfo(
+    val displayName: String,
     val phoneNumber: String?,
     val whatsappNumber: String?,
     val viberNumber: String?,

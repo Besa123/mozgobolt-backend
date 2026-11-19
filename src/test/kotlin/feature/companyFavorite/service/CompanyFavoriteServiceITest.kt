@@ -10,6 +10,7 @@ import com.mozgobolt.feature.companyFavorite.domain.CompanyFavoriteRepository
 import com.mozgobolt.feature.companyFavorite.domain.model.CompanyFavorite
 import com.mozgobolt.feature.companyFavorite.domain.model.CompanyFavoriteError
 import com.mozgobolt.feature.proximityNotification.domain.ProximityNotificationRepository
+import com.mozgobolt.feature.proximityNotification.domain.model.ProximityNotificationCandidate
 import com.mozgobolt.feature.proximityNotification.domain.model.ProximityNotificationRecord
 import com.mozgobolt.feature.sync.domain.model.SyncEntityType
 import com.mozgobolt.feature.sync.domain.model.SyncOperation
@@ -73,6 +74,13 @@ class CompanyFavoriteServiceITest {
             attemptedAt: Instant,
             cooldownCutoff: Instant,
         ): Boolean = error("not exercised by this test")
+
+        override suspend fun claimEntryNotifications(
+            vehicleId: Int,
+            candidates: List<ProximityNotificationCandidate>,
+            attemptedAt: Instant,
+            cooldownCutoff: Instant,
+        ): Set<Int> = error("not exercised by this test")
 
         override suspend fun markOutside(
             vehicleId: Int,

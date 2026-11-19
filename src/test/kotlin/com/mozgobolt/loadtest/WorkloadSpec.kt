@@ -26,8 +26,10 @@ internal data class WorkloadSpec(
     val authLimitPerMinute: Int,
     val maxRadiusKm: Double,
     val maxPointsPerBatch: Int,
-    /** Zipf exponent over [regions] (in listed order): 0 is uniform, larger concentrates on the first regions. */
-    val regionSkew: Double,
+    /** Zipf exponent for vendor/vehicle placement over [regions]. */
+    val truckRegionSkew: Double,
+    /** Zipf exponent for buyer placement over [regions]. */
+    val buyerRegionSkew: Double,
     /** Scatter (Rayleigh sigma) of buyers around their region centre. */
     val cityRadiusKm: Double,
     /** Radius of the star-shaped driving loop each truck repeats around its region centre. */
@@ -54,23 +56,36 @@ internal data class WorkloadSpec(
         val radiusKm: Double,
         /** Mean time a buyer keeps one live map open before closing and reopening it; 0 disables churn. */
         val viewerSessionSeconds: Int,
+        val viewerConnectRampUpSeconds: Int,
     )
 
     @Serializable
     data class Profile(
+        val trucks: Int,
         val viewers: Int,
         val placement: Placement,
+        val synchronizeTrucks: Boolean = false,
+        val routeRadiusKm: Double? = null,
+        val cityRadiusKm: Double? = null,
     )
 
     @Serializable
     enum class Placement {
-        /** Trucks and buyers stay where the seeder put them (skewed across regions). */
+        /** Actors retain their seeded positions and account ordering. */
         @SerialName("seeded")
         SEEDED,
+
+        /** Select trucks and buyers round-robin by seeded region, retaining their seeded locations. */
+        @SerialName("uniform-regions")
+        UNIFORM_REGIONS,
 
         /** Every truck and buyer is moved into the first region, the worst case for fan-out. */
         @SerialName("single-region")
         SINGLE_REGION,
+
+        /** Every route and map centre is placed inside one H3 cell at the app's resolution. */
+        @SerialName("single-cell")
+        SINGLE_CELL,
     }
 
     @Serializable

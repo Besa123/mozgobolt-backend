@@ -9,21 +9,29 @@ import com.mozgobolt.feature.vehicle.data.database.VehiclesTable
 import com.mozgobolt.feature.vehicleAssignment.data.database.VehicleAssignmentsTable
 import com.mozgobolt.feature.vehicleTracking.data.database.VehicleLocationsTable
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationRepository
+import com.mozgobolt.feature.vehicleTracking.domain.model.ActiveVehicleLocationAssignmentSnapshot
+import com.mozgobolt.feature.vehicleTracking.domain.model.CellId
 import com.mozgobolt.feature.vehicleTracking.domain.model.GeoBounds
+import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationStateSnapshot
 import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationUpdate
 import com.mozgobolt.feature.vehicleTracking.service.H3CellIndexer
+import org.jetbrains.exposed.v1.core.ResultRow
+import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.and
+import org.jetbrains.exposed.v1.core.greaterEq
 import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.core.inSubQuery
 import org.jetbrains.exposed.v1.core.isNotNull
 import org.jetbrains.exposed.v1.core.isNull
 import org.jetbrains.exposed.v1.core.less
+import org.jetbrains.exposed.v1.core.lessEq
 import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.jdbc.batchInsert
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.select
 import java.math.BigDecimal
 import java.time.Instant
+import java.util.UUID
 
 private val MIN_PERSISTABLE_TIMESTAMP = Instant.parse("0001-01-01T00:00:00Z")
 private val MAX_PERSISTABLE_TIMESTAMP = Instant.parse("+294275-12-31T23:59:59.999999Z")
@@ -36,6 +44,114 @@ private data class AssignmentReference(
 )
 
 class VehicleLocationRepositoryI : VehicleLocationRepository {
+    override suspend fun findLiveStateSnapshot(
+        cutoff: Instant,
+        asOf: Instant,
+    ): VehicleLocationStateSnapshot {
+        require(!cutoff.isAfter(asOf)) { "Live-location snapshot cutoff must not be after its as-of time" }
+
+        val activeAssignments = activeLocationAssignments()
+        val latestLocations =
+            activeAssignments
+                .associateBy(ActiveVehicleLocationAssignmentSnapshot::assignmentId)
+                .let { latestLocations(cutoff, asOf, it) }
+
+        return VehicleLocationStateSnapshot(
+            activeAssignments = activeAssignments,
+            latestLocations = latestLocations,
+        )
+    }
+
+    private fun activeLocationAssignments() =
+        VehicleAssignmentsTable
+            .select(
+                VehicleAssignmentsTable.id,
+                VehicleAssignmentsTable.vehicleId,
+                VehicleAssignmentsTable.vendorUserId,
+                VehicleAssignmentsTable.startedAt,
+                VehicleAssignmentsTable.locationSharingConsentedAt,
+            ).where { VehicleAssignmentsTable.endedAt.isNull() }
+            .map { row ->
+                ActiveVehicleLocationAssignmentSnapshot(
+                    vehicleId = row[VehicleAssignmentsTable.vehicleId],
+                    assignmentId = row[VehicleAssignmentsTable.id].value,
+                    vendorUserId = row[VehicleAssignmentsTable.vendorUserId],
+                    startedAt = row[VehicleAssignmentsTable.startedAt],
+                    sharesLocationWithCustomers = row[VehicleAssignmentsTable.locationSharingConsentedAt] != null,
+                )
+            }
+
+    private fun latestLocations(
+        cutoff: Instant,
+        asOf: Instant,
+        activeAssignmentsById: Map<Int, ActiveVehicleLocationAssignmentSnapshot>,
+    ): List<VehicleLocationUpdate> {
+        if (activeAssignmentsById.values.none(ActiveVehicleLocationAssignmentSnapshot::sharesLocationWithCustomers)) {
+            return emptyList()
+        }
+
+        val activeConsentedAssignments =
+            VehicleAssignmentsTable
+                .select(VehicleAssignmentsTable.id)
+                .where {
+                    VehicleAssignmentsTable.endedAt.isNull() and
+                        VehicleAssignmentsTable.locationSharingConsentedAt.isNotNull()
+                }
+        return VehicleLocationsTable
+            .select(
+                VehicleLocationsTable.vehicleId,
+                VehicleLocationsTable.vendorUserId,
+                VehicleLocationsTable.assignmentId,
+                VehicleLocationsTable.latitude,
+                VehicleLocationsTable.longitude,
+                VehicleLocationsTable.recordedAt,
+                VehicleLocationsTable.cellId,
+                VehicleLocationsTable.idempotencyKey,
+            ).where {
+                (VehicleLocationsTable.assignmentId inSubQuery activeConsentedAssignments) and
+                    (VehicleLocationsTable.recordedAt greaterEq cutoff) and
+                    (VehicleLocationsTable.recordedAt lessEq asOf)
+            }.withDistinctOn(
+                VehicleLocationsTable.assignmentId to SortOrder.ASC,
+                VehicleLocationsTable.recordedAt to SortOrder.DESC,
+            ).map { row -> row.toLiveLocationUpdate(activeAssignmentsById) }
+            .filter { update ->
+                update.recordedAt >= activeAssignmentsById.getValue(checkNotNull(update.assignmentId)).startedAt
+            }
+    }
+
+    private fun ResultRow.toLiveLocationUpdate(
+        activeAssignmentsById: Map<Int, ActiveVehicleLocationAssignmentSnapshot>,
+    ): VehicleLocationUpdate {
+        val assignmentId =
+            checkNotNull(this[VehicleLocationsTable.assignmentId]) {
+                "A consented assignment location must have an assignment id"
+            }
+        val assignment =
+            checkNotNull(activeAssignmentsById[assignmentId]) {
+                "A live-location snapshot row must belong to a current assignment"
+            }
+        val vendorUserId = checkNotNull(this[VehicleLocationsTable.vendorUserId])
+        check(
+            this[VehicleLocationsTable.vehicleId] == assignment.vehicleId &&
+                vendorUserId == assignment.vendorUserId,
+        ) {
+            "A live-location snapshot row must match its current assignment"
+        }
+
+        return VehicleLocationUpdate(
+            vehicleId = assignment.vehicleId,
+            vendorUserId = assignment.vendorUserId,
+            latitude = this[VehicleLocationsTable.latitude].toDouble(),
+            longitude = this[VehicleLocationsTable.longitude].toDouble(),
+            recordedAt = this[VehicleLocationsTable.recordedAt],
+            cellId = CellId(this[VehicleLocationsTable.cellId]),
+            sharesLocationWithCustomers = true,
+            assignmentId = assignment.assignmentId,
+            idempotencyKey = UUID.fromString(this[VehicleLocationsTable.idempotencyKey]),
+        )
+    }
+
     override suspend fun insertAll(updates: List<VehicleLocationUpdate>) {
         if (updates.isEmpty()) return
 

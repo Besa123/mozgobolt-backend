@@ -19,6 +19,8 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import java.time.Instant
 
 private val logger = KotlinLogging.logger {}
@@ -58,46 +60,72 @@ class DeviceInstallationServiceI(
         userId: Int,
         data: Map<String, String>,
     ) {
-        val throughId = tx.transactional { deviceInstallationRepository.findLatestIdForUser(userId) } ?: return
-        var afterId: Int? = null
+        installationPages(userId).collect { page -> sendPage(page, data) }
+    }
 
-        while (afterId == null || afterId < throughId) {
-            val batch =
+    private fun installationPages(userId: Int): Flow<List<DeviceInstallation>> =
+        flow {
+            // Capture the watermark and first page together, then close the transaction before push I/O.
+            val snapshot =
                 tx.transactional {
-                    deviceInstallationRepository.findPageForUser(
-                        userId = userId,
-                        afterId = afterId,
-                        throughId = throughId,
-                        limit = PUSH_MAX_CONCURRENT_CALLS,
-                    )
-                }
-            if (batch.isEmpty()) break
-            afterId = batch.last().id
+                    deviceInstallationRepository.findLatestIdForUser(userId)?.let { throughId ->
+                        throughId to
+                            deviceInstallationRepository.findPageForUser(
+                                userId = userId,
+                                afterId = null,
+                                throughId = throughId,
+                                limit = PUSH_MAX_CONCURRENT_CALLS,
+                            )
+                    }
+                } ?: return@flow
+            val (throughId, firstPage) = snapshot
+            if (firstPage.isEmpty()) return@flow
 
-            coroutineScope {
-                val sends =
-                    batch.map { installation ->
-                        async {
-                            runSuspendCatching {
-                                pushNotificationSender.send(installation.installationId, data)
-                            }.onError { throwable ->
-                                if (throwable is InvalidPushTargetException) {
-                                    runSuspendCatching {
-                                        tx.transactional {
-                                            deviceInstallationRepository.deleteIfCurrent(installation)
-                                        }
-                                    }.onError { cleanupFailure ->
-                                        logger.warn {
-                                            "Failed to clean up invalid push target for user ${installation.userId} " +
-                                                "(${cleanupFailure.javaClass.simpleName})"
-                                        }
+            var afterId = firstPage.last().id
+            emit(firstPage)
+            while (afterId < throughId) {
+                val page =
+                    tx.transactional {
+                        deviceInstallationRepository.findPageForUser(
+                            userId = userId,
+                            afterId = afterId,
+                            throughId = throughId,
+                            limit = PUSH_MAX_CONCURRENT_CALLS,
+                        )
+                    }
+                if (page.isEmpty()) return@flow
+                afterId = page.last().id
+                emit(page)
+            }
+        }
+
+    private suspend fun sendPage(
+        page: List<DeviceInstallation>,
+        data: Map<String, String>,
+    ) {
+        coroutineScope {
+            val sends =
+                page.map { installation ->
+                    async {
+                        runSuspendCatching {
+                            pushNotificationSender.send(installation.installationId, data)
+                        }.onError { throwable ->
+                            if (throwable is InvalidPushTargetException) {
+                                runSuspendCatching {
+                                    tx.transactional {
+                                        deviceInstallationRepository.deleteIfCurrent(installation)
+                                    }
+                                }.onError { cleanupFailure ->
+                                    logger.warn {
+                                        "Failed to clean up invalid push target for user ${installation.userId} " +
+                                            "(${cleanupFailure.javaClass.simpleName})"
                                     }
                                 }
                             }
                         }
                     }
-                sends.awaitAll()
-            }
+                }
+            sends.awaitAll()
         }
     }
 }

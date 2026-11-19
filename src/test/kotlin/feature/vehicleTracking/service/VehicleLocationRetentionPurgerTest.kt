@@ -8,6 +8,7 @@ import com.mozgobolt.core.database.TransactionOutcome
 import com.mozgobolt.core.database.TransactionalRunner
 import com.mozgobolt.core.utility.ApplicationBackgroundScope
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationRepository
+import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationStateSnapshot
 import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationUpdate
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -43,6 +44,11 @@ class VehicleLocationRetentionPurgerTest {
             private set
         var throwOnNextPurge: Throwable? = null
         var deletedCountToReturn = 0
+
+        override suspend fun findLiveStateSnapshot(
+            cutoff: Instant,
+            asOf: Instant,
+        ): VehicleLocationStateSnapshot = error("not exercised by this test")
 
         override suspend fun insertAll(updates: List<VehicleLocationUpdate>) = error("not exercised by this test")
 

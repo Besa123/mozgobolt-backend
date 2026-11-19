@@ -38,4 +38,11 @@ class ApplicationBackgroundScope(
     fun cancel() {
         job.cancel()
     }
+
+    /** Cancels all application-lifetime tasks and waits for their cleanup to finish. */
+    @Suppress("RedundantSuspendModifier") // Joining child jobs must suspend before dependencies are released.
+    suspend fun cancelAndJoin() {
+        job.cancel()
+        job.join()
+    }
 }

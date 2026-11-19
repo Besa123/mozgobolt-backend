@@ -38,3 +38,43 @@ internal fun assignBuckets(
     total: Int,
     weights: List<Double>,
 ): List<Int> = apportion(total, weights).flatMapIndexed { bucket, count -> List(count) { bucket } }
+
+/** Selects actors round-robin by ascending bucket index without changing their stored locations. */
+internal fun <T> takeRoundRobinByBucket(
+    actors: List<T>,
+    count: Int,
+    bucketOf: (T) -> Int,
+): List<T> {
+    require(count in 0..actors.size) { "count must be between 0 and ${actors.size}" }
+    if (count == 0) return emptyList()
+
+    val buckets =
+        actors
+            .groupBy(bucketOf)
+            .toSortedMap()
+            .values
+            .map { it.iterator() }
+    val selected = ArrayList<T>(count)
+    while (selected.size < count) {
+        check(appendOneFromEachBucket(buckets, selected, count)) {
+            "Unable to select $count actors from ${actors.size} available actors"
+        }
+    }
+    return selected
+}
+
+private fun <T> appendOneFromEachBucket(
+    buckets: List<Iterator<T>>,
+    selected: MutableList<T>,
+    limit: Int,
+): Boolean {
+    var appended = false
+    for (bucket in buckets) {
+        if (selected.size == limit) break
+        if (bucket.hasNext()) {
+            selected += bucket.next()
+            appended = true
+        }
+    }
+    return appended
+}

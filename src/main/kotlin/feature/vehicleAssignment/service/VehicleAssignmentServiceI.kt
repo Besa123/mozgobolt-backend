@@ -303,6 +303,9 @@ class VehicleAssignmentServiceI(
     override suspend fun findAllForCompany(companyId: Int): List<VehicleAssignment> =
         tx.transactional { vehicleAssignmentRepository.findAllForCompany(companyId) }
 
+    override suspend fun findActiveForCompany(companyId: Int): List<VehicleAssignment> =
+        tx.transactional { vehicleAssignmentRepository.findActiveForCompany(companyId) }
+
     override fun notifyEndedAssignments(assignments: List<VehicleAssignment>) {
         assignments.distinctBy(VehicleAssignment::id).forEach { assignment ->
             hub.markOffline(assignment.vehicleId, assignment.id)

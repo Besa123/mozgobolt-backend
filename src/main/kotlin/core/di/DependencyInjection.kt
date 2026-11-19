@@ -34,6 +34,7 @@ import com.mozgobolt.core.database.DatabaseFactory.createDatabase
 import com.mozgobolt.core.database.DatabaseFactory.createHikariDataSource
 import com.mozgobolt.core.database.ExposedTransactionalRunner
 import com.mozgobolt.core.database.TransactionalRunner
+import com.mozgobolt.core.domain.AppResult
 import com.mozgobolt.core.domain.email.EmailService
 import com.mozgobolt.core.domain.media.ImageSanitizer
 import com.mozgobolt.core.domain.media.ImageStorage
@@ -47,9 +48,11 @@ import com.mozgobolt.core.domain.validation.EmailValidator
 import com.mozgobolt.core.domain.validation.PasswordValidator
 import com.mozgobolt.core.modules.AppConfig
 import com.mozgobolt.core.modules.createDispatchers
+import com.mozgobolt.core.modules.metrics.PrometheusMetrics
 import com.mozgobolt.core.modules.validateForEnvironment
 import com.mozgobolt.core.resilience.ExternalServiceResiliencePolicies
 import com.mozgobolt.core.utility.ApplicationBackgroundScope
+import com.mozgobolt.core.utility.functions.runSuspendCatching
 import com.mozgobolt.feature.company.di.configureCompanyDependencyInjection
 import com.mozgobolt.feature.companyFavorite.di.configureCompanyFavoriteDependencyInjection
 import com.mozgobolt.feature.deviceInstallation.di.configureDeviceInstallationDependencyInjection
@@ -61,18 +64,27 @@ import com.mozgobolt.feature.vehicle.di.configureVehicleDependencyInjection
 import com.mozgobolt.feature.vehicleAssignment.di.configureVehicleAssignmentDependencyInjection
 import com.mozgobolt.feature.vehiclePing.di.configureVehiclePingDependencyInjection
 import com.mozgobolt.feature.vehicleTracking.di.configureVehicleTrackingDependencyInjection
+import com.mozgobolt.feature.vehicleTracking.service.VehicleLocationBatchWriter
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.server.application.Application
-import io.ktor.server.application.ApplicationStopped
+import io.ktor.server.application.ApplicationStopping
 import io.ktor.server.config.property
 import io.ktor.server.plugins.di.dependencies
 import io.ktor.server.plugins.di.provide
+import io.ktor.util.AttributeKey
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.sql.DataSource
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 private const val PRODUCTION_ENVIRONMENT = "production"
 private const val FIREBASE_CONNECT_TIMEOUT_MS = 1_000
 private const val FIREBASE_READ_TIMEOUT_MS = 3_000
 private const val FIREBASE_WRITE_TIMEOUT_MS = 3_000
+private val LOCATION_HISTORY_SHUTDOWN_FLUSH_TIMEOUT = 4.seconds
+private val logger = KotlinLogging.logger {}
+internal val MESSAGE_RELAY_ATTRIBUTE = AttributeKey<MessageRelay>("message-relay")
 
 fun Application.configureDependencyInjection() {
     val appConfig: AppConfig = property("app")
@@ -80,13 +92,18 @@ fun Application.configureDependencyInjection() {
     appConfig.validateForEnvironment(runtimeEnvironment)
     val runtimeDispatchers = appConfig.runtimeCapacity.createDispatchers()
     val backgroundScope = ApplicationBackgroundScope()
+    val prometheusMetrics = PrometheusMetrics(appConfig.metrics.enabled)
     val resiliencePolicies = ExternalServiceResiliencePolicies.create()
+
+    // Register before Ktor DI so workers stop and history flushes before DI closes owned resources.
+    configureApplicationShutdown(backgroundScope)
 
     configureExternalServiceDependencyInjection(appConfig, runtimeEnvironment, resiliencePolicies)
 
     dependencies {
         provide<AppConfig> { appConfig }
         provide<ApplicationBackgroundScope> { backgroundScope }
+        provide<PrometheusMetrics> { prometheusMetrics }
 
         provide<DataSource> {
             createHikariDataSource(
@@ -143,10 +160,6 @@ fun Application.configureDependencyInjection() {
         }
     }
 
-    monitor.subscribe(ApplicationStopped) {
-        backgroundScope.cancel()
-    }
-
     configureAuthDependencyInjection()
     configureSyncDependencyInjection()
     configureCompanyDependencyInjection()
@@ -160,6 +173,33 @@ fun Application.configureDependencyInjection() {
     configureVehiclePingDependencyInjection()
 }
 
+private fun Application.configureApplicationShutdown(backgroundScope: ApplicationBackgroundScope) {
+    monitor.subscribe(ApplicationStopping) { application ->
+        runBlocking {
+            runSuspendCatching {
+                withTimeoutOrNull(LOCATION_HISTORY_SHUTDOWN_FLUSH_TIMEOUT) {
+                    backgroundScope.cancelAndJoin()
+                    val writer: VehicleLocationBatchWriter by application.dependencies
+                    writer.stopAndFlush()
+                } ?: error("Vehicle-location history flush exceeded the shutdown timeout")
+            }.onError { failure ->
+                logger.error(failure) { "Final vehicle-location history flush failed during shutdown" }
+            }
+        }
+    }
+}
+
+private fun createPasswordBreachChecker(
+    appConfig: AppConfig,
+    resiliencePolicies: ExternalServiceResiliencePolicies,
+): PasswordBreachChecker =
+    if (appConfig.security.shouldCheckPasswordBreach) {
+        HibpPasswordBreachCheckerI(resilience = resiliencePolicies.passwordBreach)
+    } else {
+        logger.warn { "Password breach checking is disabled by configuration" }
+        PasswordBreachChecker { AppResult.Success(false) }
+    }
+
 private fun Application.configureExternalServiceDependencyInjection(
     appConfig: AppConfig,
     runtimeEnvironment: String,
@@ -167,7 +207,7 @@ private fun Application.configureExternalServiceDependencyInjection(
 ) {
     dependencies {
         provide<PasswordBreachChecker> {
-            HibpPasswordBreachCheckerI(resilience = resiliencePolicies.passwordBreach)
+            createPasswordBreachChecker(appConfig, resiliencePolicies)
         }
 
         provide<EmailService> {
@@ -204,6 +244,10 @@ private fun Application.configureExternalServiceDependencyInjection(
             }
         }
 
+        provide<FirebaseAppHandle> {
+            firebaseAppFor(appConfig.push.serviceAccountJson)
+        }
+
         provide<VirusScanner> {
             if (appConfig.clamAv.enabled) {
                 ClamAvVirusScanner(appConfig.clamAv, resiliencePolicies.clamAv)
@@ -217,7 +261,7 @@ private fun Application.configureExternalServiceDependencyInjection(
                 when {
                     appConfig.push.enabled && appConfig.push.serviceAccountJson.isNotBlank() -> {
                         FcmPushNotificationSender(
-                            FirebaseFcmMessageSender(firebaseAppFor(appConfig.push.serviceAccountJson)),
+                            FirebaseFcmMessageSender(resolve<FirebaseAppHandle>().app),
                         )
                     }
 
@@ -250,21 +294,29 @@ fun Application.configureIdempotencyRetentionPurger() {
 fun Application.configureMessageRelay() {
     val relay: MessageRelay by dependencies
     relay.start()
+    attributes.put(MESSAGE_RELAY_ATTRIBUTE, relay)
+}
 
-    monitor.subscribe(ApplicationStopped) {
-        relay.stop()
+internal class FirebaseAppHandle(
+    val app: FirebaseApp,
+    private val isOwned: Boolean,
+) : AutoCloseable {
+    override fun close() {
+        if (isOwned) app.delete()
     }
 }
 
 /**
  * [FirebaseApp.initializeApp] throws if a default-named app already exists — reuse it instead of
  * assuming this provider only ever runs once, since nothing about Ktor DI's `provide { }`
- * contract guarantees that.
+ * contract guarantees that. Only delete an app this provider created.
  */
 @Suppress("CommentOverPrivateFunction")
-private fun firebaseAppFor(serviceAccountJson: String): FirebaseApp {
-    val existing = FirebaseApp.getApps().firstOrNull()
-    if (existing != null) return existing
+private fun firebaseAppFor(serviceAccountJson: String): FirebaseAppHandle {
+    FirebaseApp
+        .getApps()
+        .firstOrNull { it.name == FirebaseApp.DEFAULT_APP_NAME }
+        ?.let { return FirebaseAppHandle(it, isOwned = false) }
 
     val credentials = GoogleCredentials.fromStream(serviceAccountJson.byteInputStream())
     val options =
@@ -275,5 +327,5 @@ private fun firebaseAppFor(serviceAccountJson: String): FirebaseApp {
             .setReadTimeout(FIREBASE_READ_TIMEOUT_MS)
             .setWriteTimeout(FIREBASE_WRITE_TIMEOUT_MS)
             .build()
-    return FirebaseApp.initializeApp(options)
+    return FirebaseAppHandle(FirebaseApp.initializeApp(options), isOwned = true)
 }

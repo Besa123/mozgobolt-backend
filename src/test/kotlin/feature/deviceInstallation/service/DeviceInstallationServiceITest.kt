@@ -7,6 +7,8 @@ package com.mozgobolt.feature.deviceInstallation.service
 import com.mozgobolt.core.data.push.FakePushNotificationSender
 import com.mozgobolt.core.data.push.InvalidPushTargetException
 import com.mozgobolt.core.data.push.TransientPushDeliveryException
+import com.mozgobolt.core.database.TransactionOutcome
+import com.mozgobolt.core.database.TransactionalRunner
 import com.mozgobolt.core.domain.push.PushNotificationSender
 import com.mozgobolt.core.resilience.PUSH_MAX_CONCURRENT_CALLS
 import com.mozgobolt.feature.deviceInstallation.domain.FakeDeviceInstallationRepository
@@ -26,6 +28,27 @@ class DeviceInstallationServiceITest {
         val repository = FakeDeviceInstallationRepository()
         val pushSender = FakePushNotificationSender()
         val service = DeviceInstallationServiceI(repository, NoopTransactionalRunner(), pushSender)
+    }
+
+    private class CountingTransactionalRunner : TransactionalRunner {
+        private val delegate = NoopTransactionalRunner()
+
+        var transactionCount = 0
+            private set
+
+        fun reset() {
+            transactionCount = 0
+        }
+
+        override suspend fun <T> transactional(block: suspend () -> T): T {
+            transactionCount++
+            return delegate.transactional(block)
+        }
+
+        override suspend fun <T> transactionalWithOutcome(block: suspend () -> TransactionOutcome<T>): T {
+            transactionCount++
+            return delegate.transactionalWithOutcome(block)
+        }
     }
 
     @Test
@@ -294,6 +317,23 @@ class DeviceInstallationServiceITest {
     }
 
     @Test
+    fun `sendPush reads the watermark and first page in one transaction`() {
+        runBlocking {
+            val repository = FakeDeviceInstallationRepository()
+            val sender = FakePushNotificationSender()
+            val tx = CountingTransactionalRunner()
+            val service = DeviceInstallationServiceI(repository, tx, sender)
+            service.registerInstallation(userId = 1, installationId = "device", platform = DevicePlatform.ANDROID)
+            tx.reset()
+
+            service.sendPush(userId = 1, data = mapOf("k" to "v"))
+
+            assertEquals(1, tx.transactionCount)
+            assertEquals(listOf("device"), sender.sent.map { it.installationId })
+        }
+    }
+
+    @Test
     fun `sendPush does not include installations registered after dispatch starts`() {
         runBlocking {
             val repository = FakeDeviceInstallationRepository()
@@ -337,6 +377,7 @@ class DeviceInstallationServiceITest {
     fun `sendPush bounds concurrent delivery work to the configured bulkhead size`() {
         runBlocking {
             val repository = FakeDeviceInstallationRepository()
+            val tx = CountingTransactionalRunner()
             val activeSends = AtomicInteger()
             val maximumConcurrentSends = AtomicInteger()
             val completedSends = AtomicInteger()
@@ -356,7 +397,7 @@ class DeviceInstallationServiceITest {
                         }
                     }
                 }
-            val service = DeviceInstallationServiceI(repository, NoopTransactionalRunner(), sender)
+            val service = DeviceInstallationServiceI(repository, tx, sender)
             val installationCount = PUSH_MAX_CONCURRENT_CALLS * 3
 
             repeat(installationCount) { index ->
@@ -366,11 +407,13 @@ class DeviceInstallationServiceITest {
                     platform = DevicePlatform.ANDROID,
                 )
             }
+            tx.reset()
 
             service.sendPush(userId = 1, data = mapOf("k" to "v"))
 
             assertEquals(installationCount, completedSends.get())
             assertTrue(maximumConcurrentSends.get() in 2..PUSH_MAX_CONCURRENT_CALLS)
+            assertEquals(3, tx.transactionCount, "the initial page shares the watermark transaction")
         }
     }
 }

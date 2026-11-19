@@ -32,6 +32,8 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -271,6 +273,54 @@ class CompanyRoutesTest {
                     CompanyMembershipResponseDto(11, "Sam Vendor", "MEMBER"),
                 ),
                 Json.decodeFromString<List<CompanyMembershipResponseDto>>(response.bodyAsText()),
+            )
+            assertEquals(
+                listOf(false, false),
+                Json
+                    .parseToJsonElement(response.bodyAsText())
+                    .jsonArray
+                    .map { "hasActiveShiftInCompany" in it.jsonObject },
+            )
+        }
+
+    @Test
+    fun `company member list serializes admin active-shift status including false`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = FakeCompanyService()
+            service.listMembersResult =
+                AppResult.Success(
+                    listOf(
+                        CompanyMemberSummary(
+                            userId = 10,
+                            name = "Alex Vendor",
+                            role = CompanyRole.ADMIN,
+                            hasActiveShiftInCompany = true,
+                        ),
+                        CompanyMemberSummary(
+                            userId = 11,
+                            name = "Sam Vendor",
+                            role = CompanyRole.MEMBER,
+                            hasActiveShiftInCompany = false,
+                        ),
+                    ),
+                )
+            application {
+                installTestModules()
+                routing { apiV1 { companyRoutes(service, FakeIdempotencyStore()) } }
+            }
+
+            val response =
+                client.get("/api/v1/companies/5/members") {
+                    bearerAuth(testAccessTokenFor(userId = 42, role = "VENDOR"))
+                }
+
+            assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals(
+                listOf(true, false),
+                Json
+                    .decodeFromString<List<CompanyMembershipResponseDto>>(response.bodyAsText())
+                    .map { it.hasActiveShiftInCompany },
             )
         }
 

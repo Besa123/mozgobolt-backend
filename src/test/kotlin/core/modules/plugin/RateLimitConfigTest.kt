@@ -5,6 +5,7 @@
 package com.mozgobolt.core.modules.plugin
 
 import com.mozgobolt.core.configureTestEnvironment
+import com.mozgobolt.core.data.ratelimit.RateLimitStoreUnavailableException
 import com.mozgobolt.core.installTestModules
 import com.mozgobolt.core.testAccessTokenFor
 import com.mozgobolt.core.utility.functions.protectedApi
@@ -16,7 +17,10 @@ import io.ktor.client.request.post
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.install
+import io.ktor.server.plugins.ratelimit.RateLimit
 import io.ktor.server.plugins.ratelimit.RateLimitName
+import io.ktor.server.plugins.ratelimit.RateLimiter
 import io.ktor.server.plugins.ratelimit.rateLimit
 import io.ktor.server.response.respond
 import io.ktor.server.routing.get
@@ -32,6 +36,36 @@ import kotlin.test.assertTrue
 import io.ktor.server.routing.post as routePost
 
 class RateLimitConfigTest {
+    @Test
+    fun `shared rate-limit storage failure rejects the request without running its handler`() =
+        testApplication {
+            application {
+                install(RateLimit) {
+                    register(RateLimitName("unavailable-store")) {
+                        rateLimiter { _, _ ->
+                            object : RateLimiter {
+                                override suspend fun tryConsume(tokens: Int): RateLimiter.State =
+                                    throw RateLimitStoreUnavailableException()
+                            }
+                        }
+                        requestKey { "shared-client" }
+                    }
+                }
+                configureContentNegotiation()
+                configureStatusPages()
+                routing {
+                    rateLimit(RateLimitName("unavailable-store")) {
+                        get("/rate-limit-unavailable-test") { call.respond(HttpStatusCode.OK) }
+                    }
+                }
+            }
+
+            val response = client.get("/rate-limit-unavailable-test")
+
+            assertEquals(HttpStatusCode.ServiceUnavailable, response.status)
+            assertTrue(response.bodyAsText().contains("RATE_LIMIT_STORE_UNAVAILABLE"))
+        }
+
     @Test
     fun `API_LIMIT gives each authenticated user their own independent budget`() =
         testApplication {

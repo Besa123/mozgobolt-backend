@@ -176,6 +176,7 @@ class UserServiceI(
         tx.transactional {
             userRepository.findUserById(userId)?.let { user ->
                 DriverContactInfo(
+                    displayName = user.name,
                     phoneNumber = user.phoneNumber.takeIf { user.phoneNumberVisible },
                     whatsappNumber = user.whatsappNumber.takeIf { user.whatsappVisible },
                     viberNumber = user.viberNumber.takeIf { user.viberVisible },

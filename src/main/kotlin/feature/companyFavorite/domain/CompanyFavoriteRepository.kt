@@ -29,11 +29,6 @@ interface CompanyFavoriteRepository {
     /** Lists the companies favorited by [userId]. */
     suspend fun findAllForUser(userId: Int): List<CompanyFavorite>
 
-    /**
-     * Every user id that has favorited [companyId] — the first half of the candidate-narrowing
-     * query [com.mozgobolt.feature.proximityNotification.service.ProximityAlertServiceI] relies
-     * on to avoid scanning every buyer's saved locations on every telemetry point. Backed by the
-     * existing index on `company_favorites(company_id)`.
-     */
+    /** Every user id that has favorited [companyId], backed by the index on `company_favorites(company_id)`. */
     suspend fun findUserIdsFavoritingCompany(companyId: Int): List<Int>
 }

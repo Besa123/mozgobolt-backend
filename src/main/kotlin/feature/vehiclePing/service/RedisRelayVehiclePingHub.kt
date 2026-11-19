@@ -72,9 +72,10 @@ class RedisRelayVehiclePingHub(
     fun start() {
         if (!relay.isCrossInstanceRelaySupported || job?.isActive == true) return
 
+        val pings = relay.subscribe(VEHICLE_PING_CHANNEL)
         job =
             backgroundScope.launch(CoroutineName("vehicle-ping-relay-subscriber")) {
-                relay.subscribe(VEHICLE_PING_CHANNEL).collect { raw ->
+                pings.collect { raw ->
                     val decodeResult = runSuspendCatching { Json.decodeFromString<VehiclePingRelayMessage>(raw) }
                     decodeResult.onSuccess { message ->
                         delegate.publish(
@@ -92,6 +93,12 @@ class RedisRelayVehiclePingHub(
                     }
                 }
             }
+    }
+
+    suspend fun awaitSubscriptionReady() {
+        if (relay.isCrossInstanceRelaySupported) {
+            relay.awaitSubscription(VEHICLE_PING_CHANNEL)
+        }
     }
 
     @Synchronized

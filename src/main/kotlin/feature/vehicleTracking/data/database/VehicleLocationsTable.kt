@@ -40,7 +40,7 @@ data object VehicleLocationsTable : LongIdTable("vehicle_locations") {
     // Which driving session this point was recorded during — backs VehicleLocationRepositoryI's
     // retention purge, which scopes its 30-day cutoff to a session's ended_at, not each row's own
     // recordedAt.
-    val assignmentId = integer("assignment_id").nullable().index()
+    val assignmentId = integer("assignment_id").nullable()
     val latitude = decimal("latitude", 9, 6)
     val longitude = decimal("longitude", 9, 6)
     val recordedAt = timestamp("recorded_at")
@@ -73,6 +73,13 @@ data object VehicleLocationsTable : LongIdTable("vehicle_locations") {
             vendorUserId to VehicleAssignmentsTable.vendorUserId,
             onDelete = ReferenceOption.CASCADE,
             onUpdate = ReferenceOption.RESTRICT,
+        )
+        index(
+            "vehicle_locations_assignment_recorded_at_idx",
+            false,
+            assignmentId,
+            recordedAt,
+            filterCondition = { assignmentId.isNotNull() },
         )
     }
 }

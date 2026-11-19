@@ -39,10 +39,13 @@ class S3ImageStorageTest {
         var lastPutBucket: String? = null
         var lastDeleteObjectKeys: List<String>? = null
         var deleteErrors: List<S3Error> = emptyList()
+        var closed = false
 
         override fun serviceName(): String = "s3"
 
-        override fun close() = Unit
+        override fun close() {
+            closed = true
+        }
 
         override fun putObject(
             putObjectRequest: PutObjectRequest,
@@ -65,6 +68,15 @@ class S3ImageStorageTest {
             keys.filterNot { it in failedKeys }.forEach(stored::remove)
             return DeleteObjectsResponse.builder().errors(deleteErrors).build()
         }
+    }
+
+    @Test
+    fun `close releases the owned S3 client`() {
+        val client = FakeS3Client()
+
+        S3ImageStorage(client, "test-bucket", freshResilience()).close()
+
+        assertTrue(client.closed)
     }
 
     @Test

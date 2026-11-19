@@ -106,6 +106,10 @@
               "ADMIN",
               "MEMBER"
             ]
+          },
+          "hasActiveShiftInCompany": {
+            "type": "boolean",
+            "description": "Included only for company admins. True when the member has an active assignment to a vehicle in the requested company."
           }
         }
       },
@@ -197,6 +201,69 @@
             "nullable": true
           }
         }
+      },
+      "CompanyVehicle": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "companyId": {
+            "type": "integer"
+          },
+          "label": {
+            "type": "string"
+          },
+          "licensePlate": {
+            "type": "string"
+          },
+          "pictureUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "availability": {
+            "type": "string",
+            "enum": [
+              "AVAILABLE",
+              "IN_USE"
+            ],
+            "description": "Based on whether the vehicle has an active assignment; private shifts are IN_USE."
+          },
+          "currentDriverName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Active driver's display name, independent of contact visibility; null when AVAILABLE."
+          },
+          "currentDriverPhoneNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "currentDriverWhatsAppLink": {
+            "type": "string",
+            "nullable": true
+          },
+          "currentDriverViberLink": {
+            "type": "string",
+            "nullable": true
+          },
+          "currentDriverMessengerLink": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "companyId",
+          "label",
+          "licensePlate",
+          "pictureUrl",
+          "availability",
+          "currentDriverName",
+          "currentDriverPhoneNumber",
+          "currentDriverWhatsAppLink",
+          "currentDriverViberLink",
+          "currentDriverMessengerLink"
+        ]
       },
       "VehicleAssignment": {
         "type": "object",
@@ -358,14 +425,14 @@
     "/health": {
       "get": {
         "summary": "Health check",
-        "description": "Returns health status of the service including database connectivity",
+        "description": "Returns whether the application process is alive; dependency health is reported by the readiness check",
         "tags": [
           "Infrastructure"
         ],
         "operationId": "getHealth",
         "responses": {
           "200": {
-            "description": "Service is healthy",
+            "description": "The application process is alive",
             "content": {
               "application/json": {
                 "schema": {
@@ -379,16 +446,6 @@
                 }
               }
             }
-          },
-          "503": {
-            "description": "Service is unhealthy (database unreachable)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
           }
         }
       }
@@ -396,7 +453,7 @@
     "/ready": {
       "get": {
         "summary": "Readiness check",
-        "description": "Returns whether the service is ready to accept traffic",
+        "description": "Returns whether the service can accept traffic; readiness requires a valid database connection",
         "tags": [
           "Infrastructure"
         ],
@@ -417,6 +474,41 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Service is not ready because the database is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "summary": "Prometheus metrics",
+        "description": "Exposes metrics only when METRICS_ENABLED=true. This endpoint has no application authentication and must be restricted to a trusted monitoring network.",
+        "tags": [
+          "Infrastructure"
+        ],
+        "operationId": "getMetrics",
+        "responses": {
+          "200": {
+            "description": "Prometheus text exposition format",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Metrics are disabled"
           }
         }
       }
@@ -1859,7 +1951,7 @@
     "/api/v1/companies/{id}/members": {
       "get": {
         "summary": "List a company's members",
-        "description": "Vendor-only. Any member of the company may list each member's user id, display name, and company role. Email addresses are not returned.",
+        "description": "Vendor-only. Any member of the company may list each member's user id, display name, and company role. Email addresses are not returned. Company admins additionally receive hasActiveShiftInCompany for each member; ordinary members do not receive that field.",
         "tags": [
           "Companies"
         ],
@@ -2501,7 +2593,7 @@
       },
       "get": {
         "summary": "List a company's vehicles",
-        "description": "Any member of the company. Includes each vehicle's current driver's contact info (resolved live from whichever assignment is currently active). Archived vehicles are excluded.",
+        "description": "Any member of the company. Includes explicit AVAILABLE/IN_USE status and the active driver's display name, including for private shifts; public contact fields remain visibility-filtered. Archived vehicles are excluded. This company-scoped snapshot is not a reservation; linking remains authoritative.",
         "tags": [
           "Vehicles"
         ],
@@ -2525,7 +2617,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/Vehicle"
+                    "$ref": "#/components/schemas/CompanyVehicle"
                   }
                 }
               }

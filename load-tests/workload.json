@@ -1,11 +1,12 @@
 {
-  "trucks": 100,
+  "trucks": 200,
   "buyers": 500,
   "loginBurst": 150,
   "authLimitPerMinute": 5,
   "maxRadiusKm": 25.0,
   "maxPointsPerBatch": 100,
-  "regionSkew": 1.0,
+  "truckRegionSkew": 0.0,
+  "buyerRegionSkew": 1.0,
   "cityRadiusKm": 4.0,
   "routeRadiusKm": 9.0,
   "buyerBehavior": {
@@ -19,16 +20,34 @@
     "truckIntervalSeconds": 5.0,
     "pointsPerBatch": 1,
     "radiusKm": 5.0,
-    "viewerSessionSeconds": 60
+    "viewerSessionSeconds": 60,
+    "viewerConnectRampUpSeconds": 5
   },
   "profiles": {
     "city-skew": {
+      "trucks": 100,
       "viewers": 500,
       "placement": "seeded"
     },
     "hotspot": {
+      "trucks": 200,
       "viewers": 500,
-      "placement": "single-region"
+      "placement": "single-region",
+      "synchronizeTrucks": true
+    },
+    "country-wide": {
+      "trucks": 200,
+      "viewers": 200,
+      "placement": "uniform-regions",
+      "synchronizeTrucks": true
+    },
+    "single-cell": {
+      "trucks": 200,
+      "viewers": 200,
+      "placement": "single-cell",
+      "synchronizeTrucks": true,
+      "routeRadiusKm": 0.1,
+      "cityRadiusKm": 0.0
     }
   },
   "regions": [

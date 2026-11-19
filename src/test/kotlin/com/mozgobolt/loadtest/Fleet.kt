@@ -11,6 +11,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -57,12 +58,33 @@ internal class Truck(
 internal data class TelemetrySchedule(
     val interval: Duration,
     val pointsPerBatch: Int,
+    val synchronizeTrucks: Boolean = false,
 ) {
     init {
         require(pointsPerBatch >= 1) { "pointsPerBatch must be positive" }
         require(interval / pointsPerBatch >= MIN_SAMPLE_SPACING) {
             "Samples must be at least $MIN_SAMPLE_SPACING apart so millisecond timestamps stay strictly increasing"
         }
+    }
+
+    fun startOffset(
+        truckIndex: Int,
+        truckCount: Int,
+    ): Duration {
+        require(truckCount > 0) { "truckCount must be positive" }
+        require(truckIndex in 0 until truckCount) { "truckIndex must be within the fleet" }
+        return if (synchronizeTrucks) Duration.ZERO else interval * truckIndex / truckCount
+    }
+
+    fun batchCount(
+        startOffset: Duration,
+        runDuration: Duration,
+    ): Int {
+        require(startOffset >= Duration.ZERO) { "startOffset must not be negative" }
+        require(runDuration >= Duration.ZERO) { "runDuration must not be negative" }
+        val remaining = runDuration - startOffset
+        if (remaining < interval) return 0
+        return (remaining.inWholeNanoseconds / interval.inWholeNanoseconds).toInt()
     }
 
     private companion object {
@@ -103,19 +125,26 @@ internal class Fleet(
                 }.awaitAll()
         }
 
-    /** Drives every truck until the calling scope is cancelled; [startedAt] anchors all recorded timestamps. */
-    suspend fun run(startedAt: Instant) =
-        coroutineScope {
-            trucks.forEachIndexed { index, truck ->
-                val startOffset = schedule.interval * index / trucks.size
-                launch {
-                    truck.batches(startOffset, startedAt).collect { batch ->
+    /** Sends every scheduled batch due within [runDuration] and waits for in-flight uploads to finish. */
+    suspend fun run(
+        startedAt: Instant,
+        runDuration: Duration,
+    ) = coroutineScope {
+        trucks.forEachIndexed { index, truck ->
+            val startOffset = schedule.startOffset(index, trucks.size)
+            val batchCount = schedule.batchCount(startOffset, runDuration)
+            if (batchCount == 0) return@forEachIndexed
+            launch {
+                truck
+                    .batches(startOffset, startedAt)
+                    .take(batchCount)
+                    .collect { batch ->
                         sink.record(Observation.GeneratorLag(LagSource.TRUCK_TICK, batch.lateness))
                         truck.upload(batch.sequence, batch.points)
                     }
-                }
             }
         }
+    }
 
     private fun Truck.batches(
         startOffset: Duration,

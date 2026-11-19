@@ -5,9 +5,13 @@
 package com.mozgobolt.feature.vehicleTracking.service
 
 import com.mozgobolt.feature.vehicleTracking.domain.CellIndexer
+import com.mozgobolt.feature.vehicleTracking.domain.EARTH_RADIUS_KM
+import com.mozgobolt.feature.vehicleTracking.domain.haversineKm
+import com.mozgobolt.feature.vehicleTracking.domain.model.ActiveVehicleLocationAssignmentSnapshot
 import com.mozgobolt.feature.vehicleTracking.domain.model.CellId
 import com.mozgobolt.feature.vehicleTracking.domain.model.GeoPoint
 import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLiveEvent
+import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationStateSnapshot
 import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationUpdate
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
@@ -19,6 +23,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import java.time.Instant
+import kotlin.math.cos
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -35,6 +40,17 @@ private const val COLLECTOR_ATTACHMENT_YIELDS = 1
 
 private suspend fun awaitAllCollectorsAttached() {
     repeat(COLLECTOR_ATTACHMENT_YIELDS) { yield() }
+}
+
+private fun pointAtEastwardDistance(
+    center: GeoPoint,
+    distanceKm: Double,
+): GeoPoint {
+    val longitudeOffset =
+        Math.toDegrees(
+            distanceKm / (EARTH_RADIUS_KM * cos(Math.toRadians(center.latitude))),
+        )
+    return GeoPoint(center.latitude, center.longitude + longitudeOffset)
 }
 
 private fun VehicleLiveEvent.expectPosition(): VehicleLocationUpdate =
@@ -164,6 +180,76 @@ class InMemoryVehicleLocationHubTest {
     }
 
     @Test
+    fun `snapshot reconciliation restores current positions and emits offline for ended assignments`() =
+        runBlocking {
+            val hub = InMemoryVehicleLocationHub(FakeCellIndexer())
+            val publicUpdate = update(vehicleId = 1, latitude = 10.0, longitude = 10.0, assignmentId = 10)
+            val startOfReconciliation = System.currentTimeMillis()
+            hub.reconcileSnapshot(
+                VehicleLocationStateSnapshot(
+                    activeAssignments =
+                        listOf(
+                            ActiveVehicleLocationAssignmentSnapshot(
+                                vehicleId = 1,
+                                assignmentId = 10,
+                                vendorUserId = publicUpdate.vendorUserId,
+                                startedAt = publicUpdate.recordedAt.minusSeconds(1),
+                                sharesLocationWithCustomers = true,
+                            ),
+                        ),
+                    latestLocations = listOf(publicUpdate),
+                ),
+                snapshotStartedAtMillis = startOfReconciliation,
+            )
+            assertEquals(publicUpdate, hub.lastKnownLocation(1))
+
+            val offline =
+                async {
+                    hub
+                        .subscribeNear(latitude = 10.0, longitude = 10.0, radiusKm = 1.0)
+                        .firstWithTimeout()
+                }
+            awaitAllCollectorsAttached()
+            hub.reconcileSnapshot(
+                VehicleLocationStateSnapshot(activeAssignments = emptyList(), latestLocations = emptyList()),
+                snapshotStartedAtMillis = System.currentTimeMillis() + 1,
+            )
+
+            assertEquals(VehicleLiveEvent.Offline(vehicleId = 1), offline.await())
+            assertNull(hub.lastKnownLocation(1))
+        }
+
+    @Test
+    fun `snapshot reconciliation cannot overwrite or remove a location received after its read began`() {
+        val hub = InMemoryVehicleLocationHub(FakeCellIndexer())
+        val newer =
+            update(vehicleId = 1, latitude = 10.0, longitude = 10.0, assignmentId = 10)
+                .copy(recordedAt = Instant.now())
+        val snapshotStartedAt = System.currentTimeMillis() - 1
+        assertTrue(hub.publishIfCurrent(newer))
+        val olderSnapshotUpdate = newer.copy(recordedAt = newer.recordedAt.minusSeconds(1))
+
+        hub.reconcileSnapshot(
+            VehicleLocationStateSnapshot(
+                activeAssignments =
+                    listOf(
+                        ActiveVehicleLocationAssignmentSnapshot(
+                            vehicleId = newer.vehicleId,
+                            assignmentId = requireNotNull(newer.assignmentId),
+                            vendorUserId = newer.vendorUserId,
+                            startedAt = newer.recordedAt.minusSeconds(10),
+                            sharesLocationWithCustomers = true,
+                        ),
+                    ),
+                latestLocations = listOf(olderSnapshotUpdate),
+            ),
+            snapshotStartedAtMillis = snapshotStartedAt,
+        )
+
+        assertEquals(newer, hub.lastKnownLocation(1))
+    }
+
+    @Test
     fun `an unconsented location remains private to movement validation`() {
         val hub = InMemoryVehicleLocationHub(FakeCellIndexer())
         val privateUpdate =
@@ -261,6 +347,34 @@ class InMemoryVehicleLocationHubTest {
         }
 
     @Test
+    fun `stale sweep removes multiple public locations and emits each offline event`() =
+        runBlocking {
+            val hub = InMemoryVehicleLocationHub(FakeCellIndexer())
+            val vehicleIds = (1..20).toSet()
+            vehicleIds.forEach { vehicleId ->
+                hub.publish(update(vehicleId = vehicleId, latitude = 10.0, longitude = 10.0))
+            }
+            val feed = hub.openNearby(latitude = 10.0, longitude = 10.0, radiusKm = 1.0)
+            assertEquals(vehicleIds, feed.snapshot.map(VehicleLocationUpdate::vehicleId).toSet())
+
+            hub.sweepStaleLocations(System.currentTimeMillis() + 6 * 60 * 1000)
+            val offlineVehicleIds =
+                feed.events
+                    .take(vehicleIds.size)
+                    .toList()
+                    .map { event ->
+                        when (event) {
+                            is VehicleLiveEvent.Offline -> event.vehicleId
+                            is VehicleLiveEvent.Position -> error("stale locations must be removed, not repositioned")
+                        }
+                    }.toSet()
+            feed.close()
+
+            assertEquals(vehicleIds, offlineVehicleIds)
+            assertTrue(hub.snapshotNear(10.0, 10.0, 1.0).isEmpty())
+        }
+
+    @Test
     fun `a later publish for the same vehicle replaces its nearby snapshot position`() {
         val hub = InMemoryVehicleLocationHub(FakeCellIndexer())
         hub.publish(update(vehicleId = 1, latitude = 10.0, longitude = 10.0))
@@ -269,6 +383,26 @@ class InMemoryVehicleLocationHubTest {
         val snapshot = hub.snapshotNear(10.0, 10.0, 1.0)
         assertEquals(1, snapshot.size)
         assertEquals(10.005, snapshot.single().latitude)
+    }
+
+    @Test
+    fun `nearby snapshots follow public vehicles across cells and remove private or offline vehicles`() {
+        val hub = InMemoryVehicleLocationHub(FakeCellIndexer())
+        hub.publish(update(vehicleId = 1, latitude = 10.0, longitude = 10.0))
+        hub.publish(update(vehicleId = 2, latitude = 10.0, longitude = 10.0))
+        hub.publish(update(vehicleId = 1, latitude = 50.0, longitude = 50.0))
+
+        assertEquals(listOf(2), hub.snapshotNear(10.0, 10.0, 1.0).map { it.vehicleId })
+        assertEquals(listOf(1), hub.snapshotNear(50.0, 50.0, 1.0).map { it.vehicleId })
+
+        hub.publish(
+            update(vehicleId = 2, latitude = 50.0, longitude = 50.0)
+                .copy(sharesLocationWithCustomers = false),
+        )
+        assertEquals(listOf(1), hub.snapshotNear(50.0, 50.0, 1.0).map { it.vehicleId })
+
+        hub.markOffline(vehicleId = 1)
+        assertTrue(hub.snapshotNear(50.0, 50.0, 1.0).isEmpty())
     }
 
     @Test
@@ -329,41 +463,57 @@ class InMemoryVehicleLocationHubTest {
     fun `live subscription reports a vehicle leaving the exact radius as offline`() =
         runBlocking {
             val indexer = H3CellIndexer()
-            val latitude = 47.4979
-            val longitude = 19.0402
+            val center = GeoPoint(47.87401, 20.379238)
+            val inside = pointAtEastwardDistance(center, 4.99)
+            val outside = pointAtEastwardDistance(center, 5.01)
+            assertTrue(haversineKm(center.latitude, center.longitude, inside.latitude, inside.longitude) < 5.0)
+            assertTrue(haversineKm(center.latitude, center.longitude, outside.latitude, outside.longitude) > 5.0)
             val hub = InMemoryVehicleLocationHub(indexer)
-            hub.publish(
-                VehicleLocationUpdate(
-                    vehicleId = 1,
-                    vendorUserId = 1,
-                    latitude = latitude,
-                    longitude = longitude,
-                    recordedAt = Instant.now(),
-                    cellId = indexer.cellFor(latitude, longitude),
-                    sharesLocationWithCustomers = true,
-                ),
-            )
+            hub.publish(h3Update(indexer, vehicleId = 1, point = inside, second = 0))
 
             val observed =
-                async { hub.subscribeNear(latitude, longitude, radiusKm = 5.0).firstWithTimeout() }
+                async { hub.subscribeNear(center.latitude, center.longitude, radiusKm = 5.0).firstWithTimeout() }
             awaitAllCollectorsAttached()
-            val outsideLongitude = longitude + 0.1
-            assertTrue(indexer.cellFor(latitude, outsideLongitude) in indexer.cellsWithin(latitude, longitude, 5.0))
-
-            hub.publish(
-                VehicleLocationUpdate(
-                    vehicleId = 1,
-                    vendorUserId = 1,
-                    latitude = latitude,
-                    longitude = outsideLongitude,
-                    recordedAt = Instant.now().plusSeconds(1),
-                    cellId = indexer.cellFor(latitude, outsideLongitude),
-                    sharesLocationWithCustomers = true,
-                ),
-            )
+            hub.publish(h3Update(indexer, vehicleId = 1, point = outside, second = 1))
 
             assertEquals(VehicleLiveEvent.Offline(vehicleId = 1), observed.await())
         }
+
+    @Test
+    fun `a stalled radius-boundary subscriber converges to the latest state`() =
+        runBlocking {
+            val indexer = H3CellIndexer()
+            val center = GeoPoint(47.87401, 20.379238)
+            val inside = pointAtEastwardDistance(center, 4.99)
+            val outside = pointAtEastwardDistance(center, 5.01)
+            val hub = InMemoryVehicleLocationHub(indexer)
+            hub.publish(h3Update(indexer, vehicleId = 1, point = inside, second = 0))
+            val feed = hub.openNearby(center.latitude, center.longitude, radiusKm = 5.0)
+            assertEquals(listOf(1), feed.snapshot.map(VehicleLocationUpdate::vehicleId))
+
+            hub.publish(h3Update(indexer, vehicleId = 1, point = outside, second = 1))
+            hub.publish(h3Update(indexer, vehicleId = 1, point = inside, second = 2))
+
+            val latest = feed.events.firstWithTimeout().expectPosition()
+            assertEquals(inside.latitude, latest.latitude)
+            assertEquals(inside.longitude, latest.longitude)
+            feed.close()
+        }
+
+    private fun h3Update(
+        indexer: H3CellIndexer,
+        vehicleId: Int,
+        point: GeoPoint,
+        second: Long,
+    ) = VehicleLocationUpdate(
+        vehicleId = vehicleId,
+        vendorUserId = vehicleId,
+        latitude = point.latitude,
+        longitude = point.longitude,
+        recordedAt = Instant.EPOCH.plusSeconds(second),
+        cellId = indexer.cellFor(point.latitude, point.longitude),
+        sharesLocationWithCustomers = true,
+    )
 
     @Test
     fun `markOffline removes the vehicle from nearby snapshots`() {

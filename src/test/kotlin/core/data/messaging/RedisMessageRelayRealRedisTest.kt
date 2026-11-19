@@ -4,35 +4,29 @@
 
 package com.mozgobolt.core.data.messaging
 
+import com.mozgobolt.core.data.redis.REDIS_COMPATIBLE_SERVERS
+import com.mozgobolt.core.data.redis.withRedisCompatibleServer
 import com.mozgobolt.core.skipIfNoDocker
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import org.testcontainers.containers.GenericContainer
-import org.testcontainers.utility.DockerImageName
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.time.Duration.Companion.milliseconds
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 private val TEST_AWAIT_TIMEOUT = 5.seconds
 
-// Real Redis's SUBSCRIBE is acknowledged asynchronously — there's no portable "wait until the
-// server has registered this subscription" call in Lettuce's reactive pub/sub API. This is a
-// generous grace period for a loopback Testcontainers connection, not a tuned production value;
-// it only needs to outlast one local network round trip.
-private val SUBSCRIBE_SETTLE_DELAY = 300.milliseconds
-
 /**
  * The actual proof that [RedisMessageRelay] solves cross-instance fanout: two independent
- * instances, each with its own client and connections, sharing one real Redis — not two mocked
- * pieces asserted in isolation. `FakeMessageRelay`-backed tests (e.g.
- * `RedisRelayVehicleLocationHubTest`) cover the decorators' own logic; this covers the one thing
- * only a real Redis can prove: that a message published on one instance's connection is actually
- * delivered to a different instance's connection over the network.
+ * instances, each with its own client and connections, sharing real Redis and Valkey servers —
+ * not two mocked pieces asserted in isolation. `FakeMessageRelay`-backed tests (e.g.
+ * `RedisRelayVehicleLocationHubTest`) cover the decorators' own logic; this proves messages cross
+ * the network using both supported Redis-protocol servers.
  *
  * Docker-gated like every other real-infrastructure test in this codebase — skipped locally (no
  * Docker here), runs in CI.
@@ -44,65 +38,66 @@ class RedisMessageRelayRealRedisTest {
     }
 
     @Test
-    fun `a message published on one relay instance is received by another sharing the same Redis`() =
+    fun `a message published on one relay instance reaches the other on Redis and Valkey`() =
         runBlocking {
-            val redis = GenericContainer(DockerImageName.parse("valkey/valkey:8-alpine")).withExposedPorts(6379)
-            redis.start()
+            for (server in REDIS_COMPATIBLE_SERVERS) {
+                withRedisCompatibleServer(server) { _, uri ->
+                    val instanceA = RedisMessageRelay(uri)
+                    val instanceB = RedisMessageRelay(uri)
+                    assertFalse(instanceA.isReady)
+                    instanceA.start()
+                    instanceB.start()
+                    assertTrue(instanceA.isReady)
+                    assertTrue(instanceB.isReady)
 
-            try {
-                val uri = "redis://${redis.host}:${redis.getMappedPort(6379)}"
-                val instanceA = RedisMessageRelay(uri)
-                val instanceB = RedisMessageRelay(uri)
-                instanceA.start()
-                instanceB.start()
+                    try {
+                        val received =
+                            async(start = CoroutineStart.UNDISPATCHED) {
+                                withTimeout(TEST_AWAIT_TIMEOUT) { instanceB.subscribe("test-channel").first() }
+                            }
+                        instanceB.awaitSubscription("test-channel")
 
-                try {
-                    val received =
-                        async { withTimeout(TEST_AWAIT_TIMEOUT) { instanceB.subscribe("test-channel").first() } }
-                    delay(SUBSCRIBE_SETTLE_DELAY)
+                        instanceA.publish("test-channel", "hello from instance A")
 
-                    instanceA.publish("test-channel", "hello from instance A")
-
-                    assertEquals("hello from instance A", received.await())
-                } finally {
-                    instanceA.stop()
-                    instanceB.stop()
+                        assertEquals("hello from instance A", received.await(), server.name)
+                    } finally {
+                        instanceA.stop()
+                        instanceB.stop()
+                        assertFalse(instanceA.isReady)
+                        assertFalse(instanceB.isReady)
+                    }
                 }
-            } finally {
-                redis.stop()
             }
         }
 
     @Test
-    fun `a message on a different channel is never received`() =
+    fun `channel isolation works on Redis and Valkey`() =
         runBlocking {
-            val redis = GenericContainer(DockerImageName.parse("valkey/valkey:8-alpine")).withExposedPorts(6379)
-            redis.start()
+            for (server in REDIS_COMPATIBLE_SERVERS) {
+                withRedisCompatibleServer(server) { _, uri ->
+                    val instanceA = RedisMessageRelay(uri)
+                    val instanceB = RedisMessageRelay(uri)
+                    instanceA.start()
+                    instanceB.start()
 
-            try {
-                val uri = "redis://${redis.host}:${redis.getMappedPort(6379)}"
-                val instanceA = RedisMessageRelay(uri)
-                val instanceB = RedisMessageRelay(uri)
-                instanceA.start()
-                instanceB.start()
+                    try {
+                        val onChannelB =
+                            async(start = CoroutineStart.UNDISPATCHED) {
+                                withTimeout(TEST_AWAIT_TIMEOUT) { instanceB.subscribe("channel-b").first() }
+                            }
+                        instanceB.awaitSubscription("channel-b")
 
-                try {
-                    val onChannelB =
-                        async { withTimeout(TEST_AWAIT_TIMEOUT) { instanceB.subscribe("channel-b").first() } }
-                    delay(SUBSCRIBE_SETTLE_DELAY)
+                        instanceA.publish("channel-a", "should not reach channel-b's subscriber")
+                        // A second, real publish on the channel actually being watched proves the
+                        // first one didn't silently satisfy the assertion by coincidence.
+                        instanceA.publish("channel-b", "the real one")
 
-                    instanceA.publish("channel-a", "should not reach channel-b's subscriber")
-                    // A second, real publish on the channel actually being watched proves the
-                    // first one didn't silently satisfy the assertion by coincidence.
-                    instanceA.publish("channel-b", "the real one")
-
-                    assertEquals("the real one", onChannelB.await())
-                } finally {
-                    instanceA.stop()
-                    instanceB.stop()
+                        assertEquals("the real one", onChannelB.await(), server.name)
+                    } finally {
+                        instanceA.stop()
+                        instanceB.stop()
+                    }
                 }
-            } finally {
-                redis.stop()
             }
         }
 }

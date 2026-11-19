@@ -6,10 +6,14 @@ package com.mozgobolt.feature.vehicleTracking.service
 
 import com.mozgobolt.feature.vehicleTracking.domain.CellIndexer
 import com.mozgobolt.feature.vehicleTracking.domain.NearbyLocationFeed
+import com.mozgobolt.feature.vehicleTracking.domain.NoOpVehicleTrackingMetrics
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationHub
+import com.mozgobolt.feature.vehicleTracking.domain.VehicleTrackingMetrics
 import com.mozgobolt.feature.vehicleTracking.domain.haversineKm
+import com.mozgobolt.feature.vehicleTracking.domain.model.ActiveVehicleLocationAssignmentSnapshot
 import com.mozgobolt.feature.vehicleTracking.domain.model.CellId
 import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLiveEvent
+import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationStateSnapshot
 import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationUpdate
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -20,7 +24,7 @@ import kotlinx.coroutines.flow.onCompletion
 import java.time.Instant
 import java.util.UUID
 
-private const val LIVE_LOCATION_STALE_AFTER_MILLIS = 5 * 60 * 1000L
+internal const val LIVE_LOCATION_STALE_AFTER_MILLIS = 5 * 60 * 1000L
 
 // Keep an ended-session fence longer than any in-flight telemetry request or ordinary relay attempt
 // can remain outstanding.
@@ -29,11 +33,13 @@ private const val ASSIGNMENT_FENCE_SWEEP_INTERVAL_MILLIS = 60_000L
 
 /**
  * Keeps one conflated pending-event set per live client and routes updates through H3-cell subscriber
- * sets. The cell map contains only cells with active subscribers; closing a feed removes its registrations.
+ * sets. Public locations are indexed by cell so a new feed examines only nearby candidates. The subscriber
+ * map contains only cells with active subscribers; closing a feed removes its registrations.
  */
 @Suppress("TooManyFunctions") // State mutation, nearby-feed routing, and bounded cache cleanup share one lock.
 class InMemoryVehicleLocationHub(
     private val cellIndexer: CellIndexer,
+    private val metrics: VehicleTrackingMetrics = NoOpVehicleTrackingMetrics,
 ) : VehicleLocationHub {
     private data class AssignmentFence(
         val assignmentId: Int,
@@ -105,10 +111,18 @@ class InMemoryVehicleLocationHub(
 
     private val stateLock = Any()
     private val latestByVehicleId = HashMap<Int, PublishedLocation>()
-    private val publiclyVisibleVehicleIds = HashSet<Int>()
+    private val publiclyVisibleVehicleIdsByCell = HashMap<CellId, MutableSet<Int>>()
     private val assignmentFences = HashMap<Int, AssignmentFence>()
     private val subscribersByCell = HashMap<CellId, MutableSet<NearbySubscriber>>()
     private var lastFenceSweepAtMillis = 0L
+
+    private fun PublishedLocation.belongsTo(assignment: ActiveVehicleLocationAssignmentSnapshot?): Boolean =
+        assignment?.let {
+            it.assignmentId == update.assignmentId && it.vendorUserId == update.vendorUserId
+        } == true
+
+    private fun VehicleLocationUpdate.isOlderThan(previous: VehicleLocationUpdate?): Boolean =
+        previous?.let { it.assignmentId == assignmentId && recordedAt.isBefore(it.recordedAt) } == true
 
     override fun publish(update: VehicleLocationUpdate) {
         publishIfCurrent(update)
@@ -117,6 +131,9 @@ class InMemoryVehicleLocationHub(
     override fun publishIfCurrent(update: VehicleLocationUpdate): Boolean =
         synchronized(stateLock) {
             sweepExpiredAssignmentFencesLocked()
+            val previous = latestByVehicleId[update.vehicleId]?.update
+            if (update.isOlderThan(previous)) return@synchronized false
+
             val fence = assignmentFences[update.vehicleId]
             val assignmentId = update.assignmentId
             when {
@@ -129,20 +146,56 @@ class InMemoryVehicleLocationHub(
                 }
 
                 else -> {
-                    val previous = latestByVehicleId[update.vehicleId]?.update
                     latestByVehicleId[update.vehicleId] =
                         PublishedLocation(update, System.currentTimeMillis())
                     if (update.sharesLocationWithCustomers) {
-                        publiclyVisibleVehicleIds.add(update.vehicleId)
+                        indexPublicLocationLocked(update, previous)
                         emitPosition(update, previous?.cellId)
-                    } else if (publiclyVisibleVehicleIds.remove(update.vehicleId)) {
-                        previous?.let(::emitOffline)
+                    } else if (previous != null && removePubliclyVisibleVehicleLocked(previous)) {
+                        emitOffline(previous)
                     }
                     assignmentId?.let { assignmentFences[update.vehicleId] = AssignmentFence(it, isEnded = false) }
                     true
                 }
             }
         }
+
+    /**
+     * Reconciles this process's volatile cache with a database snapshot. Updates received after
+     * [snapshotStartedAtMillis] win over the snapshot; same-assignment positions also never move
+     * backward in recorded time.
+     */
+    fun reconcileSnapshot(
+        snapshot: VehicleLocationStateSnapshot,
+        snapshotStartedAtMillis: Long,
+    ) {
+        synchronized(stateLock) {
+            sweepExpiredAssignmentFencesLocked()
+            sweepStaleLocationsLocked(System.currentTimeMillis())
+
+            val activeAssignmentsByVehicle = snapshot.activeAssignments.associateBy { it.vehicleId }
+            latestByVehicleId.entries
+                .toList()
+                .filter { (_, location) -> location.receivedAtMillis <= snapshotStartedAtMillis }
+                .forEach { (vehicleId, location) ->
+                    val currentAssignment = activeAssignmentsByVehicle[vehicleId]
+                    if (!location.belongsTo(currentAssignment)) {
+                        location.update.assignmentId?.let { markOffline(vehicleId, it) } ?: markOffline(vehicleId)
+                    } else if (currentAssignment?.sharesLocationWithCustomers !=
+                        location.update.sharesLocationWithCustomers
+                    ) {
+                        publishIfCurrent(
+                            location.update.copy(
+                                sharesLocationWithCustomers = currentAssignment?.sharesLocationWithCustomers == true,
+                            ),
+                        )
+                    }
+                }
+
+            snapshot.latestLocations.forEach(::publishIfCurrent)
+            sweepStaleLocationsLocked(System.currentTimeMillis())
+        }
+    }
 
     override fun markOffline(vehicleId: Int) {
         synchronized(stateLock) {
@@ -152,7 +205,7 @@ class InMemoryVehicleLocationHub(
             when {
                 fence == null -> {
                     val removedLocation = latestByVehicleId.remove(vehicleId)
-                    if (removedLocation != null && publiclyVisibleVehicleIds.remove(vehicleId)) {
+                    if (removedLocation != null && removePubliclyVisibleVehicleLocked(removedLocation.update)) {
                         emitOffline(removedLocation.update)
                     }
                 }
@@ -165,7 +218,7 @@ class InMemoryVehicleLocationHub(
                         latest?.assignmentId == null || latest.assignmentId == fence.assignmentId
                     if (latest != null && isLatestForAssignment) {
                         val removedLocation = latestByVehicleId.remove(vehicleId)
-                        if (removedLocation != null && publiclyVisibleVehicleIds.remove(vehicleId)) {
+                        if (removedLocation != null && removePubliclyVisibleVehicleLocked(removedLocation.update)) {
                             emitOffline(removedLocation.update)
                         }
                     }
@@ -203,7 +256,7 @@ class InMemoryVehicleLocationHub(
                             latest?.assignmentId == null || latest.assignmentId == assignmentId
                         if (latest != null && isLatestForAssignment) {
                             val removedLocation = latestByVehicleId.remove(vehicleId)
-                            if (removedLocation != null && publiclyVisibleVehicleIds.remove(vehicleId)) {
+                            if (removedLocation != null && removePubliclyVisibleVehicleLocked(removedLocation.update)) {
                                 emitOffline(removedLocation.update)
                             }
                         }
@@ -272,6 +325,7 @@ class InMemoryVehicleLocationHub(
                 cells.forEach { cell ->
                     subscribersByCell.getOrPut(cell) { HashSet() }.add(nearbySubscriber)
                 }
+                metrics.liveMapSubscriberOpened()
                 updates to nearbySubscriber
             }
 
@@ -301,21 +355,68 @@ class InMemoryVehicleLocationHub(
         radiusKm: Double,
         cells: Set<CellId>,
     ): List<VehicleLocationUpdate> {
-        val candidates =
-            latestByVehicleId.values
-                .asSequence()
-                .map(PublishedLocation::update)
-                .filter { update ->
-                    update.sharesLocationWithCustomers &&
-                        update.cellId in cells &&
-                        haversineKm(
-                            lat1 = latitude,
-                            lon1 = longitude,
-                            lat2 = update.latitude,
-                            lon2 = update.longitude,
-                        ) <= radiusKm
-                }
-        return candidates.toList()
+        val candidates = ArrayList<VehicleLocationUpdate>()
+        for (cell in cells) {
+            appendNearbyCandidates(cell, latitude, longitude, radiusKm, candidates)
+        }
+        return candidates
+    }
+
+    private fun indexPublicLocationLocked(
+        update: VehicleLocationUpdate,
+        previous: VehicleLocationUpdate?,
+    ) {
+        if (previous?.sharesLocationWithCustomers == true && previous.cellId != update.cellId) {
+            removePublicVehicleFromCellLocked(previous.cellId, update.vehicleId)
+        }
+        publiclyVisibleVehicleIdsByCell.getOrPut(update.cellId) { HashSet() }.add(update.vehicleId)
+    }
+
+    private fun appendNearbyCandidates(
+        cell: CellId,
+        latitude: Double,
+        longitude: Double,
+        radiusKm: Double,
+        candidates: MutableList<VehicleLocationUpdate>,
+    ) {
+        val vehicleIds = publiclyVisibleVehicleIdsByCell[cell] ?: return
+        for (vehicleId in vehicleIds) {
+            val update = latestByVehicleId[vehicleId]?.update
+            if (update != null && isNearbySnapshotCandidate(update, cell, latitude, longitude, radiusKm)) {
+                candidates.add(update)
+            }
+        }
+    }
+
+    private fun isNearbySnapshotCandidate(
+        update: VehicleLocationUpdate,
+        cell: CellId,
+        latitude: Double,
+        longitude: Double,
+        radiusKm: Double,
+    ): Boolean {
+        if (!update.sharesLocationWithCustomers || update.cellId != cell) return false
+        return haversineKm(
+            lat1 = latitude,
+            lon1 = longitude,
+            lat2 = update.latitude,
+            lon2 = update.longitude,
+        ) <= radiusKm
+    }
+
+    private fun removePubliclyVisibleVehicleLocked(update: VehicleLocationUpdate): Boolean {
+        if (!update.sharesLocationWithCustomers) return false
+        removePublicVehicleFromCellLocked(update.cellId, update.vehicleId)
+        return true
+    }
+
+    private fun removePublicVehicleFromCellLocked(
+        cellId: CellId,
+        vehicleId: Int,
+    ) {
+        val vehicleIds = publiclyVisibleVehicleIdsByCell[cellId] ?: return
+        vehicleIds.remove(vehicleId)
+        if (vehicleIds.isEmpty()) publiclyVisibleVehicleIdsByCell.remove(cellId)
     }
 
     private fun removeSubscriber(subscriber: NearbySubscriber) {
@@ -327,6 +428,7 @@ class InMemoryVehicleLocationHub(
                 cellSubscribers.remove(subscriber)
                 if (cellSubscribers.isEmpty()) subscribersByCell.remove(cell)
             }
+            metrics.liveMapSubscriberClosed()
         }
     }
 
@@ -415,14 +517,13 @@ class InMemoryVehicleLocationHub(
     }
 
     private fun sweepStaleLocationsLocked(nowMillis: Long) {
-        latestByVehicleId.entries.toList().forEach { (vehicleId, observed) ->
-            if (nowMillis - observed.receivedAtMillis < LIVE_LOCATION_STALE_AFTER_MILLIS) return@forEach
+        val iterator = latestByVehicleId.entries.iterator()
+        while (iterator.hasNext()) {
+            val observed = iterator.next().value
+            if (nowMillis - observed.receivedAtMillis < LIVE_LOCATION_STALE_AFTER_MILLIS) continue
 
-            val current = latestByVehicleId[vehicleId]
-            val isCurrentAndStale =
-                current === observed && nowMillis - observed.receivedAtMillis >= LIVE_LOCATION_STALE_AFTER_MILLIS
-            val wasRemoved = isCurrentAndStale && latestByVehicleId.remove(vehicleId, observed)
-            if (wasRemoved && publiclyVisibleVehicleIds.remove(vehicleId)) emitOffline(observed.update)
+            iterator.remove()
+            if (removePubliclyVisibleVehicleLocked(observed.update)) emitOffline(observed.update)
         }
     }
 }

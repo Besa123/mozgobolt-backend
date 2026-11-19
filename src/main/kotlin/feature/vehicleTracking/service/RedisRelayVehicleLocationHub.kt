@@ -173,9 +173,10 @@ class RedisRelayVehicleLocationHub(
     fun start() {
         if (!relay.isCrossInstanceRelaySupported || job?.isActive == true) return
 
+        val updates = relay.subscribe(VEHICLE_LOCATION_CHANNEL)
         job =
             backgroundScope.launch(CoroutineName("vehicle-location-relay-subscriber")) {
-                relay.subscribe(VEHICLE_LOCATION_CHANNEL).collect { raw ->
+                updates.collect { raw ->
                     val decodeResult = runSuspendCatching { Json.decodeFromString<VehicleLocationRelayMessage>(raw) }
                     decodeResult.onSuccess { message ->
                         when (message) {
@@ -203,5 +204,11 @@ class RedisRelayVehicleLocationHub(
     fun stop() {
         job?.cancel()
         job = null
+    }
+
+    suspend fun awaitSubscriptionReady() {
+        if (relay.isCrossInstanceRelaySupported) {
+            relay.awaitSubscription(VEHICLE_LOCATION_CHANNEL)
+        }
     }
 }

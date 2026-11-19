@@ -88,11 +88,123 @@ class CompanyServiceRealDatabaseTest {
 
             assertEquals(
                 listOf(
-                    CompanyMemberSummary(1, "Test User One", CompanyRole.ADMIN),
-                    CompanyMemberSummary(2, "Test User Two", CompanyRole.MEMBER),
+                    CompanyMemberSummary(
+                        userId = 1,
+                        name = "Test User One",
+                        role = CompanyRole.ADMIN,
+                        hasActiveShiftInCompany = false,
+                    ),
+                    CompanyMemberSummary(
+                        userId = 2,
+                        name = "Test User Two",
+                        role = CompanyRole.MEMBER,
+                        hasActiveShiftInCompany = false,
+                    ),
                 ),
                 members,
             )
+        }
+    }
+
+    @Test
+    fun `admin member list scopes active shift status to the requested company`() {
+        skipIfNoDocker()
+
+        withRealCompanyDatabase { harness ->
+            val company =
+                harness.service.createCompany(creatorUserId = 1, name = "Target Company").fold(
+                    onSuccess = { it },
+                    onError = { error("setup failed: $it") },
+                )
+            val otherCompany =
+                harness.service.createCompany(creatorUserId = 1, name = "Other Company").fold(
+                    onSuccess = { it },
+                    onError = { error("setup failed: $it") },
+                )
+            listOf(company, otherCompany).forEach { memberCompany ->
+                harness.service.joinCompany(userId = 2, inviteCode = memberCompany.inviteCode).fold(
+                    onSuccess = {},
+                    onError = { error("setup failed: $it") },
+                )
+            }
+
+            val vehicleRepository = VehicleRepositoryI()
+            val assignmentRepository = VehicleAssignmentRepositoryI()
+            val activeElsewhereAssignmentId =
+                harness.tx.transactional {
+                    val targetVehicle =
+                        checkNotNull(
+                            vehicleRepository.create(
+                                companyId = company.id,
+                                label = "Target Van",
+                                licensePlate = "TARGET-1",
+                            ),
+                        )
+                    val endedTargetAssignment =
+                        checkNotNull(
+                            assignmentRepository.startAssignment(
+                                vehicleId = targetVehicle.id,
+                                vendorUserId = 2,
+                                startedAt = Instant.now(),
+                            ),
+                        )
+                    check(assignmentRepository.endAssignment(endedTargetAssignment.id, Instant.now()))
+
+                    val activeTargetAssignment =
+                        checkNotNull(
+                            assignmentRepository.startAssignment(
+                                vehicleId = targetVehicle.id,
+                                vendorUserId = 1,
+                                startedAt = Instant.now(),
+                            ),
+                        )
+                    val otherVehicle =
+                        checkNotNull(
+                            vehicleRepository.create(
+                                companyId = otherCompany.id,
+                                label = "Other Van",
+                                licensePlate = "OTHER-1",
+                            ),
+                        )
+                    val activeElsewhereAssignment =
+                        checkNotNull(
+                            assignmentRepository.startAssignment(
+                                vehicleId = otherVehicle.id,
+                                vendorUserId = 2,
+                                startedAt = Instant.now(),
+                            ),
+                        )
+
+                    check(activeTargetAssignment.isActive)
+                    activeElsewhereAssignment.id
+                }
+
+            val adminView =
+                harness.service.listMembers(userId = 1, companyId = company.id).fold(
+                    onSuccess = { it },
+                    onError = { error("admin member listing failed: $it") },
+                )
+            assertEquals(
+                mapOf(1 to true, 2 to false),
+                adminView.associate { it.userId to it.hasActiveShiftInCompany },
+            )
+
+            val memberView =
+                harness.service.listMembers(userId = 2, companyId = company.id).fold(
+                    onSuccess = { it },
+                    onError = { error("member listing failed: $it") },
+                )
+            assertEquals(listOf(null, null), memberView.map { it.hasActiveShiftInCompany })
+
+            harness.tx.transactional {
+                check(assignmentRepository.endAssignment(activeElsewhereAssignmentId, Instant.now()))
+            }
+            val afterShiftEnds =
+                harness.service.listMembers(userId = 1, companyId = company.id).fold(
+                    onSuccess = { it },
+                    onError = { error("member listing failed: $it") },
+                )
+            assertEquals(false, afterShiftEnds.single { it.userId == 2 }.hasActiveShiftInCompany)
         }
     }
 

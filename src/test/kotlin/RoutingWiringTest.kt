@@ -51,15 +51,21 @@ import com.mozgobolt.feature.vehicleTracking.domain.model.TelemetryError
 import com.mozgobolt.feature.vehicleTracking.domain.model.TelemetryPoint
 import com.mozgobolt.feature.vehicleTracking.service.H3CellIndexer
 import com.mozgobolt.feature.vehicleTracking.service.InMemoryVehicleLocationHub
+import com.mozgobolt.loadtest.forwardedFor
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.request
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.plugins.di.dependencies
 import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import java.io.PrintWriter
 import java.sql.Connection
 import java.sql.SQLFeatureNotSupportedException
@@ -149,11 +155,112 @@ class RoutingWiringTest {
                 assertNotEquals(HttpStatusCode.NotFound, response.status, "expected $path to be a registered route")
             }
 
+            val openApi =
+                javaClass.classLoader
+                    .getResourceAsStream("openapi/documentation.json")
+                    ?.bufferedReader()
+                    ?.use { it.readText() }
+                    ?: error("OpenAPI document is missing from the test runtime classpath")
+            val documentedOperations =
+                Json
+                    .parseToJsonElement(openApi)
+                    .jsonObject
+                    .getValue("paths")
+                    .jsonObject
+                    .filterKeys { it.startsWith("/api/v1/") }
+                    .flatMap { (path, operations) ->
+                        operations.jsonObject.keys
+                            .filter(OPENAPI_HTTP_METHODS::containsKey)
+                            .map { method -> path to method }
+                    }
+
+            assertEquals(
+                IMPLEMENTED_API_OPERATIONS,
+                documentedOperations.map { (path, method) -> "$method $path" }.toSet(),
+                "Update the API contract snapshot when routes are added or removed",
+            )
+
+            documentedOperations.forEachIndexed { index, (pathTemplate, methodName) ->
+                val path = pathTemplate.replace(OPENAPI_PATH_PARAMETER, "1")
+                val response =
+                    client.request(path) {
+                        method = OPENAPI_HTTP_METHODS.getValue(methodName)
+                        header("X-Forwarded-For", forwardedFor("192.0.2.${index + 1}"))
+                    }
+                assertNotEquals(
+                    HttpStatusCode.NotFound,
+                    response.status,
+                    "OpenAPI documents $methodName $pathTemplate, but no matching route is registered",
+                )
+            }
+
             val unknownApiRoute = client.get("/api/v1/not-a-route")
             assertEquals(HttpStatusCode.NotFound, unknownApiRoute.status)
             assertEquals(true, unknownApiRoute.bodyAsText().contains("NOT_FOUND"))
         }
 }
+
+private val OPENAPI_HTTP_METHODS =
+    mapOf(
+        "get" to HttpMethod.Get,
+        "post" to HttpMethod.Post,
+        "put" to HttpMethod.Put,
+        "patch" to HttpMethod.Patch,
+        "delete" to HttpMethod.Delete,
+    )
+private val OPENAPI_PATH_PARAMETER = Regex("\\{[^}]+}")
+private val IMPLEMENTED_API_OPERATIONS =
+    setOf(
+        "post /api/v1/auth/register",
+        "post /api/v1/auth/login",
+        "get /api/v1/auth/me",
+        "post /api/v1/auth/refresh",
+        "get /api/v1/auth/verify-email",
+        "post /api/v1/auth/password-reset/request",
+        "post /api/v1/auth/password-reset/validate",
+        "post /api/v1/auth/password-reset/confirm",
+        "post /api/v1/auth/logout",
+        "post /api/v1/auth/logout-all",
+        "post /api/v1/auth/resend-verification",
+        "patch /api/v1/users/me/contact-info",
+        "get /api/v1/companies",
+        "post /api/v1/companies",
+        "post /api/v1/companies/join",
+        "patch /api/v1/companies/{id}",
+        "delete /api/v1/companies/{id}",
+        "get /api/v1/companies/{id}/invite-code",
+        "post /api/v1/companies/{id}/invite-code/regenerate",
+        "get /api/v1/companies/{id}/members",
+        "post /api/v1/companies/{id}/members/{userId}/promote",
+        "post /api/v1/companies/{id}/members/{userId}/demote",
+        "delete /api/v1/companies/{id}/members/{userId}",
+        "delete /api/v1/companies/{id}/members/me",
+        "post /api/v1/companies/{id}/favorite",
+        "delete /api/v1/companies/{id}/favorite",
+        "get /api/v1/favorites",
+        "post /api/v1/companies/{id}/vehicles",
+        "get /api/v1/companies/{id}/vehicles",
+        "patch /api/v1/companies/{companyId}/vehicles/{id}",
+        "post /api/v1/companies/{companyId}/vehicles/{id}/archive",
+        "post /api/v1/companies/{companyId}/vehicles/{id}/picture",
+        "get /api/v1/vehicles/assignments/me",
+        "get /api/v1/vehicles/{id}",
+        "get /api/v1/vehicles/{id}/picture",
+        "post /api/v1/vehicles/{id}/link",
+        "post /api/v1/vehicles/{id}/unlink",
+        "post /api/v1/vehicles/{id}/assignments/end-active",
+        "post /api/v1/vehicle-tracking/telemetry",
+        "get /api/v1/vehicle-tracking/live",
+        "post /api/v1/vehicles/{id}/ping",
+        "get /api/v1/vehicle-tracking/pings/live",
+        "post /api/v1/device-installations",
+        "delete /api/v1/device-installations/{installationId}",
+        "post /api/v1/saved-locations",
+        "get /api/v1/saved-locations",
+        "delete /api/v1/saved-locations/{id}",
+        "get /api/v1/sync",
+        "get /api/v1/sync/live",
+    )
 
 private class FakeSyncEventHub : SyncEventHub {
     override fun publish(

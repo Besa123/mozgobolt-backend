@@ -33,7 +33,7 @@ internal suspend fun runSecurityProbes(baseUrl: String): ProbeReport {
 
     return newProbeHttpClient().use { http ->
         val api = ProbeApi(http, baseUrl)
-        check(api.get("/health").status == HTTP_OK) { "The app at $baseUrl is not healthy" }
+        check(api.get("/ready").status == HTTP_OK) { "The app at $baseUrl is not ready" }
 
         val accounts = ProbeAccountFactory(api)
         val outcomes =

@@ -7,9 +7,6 @@ package com.mozgobolt.feature.vehicle.routing
 import com.mozgobolt.core.data.idempotency.IdempotencyStore
 import com.mozgobolt.core.data.idempotency.idempotent
 import com.mozgobolt.core.data.idempotency.idempotentResult
-import com.mozgobolt.core.domain.contact.messengerLink
-import com.mozgobolt.core.domain.contact.viberLink
-import com.mozgobolt.core.domain.contact.whatsAppLink
 import com.mozgobolt.core.modules.plugin.BodyLimit
 import com.mozgobolt.core.modules.plugin.RequestTimeout
 import com.mozgobolt.core.modules.plugin.UPLOAD_LIMIT
@@ -25,11 +22,10 @@ import com.mozgobolt.feature.user.domain.UserService
 import com.mozgobolt.feature.user.domain.model.UserRole
 import com.mozgobolt.feature.user.routing.requireRole
 import com.mozgobolt.feature.vehicle.domain.VehicleService
-import com.mozgobolt.feature.vehicle.domain.model.Vehicle
 import com.mozgobolt.feature.vehicle.domain.model.VehicleError
 import com.mozgobolt.feature.vehicle.routing.dto.request.CreateVehicleRequestDto
 import com.mozgobolt.feature.vehicle.routing.dto.request.UpdateVehicleRequestDto
-import com.mozgobolt.feature.vehicle.routing.dto.response.VehicleResponseDto
+import com.mozgobolt.feature.vehicle.routing.dto.response.CompanyVehicleResponseDto
 import com.mozgobolt.feature.vehicle.routing.dto.response.toResponseDto
 import com.mozgobolt.feature.vehicleAssignment.domain.VehicleAssignmentService
 import io.ktor.http.ContentType
@@ -183,7 +179,7 @@ private fun Route.registerCompanyVehicleListRoute(
             onSuccess = { vehicles ->
                 val responses =
                     vehicles.map {
-                        it.toResponseDtoWithDriverInfo(
+                        it.toCompanyResponseDtoWithDriverInfo(
                             vehicleAssignmentService,
                             userService,
                         )
@@ -264,28 +260,6 @@ private suspend fun RoutingContext.handleArchiveVehicle(vehicleService: VehicleS
     vehicleService.archiveVehicle(adminUserId = userId, companyId = companyId, vehicleId = vehicleId).fold(
         onSuccess = { call.respond(HttpStatusCode.NoContent) },
         onError = { error -> call.respond(error.toHttpStatusCode(), ErrorResponse(error = error.name)) },
-    )
-}
-
-/**
- * Enriches the plain domain [Vehicle] with its current driver's contact info, resolved fresh on
- * every listing call rather than stored anywhere — this is a low-traffic, company-scoped listing
- * (not the high-frequency SSE live-tracking feed), so a couple of extra lookups per vehicle here
- * is the right trade-off, not worth denormalizing. WhatsApp/Viber/Messenger are already-built,
- * ready-to-open deep links (see core.domain.contact.ContactLinks) — the client just opens them.
- */
-@Suppress("CommentOverPrivateFunction")
-private suspend fun Vehicle.toResponseDtoWithDriverInfo(
-    vehicleAssignmentService: VehicleAssignmentService,
-    userService: UserService,
-): VehicleResponseDto {
-    val activeAssignment = vehicleAssignmentService.findActiveForVehicle(id)
-    val contactInfo = activeAssignment?.let { userService.findContactInfo(it.vendorUserId) }
-    return toResponseDto(
-        currentDriverPhoneNumber = contactInfo?.phoneNumber,
-        currentDriverWhatsAppLink = contactInfo?.run { whatsappNumber?.let(::whatsAppLink) },
-        currentDriverViberLink = contactInfo?.run { viberNumber?.let(::viberLink) },
-        currentDriverMessengerLink = contactInfo?.run { messengerUsername?.let(::messengerLink) },
     )
 }
 

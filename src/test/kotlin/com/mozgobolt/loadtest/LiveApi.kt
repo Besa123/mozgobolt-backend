@@ -76,8 +76,11 @@ internal class LiveApi(
     private val http: HttpClient,
     private val baseUrl: String,
     private val sink: ObservationSink,
+    val nodeName: String = "node-a",
 ) {
     suspend fun health(): Int = executeAndRecordTiming("health") { url("$baseUrl/health") }
+
+    suspend fun readiness(): Int = executeAndRecordTiming("ready") { url("$baseUrl/ready") }
 
     suspend fun postTelemetry(
         vendor: VendorAccount,

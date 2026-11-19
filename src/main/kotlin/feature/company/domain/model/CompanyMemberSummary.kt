@@ -8,4 +8,5 @@ data class CompanyMemberSummary(
     val userId: Int,
     val name: String,
     val role: CompanyRole,
+    val hasActiveShiftInCompany: Boolean? = null,
 )

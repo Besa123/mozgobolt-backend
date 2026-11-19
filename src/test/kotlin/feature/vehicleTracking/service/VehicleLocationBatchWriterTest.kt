@@ -9,12 +9,15 @@ import com.mozgobolt.core.database.TransactionalRunner
 import com.mozgobolt.core.utility.ApplicationBackgroundScope
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationRepository
 import com.mozgobolt.feature.vehicleTracking.domain.model.CellId
+import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationStateSnapshot
 import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationUpdate
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import java.io.IOException
 import java.sql.SQLException
 import java.time.Instant
@@ -23,6 +26,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.fail
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 class VehicleLocationBatchWriterTest {
     private class CountingTransactionalRunner : TransactionalRunner {
@@ -51,6 +55,11 @@ class VehicleLocationBatchWriterTest {
         var rejectVehicleIds: Set<Int> = emptySet()
         var failFilteredSingleton = false
         var beforeNextInsert: (suspend () -> Unit)? = null
+
+        override suspend fun findLiveStateSnapshot(
+            cutoff: Instant,
+            asOf: Instant,
+        ): VehicleLocationStateSnapshot = error("not exercised by this test")
 
         override suspend fun insertAll(updates: List<VehicleLocationUpdate>) {
             attemptCount++
@@ -332,5 +341,44 @@ class VehicleLocationBatchWriterTest {
 
             assertEquals(1, repository.insertAllCalls.size, "stop() must prevent any further automatic flush")
             assertEquals(listOf(update(2).vehicleId), buffer.drainAll().map { it.vehicleId })
+        }
+
+    @Test
+    fun `stopAndFlush persists the in-flight batch before shutdown completes`() =
+        runBlocking {
+            val buffer = InMemoryVehicleLocationBuffer()
+            val repository = FakeVehicleLocationRepository()
+            val backgroundScope = ApplicationBackgroundScope()
+            val writer =
+                VehicleLocationBatchWriter(
+                    buffer = buffer,
+                    repository = repository,
+                    tx = CountingTransactionalRunner(),
+                    backgroundScope = backgroundScope,
+                    flushInterval = 20.milliseconds,
+                )
+            val insertStarted = CompletableDeferred<Unit>()
+            val update = update(1)
+            repository.beforeNextInsert = {
+                insertStarted.complete(Unit)
+                awaitCancellation()
+            }
+            buffer.enqueue(update)
+
+            try {
+                writer.start()
+                withTimeout(3.seconds) { insertStarted.await() }
+
+                writer.stopAndFlush()
+
+                assertEquals(
+                    listOf(update.idempotencyKey),
+                    repository.insertAllCalls.single().map { it.idempotencyKey },
+                )
+                assertTrue(buffer.drainAll().isEmpty())
+            } finally {
+                backgroundScope.cancel()
+                writer.stop()
+            }
         }
 }

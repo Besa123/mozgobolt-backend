@@ -10,6 +10,7 @@ import com.mozgobolt.core.skipIfNoDocker
 import com.mozgobolt.core.withRealDatabase
 import com.mozgobolt.feature.company.data.repository.CompanyRepositoryI
 import com.mozgobolt.feature.company.domain.model.CompanyConstraints
+import com.mozgobolt.feature.proximityNotification.domain.model.ProximityNotificationCandidate
 import com.mozgobolt.feature.savedLocation.data.repository.SavedLocationRepositoryI
 import com.mozgobolt.feature.vehicle.data.repository.VehicleRepositoryI
 import kotlinx.coroutines.CompletableDeferred
@@ -366,6 +367,203 @@ class ProximityNotificationRepositoryRealDatabaseTest {
     }
 
     @Test
+    fun `batch claims preserve cooldown exit and re-entry semantics`() {
+        skipIfNoDocker()
+
+        withRealDatabase { _, tx ->
+            val repository = ProximityNotificationRepositoryI()
+            val (vehicleId, candidates) =
+                tx.transactional {
+                    val company =
+                        CompanyRepositoryI().create(
+                            name = "Batch Claim Company",
+                            inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
+                        )
+                    val vehicle =
+                        VehicleRepositoryI().create(
+                            companyId = company.id,
+                            label = "Batch Claim Truck",
+                            licensePlate = "PROX-BATCH-CLAIM",
+                        )!!
+                    val savedLocationRepository = SavedLocationRepositoryI()
+                    val firstLocation =
+                        savedLocationRepository.create(
+                            userId = 1,
+                            label = "Home",
+                            latitude = 47.4979,
+                            longitude = 19.0402,
+                            radiusKm = 1.0,
+                        )
+                    val secondLocation =
+                        savedLocationRepository.create(
+                            userId = 2,
+                            label = "Work",
+                            latitude = 47.5,
+                            longitude = 19.05,
+                            radiusKm = 1.0,
+                        )
+                    vehicle.id to
+                        listOf(
+                            ProximityNotificationCandidate(1, firstLocation.id),
+                            ProximityNotificationCandidate(2, secondLocation.id),
+                        )
+                }
+            val locationIds = candidates.map(ProximityNotificationCandidate::savedLocationId).toSet()
+            val initial = Instant.parse("2026-01-01T00:00:00Z")
+            val initialCutoff = initial.minusSeconds(30 * 60)
+
+            assertEquals(
+                locationIds,
+                tx.transactional {
+                    repository.claimEntryNotifications(vehicleId, candidates, initial, initialCutoff)
+                },
+            )
+            val suppressedLocationIds =
+                tx.transactional {
+                    repository.claimEntryNotifications(
+                        vehicleId,
+                        candidates,
+                        initial.plusSeconds(1),
+                        initialCutoff,
+                    )
+                }
+            assertTrue(suppressedLocationIds.isEmpty())
+
+            val reenteredLocationId = candidates.first().savedLocationId
+            tx.transactional { repository.markOutside(vehicleId, listOf(reenteredLocationId)) }
+            assertEquals(
+                setOf(reenteredLocationId),
+                tx.transactional {
+                    repository.claimEntryNotifications(
+                        vehicleId,
+                        candidates,
+                        initial.plusSeconds(2),
+                        initialCutoff,
+                    )
+                },
+            )
+
+            val cooldownBoundary = initial.plusSeconds(30 * 60 + 2)
+            assertEquals(
+                locationIds,
+                tx.transactional {
+                    repository.claimEntryNotifications(
+                        vehicleId,
+                        candidates,
+                        cooldownBoundary,
+                        cooldownBoundary.minusSeconds(30 * 60),
+                    )
+                },
+            )
+        }
+    }
+
+    @Test
+    fun `concurrent batch claims produce one winner for each candidate`() {
+        skipIfNoDocker()
+
+        withRealDatabase { _, tx ->
+            val repository = ProximityNotificationRepositoryI()
+            val (vehicleId, candidates) =
+                tx.transactional {
+                    val company =
+                        CompanyRepositoryI().create(
+                            name = "Concurrent Batch Company",
+                            inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
+                        )
+                    val vehicle =
+                        VehicleRepositoryI().create(
+                            companyId = company.id,
+                            label = "Concurrent Batch Truck",
+                            licensePlate = "PROX-BATCH-RACE",
+                        )!!
+                    val firstLocation =
+                        SavedLocationRepositoryI().create(1, "Home", 47.4979, 19.0402, 1.0)
+                    val secondLocation =
+                        SavedLocationRepositoryI().create(2, "Work", 47.5, 19.05, 1.0)
+                    vehicle.id to
+                        listOf(
+                            ProximityNotificationCandidate(1, firstLocation.id),
+                            ProximityNotificationCandidate(2, secondLocation.id),
+                        )
+                }
+            val expected = candidates.map(ProximityNotificationCandidate::savedLocationId).toSet()
+            val attemptedAt = Instant.parse("2026-01-01T00:00:00Z")
+            val outcomes =
+                raceBatchClaims(
+                    tx = tx,
+                    repository = repository,
+                    vehicleId = vehicleId,
+                    candidates = candidates,
+                    attemptedAt = attemptedAt,
+                    cooldownCutoff = attemptedAt.minusSeconds(30 * 60),
+                )
+
+            assertEquals(1, outcomes.count { it == expected }, "one batch should claim all candidates")
+            assertEquals(1, outcomes.count { it.isEmpty() }, "the competing batch must claim none")
+        }
+    }
+
+    @Test
+    fun `batch claim rolls back earlier chunks when a later chunk fails`() {
+        skipIfNoDocker()
+
+        withRealDatabase { _, tx ->
+            val repository = ProximityNotificationRepositoryI()
+            val (vehicleId, candidates) =
+                tx.transactional {
+                    val company =
+                        CompanyRepositoryI().create(
+                            name = "Rollback Batch Company",
+                            inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
+                        )
+                    val vehicle =
+                        VehicleRepositoryI().create(
+                            companyId = company.id,
+                            label = "Rollback Batch Truck",
+                            licensePlate = "PROX-BATCH-ROLLBACK",
+                        )!!
+                    val savedLocationRepository = SavedLocationRepositoryI()
+                    val locations =
+                        // Keep one current 500-candidate chunk valid before the invalid second chunk.
+                        List(500) { index ->
+                            savedLocationRepository.create(
+                                userId = 1,
+                                label = "Rollback $index",
+                                latitude = 47.4979,
+                                longitude = 19.0402,
+                                radiusKm = 1.0,
+                            )
+                        }
+                    vehicle.id to locations.map { ProximityNotificationCandidate(1, it.id) }
+                }
+            val attemptedAt = Instant.parse("2026-01-01T00:00:00Z")
+            val invalidCandidate =
+                ProximityNotificationCandidate(
+                    buyerUserId = 1,
+                    savedLocationId = Int.MAX_VALUE,
+                )
+
+            assertFails("a foreign-key violation in a later chunk must fail the claim transaction") {
+                tx.transactional {
+                    repository.claimEntryNotifications(
+                        vehicleId = vehicleId,
+                        candidates = candidates + invalidCandidate,
+                        attemptedAt = attemptedAt,
+                        cooldownCutoff = attemptedAt.minusSeconds(30 * 60),
+                    )
+                }
+            }
+            assertNull(
+                tx.transactional {
+                    repository.find(1, candidates.first().savedLocationId, vehicleId)
+                },
+                "rows inserted by earlier chunks must roll back with the failed batch",
+            )
+        }
+    }
+
+    @Test
     fun `a proximity record requires its buyer to own the referenced saved location`() {
         skipIfNoDocker()
 
@@ -517,5 +715,34 @@ class ProximityNotificationRepositoryRealDatabaseTest {
                     }
                 }
             }.awaitAll()
+        }
+
+    private suspend fun raceBatchClaims(
+        tx: TransactionalRunner,
+        repository: ProximityNotificationRepositoryI,
+        vehicleId: Int,
+        candidates: List<ProximityNotificationCandidate>,
+        attemptedAt: Instant,
+        cooldownCutoff: Instant,
+    ): List<Set<Int>> =
+        coroutineScope {
+            val ready = AtomicInteger()
+            val start = CompletableDeferred<Unit>()
+            val attempts =
+                listOf(candidates, candidates.reversed()).map { candidateBatch ->
+                    async {
+                        if (ready.incrementAndGet() == 2) start.complete(Unit)
+                        withTimeout(5_000) { start.await() }
+                        tx.transactional {
+                            repository.claimEntryNotifications(
+                                vehicleId = vehicleId,
+                                candidates = candidateBatch,
+                                attemptedAt = attemptedAt,
+                                cooldownCutoff = cooldownCutoff,
+                            )
+                        }
+                    }
+                }
+            attempts.awaitAll()
         }
 }

@@ -8,6 +8,7 @@ import com.auth0.jwt.JWTVerifier
 import com.mozgobolt.core.data.security.JwtTokenManager
 import com.mozgobolt.core.domain.security.AccessTokenSessionValidator
 import com.mozgobolt.core.domain.security.TokenManager
+import com.mozgobolt.core.modules.metrics.PrometheusMetrics
 import com.mozgobolt.core.modules.plugin.configureCallId
 import com.mozgobolt.core.modules.plugin.configureCallLogging
 import com.mozgobolt.core.modules.plugin.configureContentNegotiation
@@ -60,7 +61,7 @@ fun ApplicationTestBuilder.configureTestEnvironment(
     }
 }
 
-fun Application.installTestModules() {
+fun Application.installTestModules(prometheusMetrics: PrometheusMetrics = PrometheusMetrics(enabled = false)) {
     install(Resources)
     install(AutoHeadResponse)
     configureDefaultHeaders()
@@ -73,6 +74,7 @@ fun Application.installTestModules() {
         provide<TokenManager> { tokenManager }
         provide<JWTVerifier> { tokenManager.accessTokenVerifier }
         provide<AccessTokenSessionValidator> { testAccessTokenSessionValidator() }
+        provide<PrometheusMetrics> { prometheusMetrics }
     }
     configureSecurity()
     configureCors()

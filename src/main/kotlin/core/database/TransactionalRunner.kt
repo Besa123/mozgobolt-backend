@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction
+import java.sql.Connection
 
 /**
  * Atomic transaction boundary for the service layer. Repository methods that call
@@ -18,6 +19,13 @@ import org.jetbrains.exposed.v1.jdbc.transactions.suspendTransaction
  */
 interface TransactionalRunner {
     suspend fun <T> transactional(block: suspend () -> T): T
+
+    /**
+     * Runs a read-only unit of work against one PostgreSQL REPEATABLE READ snapshot.
+     * Call this at the outer transaction boundary; an existing transaction cannot be upgraded.
+     */
+    suspend fun <T> transactionalReadOnlySnapshot(block: suspend () -> T): T =
+        error("This transaction runner does not support read-only snapshot transactions")
 
     /**
      * Runs [block] as one unit of work and either commits or explicitly rolls back while returning its value.
@@ -51,6 +59,15 @@ class ExposedTransactionalRunner(
     override suspend fun <T> transactional(block: suspend () -> T): T =
         withContext(databaseDispatcher) {
             suspendTransaction(db = database) { block() }
+        }
+
+    override suspend fun <T> transactionalReadOnlySnapshot(block: suspend () -> T): T =
+        withContext(databaseDispatcher) {
+            suspendTransaction(
+                db = database,
+                transactionIsolation = Connection.TRANSACTION_REPEATABLE_READ,
+                readOnly = true,
+            ) { block() }
         }
 
     override suspend fun <T> transactionalWithOutcome(block: suspend () -> TransactionOutcome<T>): T =

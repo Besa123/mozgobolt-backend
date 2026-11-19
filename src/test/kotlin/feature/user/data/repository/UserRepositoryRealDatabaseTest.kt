@@ -4,6 +4,7 @@
 
 package com.mozgobolt.feature.user.data.repository
 
+import com.mozgobolt.core.assertInstantMatchesPostgresPrecision
 import com.mozgobolt.core.skipIfNoDocker
 import com.mozgobolt.core.withRealDatabase
 import com.mozgobolt.feature.user.data.database.RefreshTokensTable
@@ -20,6 +21,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -180,10 +182,11 @@ class UserRepositoryRealDatabaseTest {
                     )
 
                 assertTrue(repository.isTokenFamilyActive(1, "fresh-family", Instant.now()))
-                assertEquals(
-                    TokenValidationResult.Valid("fresh-family", familyExpiresAt),
-                    repository.validateAndRevokeRefreshToken(userId = 1, token = "fresh-token"),
-                )
+                val validation =
+                    repository.validateAndRevokeRefreshToken(userId = 1, token = "fresh-token")
+                val valid = assertIs<TokenValidationResult.Valid>(validation)
+                assertEquals("fresh-family", valid.familyId)
+                assertInstantMatchesPostgresPrecision(familyExpiresAt, valid.familyExpiresAt)
                 assertFalse(repository.isTokenFamilyActive(1, "fresh-family", Instant.now()))
                 assertEquals(
                     TokenValidationResult.AlreadyRevoked("fresh-family"),
@@ -250,10 +253,11 @@ class UserRepositoryRealDatabaseTest {
                     TokenValidationResult.AlreadyRevoked("user-family"),
                     repository.validateAndRevokeRefreshToken(userId = 1, token = "user-token"),
                 )
-                assertEquals(
-                    TokenValidationResult.Valid("other-family", otherFamilyExpiresAt),
-                    repository.validateAndRevokeRefreshToken(userId = 2, token = "unrelated-user-token"),
-                )
+                val validation =
+                    repository.validateAndRevokeRefreshToken(userId = 2, token = "unrelated-user-token")
+                val valid = assertIs<TokenValidationResult.Valid>(validation)
+                assertEquals("other-family", valid.familyId)
+                assertInstantMatchesPostgresPrecision(otherFamilyExpiresAt, valid.familyExpiresAt)
             }
         }
     }

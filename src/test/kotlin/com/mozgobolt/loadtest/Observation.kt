@@ -41,12 +41,14 @@ internal sealed interface Observation {
         val center: GeoPoint,
         val radiusKm: Double,
         val at: MonotonicMark,
+        val nodeName: String = "node-a",
     ) : Observation
 
     data class ViewerEventReceived(
         val sessionId: Int,
         val event: LiveFeedEvent,
         val at: MonotonicMark,
+        val nodeName: String = "node-a",
     ) : Observation
 
     /** The client ended the session on purpose (the viewer closed the map or the run finished). */

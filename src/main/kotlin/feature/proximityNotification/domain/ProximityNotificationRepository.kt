@@ -4,6 +4,7 @@
 
 package com.mozgobolt.feature.proximityNotification.domain
 
+import com.mozgobolt.feature.proximityNotification.domain.model.ProximityNotificationCandidate
 import com.mozgobolt.feature.proximityNotification.domain.model.ProximityNotificationRecord
 import java.time.Instant
 
@@ -40,6 +41,18 @@ interface ProximityNotificationRepository {
         attemptedAt: Instant,
         cooldownCutoff: Instant,
     ): Boolean
+
+    /**
+     * Atomically claims a bounded batch of entry reminders. Returns saved-location IDs that are new,
+     * outside, or past cooldown; currently-inside locations still within cooldown are omitted.
+     * The caller owns the transaction and may send pushes only after it commits.
+     */
+    suspend fun claimEntryNotifications(
+        vehicleId: Int,
+        candidates: List<ProximityNotificationCandidate>,
+        attemptedAt: Instant,
+        cooldownCutoff: Instant,
+    ): Set<Int>
 
     /**
      * Marks every record of [vehicleId] at one of [savedLocationIds] that is still inside as no

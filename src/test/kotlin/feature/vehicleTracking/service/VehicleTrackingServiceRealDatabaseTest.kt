@@ -56,7 +56,7 @@ class VehicleTrackingServiceRealDatabaseTest {
     }
 
     @Test
-    fun `telemetry resolves the vehicle company inside an Exposed transaction`() {
+    fun `telemetry passes the active vehicle company to proximity alerts`() {
         skipIfNoDocker()
 
         withRealDatabase { _, tx ->
@@ -64,7 +64,7 @@ class VehicleTrackingServiceRealDatabaseTest {
             val membershipRepository = CompanyMembershipRepositoryI()
             val vehicleRepository = VehicleRepositoryI()
             val assignmentRepository = VehicleAssignmentRepositoryI()
-            val vehicleId =
+            val (companyId, vehicleId) =
                 tx.transactional {
                     val company =
                         companyRepository.create(
@@ -72,7 +72,7 @@ class VehicleTrackingServiceRealDatabaseTest {
                             inviteCode = SecureTokenGenerator.generate(CompanyConstraints.INVITE_CODE_BYTE_LENGTH),
                         )
                     membershipRepository.addIfAbsent(company.id, 1, CompanyRole.ADMIN)
-                    checkNotNull(vehicleRepository.create(company.id, "Tracking van", "TRACK-123")).id
+                    company.id to checkNotNull(vehicleRepository.create(company.id, "Tracking van", "TRACK-123")).id
                 }
             val assignmentService =
                 VehicleAssignmentServiceI(
@@ -131,6 +131,7 @@ class VehicleTrackingServiceRealDatabaseTest {
             assertEquals(assignment.id, persistedCandidates.single().assignmentId)
             val evaluation = requireNotNull(proximityAlertService.evaluation)
             assertEquals(vehicleId, evaluation.vehicleId)
+            assertEquals(companyId, evaluation.companyId)
             assertEquals(GeoPoint(47.4979, 19.0402), evaluation.points.single())
             buffer.completeBatch(persistedCandidates)
         }

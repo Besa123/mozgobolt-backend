@@ -5,6 +5,7 @@
 package com.mozgobolt.core.di
 
 import com.auth0.jwt.JWTVerifier
+import com.mozgobolt.core.domain.AppResult
 import com.mozgobolt.core.domain.email.EmailService
 import com.mozgobolt.core.domain.media.ImageSanitizer
 import com.mozgobolt.core.domain.media.ImageStorage
@@ -40,7 +41,9 @@ import io.ktor.server.config.MapApplicationConfig
 import io.ktor.server.plugins.di.dependencies
 import io.ktor.server.plugins.di.resolve
 import io.ktor.server.testing.testApplication
+import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 class FeatureDependencyInjectionTest {
@@ -59,6 +62,7 @@ class FeatureDependencyInjectionTest {
                         "app.jwt.issuer" to "di-test",
                         "app.jwt.audience" to "di-test",
                         "app.security.passwordPepper" to "di-test-pepper",
+                        "app.security.shouldCheckPasswordBreach" to "false",
                         "app.cors.allowedHosts" to "",
                         "app.email.resendApiKey" to "",
                     )
@@ -69,6 +73,10 @@ class FeatureDependencyInjectionTest {
                 assertIs<AppConfig>(dependencies.resolve<AppConfig>())
                 assertIs<ApplicationBackgroundScope>(dependencies.resolve<ApplicationBackgroundScope>())
                 assertIs<PasswordBreachChecker>(dependencies.resolve<PasswordBreachChecker>())
+                assertEquals(
+                    AppResult.Success(false),
+                    runBlocking { dependencies.resolve<PasswordBreachChecker>().isCompromised("test-passphrase") },
+                )
                 assertIs<PasswordService>(dependencies.resolve<PasswordService>())
                 assertIs<PasswordValidator>(dependencies.resolve<PasswordValidator>())
                 assertIs<EmailValidator>(dependencies.resolve<EmailValidator>())

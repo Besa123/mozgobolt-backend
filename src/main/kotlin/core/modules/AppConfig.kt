@@ -31,6 +31,7 @@ data class AppConfig(
     val push: Push = Push(),
     val redis: Redis = Redis(),
     val runtimeCapacity: RuntimeCapacityConfig = RuntimeCapacityConfig(),
+    val metrics: Metrics = Metrics(),
 ) {
     @Serializable
     data class Database(
@@ -51,6 +52,7 @@ data class AppConfig(
     @Serializable
     data class Security(
         val passwordPepper: String,
+        val shouldCheckPasswordBreach: Boolean = true,
     )
 
     @Serializable
@@ -99,6 +101,11 @@ data class AppConfig(
         val dsn: String = "",
     )
 
+    @Serializable
+    data class Metrics(
+        val enabled: Boolean = false,
+    )
+
     /** [serviceAccountJson] is the raw JSON content of a Firebase service-account key, never a
      * file path — read directly from an env var, same as every other secret in this class, never
      * hardcoded or checked into version control. No separate project-id field: the firebase-admin
@@ -140,6 +147,9 @@ fun AppConfig.validateForEnvironment(environment: String) {
     }
     require(jwt.secret != security.passwordPepper) {
         "JWT_SECRET and PASSWORD_PEPPER must be different values in production"
+    }
+    require(security.shouldCheckPasswordBreach) {
+        "PASSWORD_BREACH_CHECK_ENABLED must be true in production"
     }
     require(clamAv.enabled) {
         "CLAMAV_ENABLED must be true in production for vehicle-picture uploads"

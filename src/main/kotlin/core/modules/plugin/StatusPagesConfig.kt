@@ -4,6 +4,7 @@
 
 package com.mozgobolt.core.modules.plugin
 
+import com.mozgobolt.core.data.ratelimit.RateLimitStoreUnavailableException
 import com.mozgobolt.core.routing.dto.response.ErrorResponse
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.http.HttpHeaders
@@ -26,6 +27,16 @@ private val logger = KotlinLogging.logger {}
 fun Application.configureStatusPages() {
     install(StatusPages) {
         status(HttpStatusCode.TooManyRequests) { call, status -> respondRateLimited(call, status) }
+
+        exception<RateLimitStoreUnavailableException> { call, _ ->
+            call.respond(
+                HttpStatusCode.ServiceUnavailable,
+                ErrorResponse(
+                    error = "RATE_LIMIT_STORE_UNAVAILABLE",
+                    message = "Rate limiting is temporarily unavailable",
+                ),
+            )
+        }
 
         exception<RequestValidationException> { call, cause ->
             logger.warn { "Request validation failed" }

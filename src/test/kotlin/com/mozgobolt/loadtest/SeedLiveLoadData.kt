@@ -34,6 +34,7 @@ private const val TEST_PASSWORD = "LoadTestOnly-Passphrase-2026"
 private const val FIRST_VENDOR_EMAIL = "loadtest-vendor-001@loadtest.invalid"
 private const val SEED = 20_260_516L
 private const val SESSION_BACKDATE_SECONDS = 10L
+private const val ACCOUNTS_OUTPUT_PATH_ENV = "LOAD_TEST_ACCOUNTS_OUTPUT"
 
 private data class SeededVendor(
     val account: SeededAccount,
@@ -53,10 +54,10 @@ private data class SeededAccount(
 
 /**
  * Seeds the vendors, vehicles, active assignments, buyers, favorites and saved locations a live
- * load run needs, in a disposable local `mozgobolt_loadtest` database. Placement follows the
- * workload's Zipf region skew so some regions are busy and most are quiet, and every buyer
- * favorites trucks of their own region and saves places near home: that is what makes each
- * telemetry batch do real proximity-alert work instead of finding no candidates.
+ * load run needs, in a disposable local `mozgobolt_loadtest` database. Trucks are spread evenly
+ * across regions, buyers follow the workload's Zipf skew, and every buyer favorites trucks of
+ * their own region and saves places near home: that is what makes each telemetry batch do real
+ * proximity-alert work instead of finding no candidates.
  */
 fun main() =
     runBlocking {
@@ -93,7 +94,7 @@ fun main() =
                     vendors.map(SeededVendor::account) + seedBuyers(spec, vendors, passwordHash, tokenManager, users)
                 }
 
-            val output = Path.of(AccountBook.DEFAULT_PATH)
+            val output = loadTestAccountsOutputPath()
             writeAccounts(output, accounts)
             println(
                 "Seeded ${spec.trucks} vendors/active vehicles and ${spec.buyers} buyers " +
@@ -105,6 +106,19 @@ fun main() =
         }
     }
 
+internal fun loadTestAccountsOutputPath(configuredPath: String? = System.getenv(ACCOUNTS_OUTPUT_PATH_ENV)): Path {
+    val output =
+        Path
+            .of(configuredPath?.takeIf(String::isNotBlank) ?: AccountBook.DEFAULT_PATH)
+            .toAbsolutePath()
+            .normalize()
+    val buildDirectory = Path.of("build/load-test").toAbsolutePath().normalize()
+    require(output.startsWith(buildDirectory)) {
+        "$ACCOUNTS_OUTPUT_PATH_ENV must point to a file under build/load-test."
+    }
+    return output
+}
+
 private suspend fun seedVendors(
     spec: WorkloadSpec,
     passwordHash: String,
@@ -115,7 +129,7 @@ private suspend fun seedVendors(
     val memberships = CompanyMembershipRepositoryI()
     val vehicles = VehicleRepositoryI()
     val assignments = VehicleAssignmentRepositoryI()
-    val regionOfTruck = assignBuckets(spec.trucks, zipfWeights(spec.regions.size, spec.regionSkew))
+    val regionOfTruck = assignBuckets(spec.trucks, zipfWeights(spec.regions.size, spec.truckRegionSkew))
 
     return regionOfTruck.mapIndexed { index, regionIndex ->
         val number = index + 1
@@ -173,7 +187,7 @@ private suspend fun seedBuyers(
         vendors.groupBy(SeededVendor::regionIndex).mapValues { (_, inRegion) ->
             inRegion.map(SeededVendor::companyId)
         }
-    val regionOfBuyer = assignBuckets(spec.buyers, zipfWeights(spec.regions.size, spec.regionSkew))
+    val regionOfBuyer = assignBuckets(spec.buyers, zipfWeights(spec.regions.size, spec.buyerRegionSkew))
 
     return regionOfBuyer.mapIndexed { index, regionIndex ->
         val number = index + 1

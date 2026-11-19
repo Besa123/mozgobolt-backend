@@ -12,11 +12,15 @@ internal data class RunDescription(
     val durationSeconds: Int,
     val trucks: Int,
     val viewers: Int,
+    val appNodes: Int,
+    val viewersPerNode: Map<String, Int>,
     val radiusKm: Double,
     val truckIntervalSeconds: Double,
     val pointsPerBatch: Int,
     val viewerSessionSeconds: Int,
+    val viewerConnectRampUpSeconds: Int,
     val loginBurst: Boolean,
+    val synchronizeTrucks: Boolean,
     val seed: Long,
 )
 
@@ -24,6 +28,9 @@ internal data class RunDescription(
 internal data class LiveFeedSummary(
     val events: Map<String, Int>,
     val sessionsOpened: Int,
+    val peakConcurrentConnections: Int,
+    val connectedConnectionsByNode: Map<String, Int>,
+    val peakConcurrentConnectionsByNode: Map<String, Int>,
     val outsideRadiusEvents: Int,
     val expectedLiveDeliveries: Long,
     val observedLiveDeliveries: Long,

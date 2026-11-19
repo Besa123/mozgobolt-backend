@@ -9,7 +9,6 @@ import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -19,7 +18,7 @@ import kotlin.time.Duration.Companion.seconds
 
 class ApplicationBackgroundScopeTest {
     @Test
-    fun `one cancellation stops every application background task`() =
+    fun `cancelAndJoin waits for every application background task to finish cleanup`() =
         runBlocking {
             val backgroundScope = ApplicationBackgroundScope()
             val firstStarted = CompletableDeferred<Unit>()
@@ -49,12 +48,10 @@ class ApplicationBackgroundScopeTest {
             try {
                 withTimeout(2.seconds) { awaitAll(firstStarted, secondStarted) }
 
-                backgroundScope.cancel()
+                withTimeout(2.seconds) { backgroundScope.cancelAndJoin() }
 
-                withTimeout(2.seconds) {
-                    awaitAll(firstCancelled, secondCancelled)
-                    jobs.joinAll()
-                }
+                assertTrue(firstCancelled.isCompleted)
+                assertTrue(secondCancelled.isCompleted)
                 assertTrue(jobs.all { it.isCancelled })
             } finally {
                 backgroundScope.cancel()

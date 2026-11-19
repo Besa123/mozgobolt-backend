@@ -62,6 +62,10 @@ were found and fixed — not a report to be explained away by weakening the prob
 
 ## Run it
 
+For deterministic local or CI probes, start the target app with `ENVIRONMENT=test` and
+`PASSWORD_BREACH_CHECK_ENABLED=false`. The setting avoids a dependency on the external HIBP service for disposable
+probe accounts; production startup rejects this setting, and the HIBP integration has separate component tests.
+
 ```bash
 ./gradlew runSecurityProbes
 ./gradlew runSecurityProbes --args="http://127.0.0.1:18080 build/security-probe/my-report.json"

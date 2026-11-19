@@ -22,6 +22,10 @@ interface VehicleAssignmentRepository {
     /** Lists all assignments associated with a company. */
     suspend fun findAllForCompany(companyId: Int): List<VehicleAssignment>
 
+    /** Lists active assignments associated with vehicles in a company. */
+    suspend fun findActiveForCompany(companyId: Int): List<VehicleAssignment> =
+        findAllForCompany(companyId).filter { it.isActive }
+
     /** Lists active assignments older than [cutoff], limited to [limit] rows. */
     suspend fun findStaleActiveBefore(
         cutoff: Instant,

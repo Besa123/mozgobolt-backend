@@ -1,10 +1,82 @@
 services:
-  # Local cross-instance fanout for the real-time hubs — see REDIS_URL in .env.example. Not
-  # needed to run this app at all; only relevant once you're testing multi-instance behavior.
-  # Valkey (not Redis) on purpose: it's the still-fully-open-source (BSD), API-compatible fork
-  # maintained by the Linux Foundation, backed by AWS/Google/DigitalOcean/Aiven, after Redis
-  # Ltd. moved Redis itself to a source-available license in 2024.
-  redis:
-    image: valkey/valkey:8-alpine
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: mozgobolt
+      POSTGRES_USER: ${DB_USER:-mozgobolt}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
     ports:
-      - "6379:6379"
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: valkey/valkey:9.2.0-alpine
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  app:
+    build:
+      context: .
+    environment:
+      ENVIRONMENT: local
+      HOST: 0.0.0.0
+      PORT: 8080
+      APP_BASE_URL: http://localhost:8080
+      DB_URL: jdbc:postgresql://postgres:5432/mozgobolt
+      DB_USER: ${DB_USER:-mozgobolt}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      JWT_ISSUER: ${JWT_ISSUER:-mozgobolt}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-mozgobolt-clients}
+      PASSWORD_PEPPER: ${PASSWORD_PEPPER:?Set PASSWORD_PEPPER in .env}
+      PASSWORD_BREACH_CHECK_ENABLED: ${PASSWORD_BREACH_CHECK_ENABLED:-true}
+      CORS_ALLOWED_HOSTS: ${CORS_ALLOWED_HOSTS:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-noreply@example.com}
+      CLAMAV_ENABLED: "false"
+      METRICS_ENABLED: ${METRICS_ENABLED:-false}
+      REDIS_URL: redis://redis:6379
+      VEHICLE_IMAGE_STORAGE_DIR: /app/data/vehicle-images
+      LOG_DIR: /app/logs
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - vehicle-images:/app/data/vehicle-images
+      - application-logs:/app/logs
+
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    profiles:
+      - observability
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      app:
+        condition: service_started
+
+volumes:
+  postgres-data:
+  vehicle-images:
+  application-logs:
+  prometheus-data:

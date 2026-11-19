@@ -83,6 +83,7 @@ fun Application.configureVehiclePingRetentionPurger() {
 fun Application.configureVehiclePingRelay() {
     val hub: RedisRelayVehiclePingHub by dependencies
     hub.start()
+    kotlinx.coroutines.runBlocking { hub.awaitSubscriptionReady() }
 }
 
 fun Application.configureVehiclePingIdleFlowSweeper() {

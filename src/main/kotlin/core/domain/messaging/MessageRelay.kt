@@ -16,9 +16,13 @@ import kotlinx.coroutines.flow.Flow
  * during application shutdown; long-lived coroutine consumers are canceled by the shared
  * [com.mozgobolt.core.utility.ApplicationBackgroundScope].
  */
-interface MessageRelay {
+interface MessageRelay : AutoCloseable {
     /** Whether this relay forwards messages to other application instances. */
     val isCrossInstanceRelaySupported: Boolean
+        get() = true
+
+    /** Whether the relay's required connections are currently open. */
+    val isReady: Boolean
         get() = true
 
     /** Opens the shared relay connection and begins its lifecycle. */
@@ -27,11 +31,21 @@ interface MessageRelay {
     /** Closes resources opened by [start]. */
     fun stop()
 
+    override fun close() {
+        stop()
+    }
+
     /** Publishes [message] to the shared [channel]. */
     suspend fun publish(
         channel: String,
         message: String,
     )
+
+    /**
+     * Waits until [subscribe] has registered [channel] with the relay server.
+     * Implementations without a remote subscription handshake may complete immediately.
+     */
+    suspend fun awaitSubscription(channel: String) {}
 
     /** Every message ever published to [channel] from the moment this is first called, including
      * this same instance's own publishes — a decorator re-delivering its own message into an

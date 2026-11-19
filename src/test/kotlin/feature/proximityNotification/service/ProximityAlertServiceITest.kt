@@ -7,10 +7,14 @@ package com.mozgobolt.feature.proximityNotification.service
 import com.mozgobolt.core.data.push.FakePushNotificationSender
 import com.mozgobolt.core.data.push.InvalidPushTargetException
 import com.mozgobolt.core.data.push.PermanentPushDeliveryException
+import com.mozgobolt.core.database.TransactionOutcome
+import com.mozgobolt.core.database.TransactionalRunner
 import com.mozgobolt.feature.companyFavorite.domain.CompanyFavoriteRepository
 import com.mozgobolt.feature.deviceInstallation.domain.FakeDeviceInstallationRepository
 import com.mozgobolt.feature.deviceInstallation.service.DeviceInstallationServiceI
+import com.mozgobolt.feature.proximityNotification.domain.ProximityAlertCandidateRepository
 import com.mozgobolt.feature.proximityNotification.domain.ProximityNotificationRepository
+import com.mozgobolt.feature.proximityNotification.domain.model.ProximityNotificationCandidate
 import com.mozgobolt.feature.proximityNotification.domain.model.ProximityNotificationRecord
 import com.mozgobolt.feature.savedLocation.domain.SavedLocationRepository
 import com.mozgobolt.feature.savedLocation.domain.model.UserSavedLocation
@@ -115,6 +119,21 @@ class ProximityAlertServiceITest {
         }
     }
 
+    private class FakeProximityAlertCandidateRepository(
+        private val favoriteRepository: FakeCompanyFavoriteRepository,
+        private val savedLocationRepository: FakeSavedLocationRepository,
+    ) : ProximityAlertCandidateRepository {
+        var findSavedLocationsForCompanyCallCount = 0
+            private set
+
+        override suspend fun findSavedLocationsForCompany(companyId: Int): List<UserSavedLocation> {
+            findSavedLocationsForCompanyCallCount++
+            val favoritingUserIds = favoriteRepository.findUserIdsFavoritingCompany(companyId)
+            if (favoritingUserIds.isEmpty()) return emptyList()
+            return savedLocationRepository.findAllForUsers(favoritingUserIds)
+        }
+    }
+
     /** In-memory equivalent of the repository's atomic notification claim. */
     private class FakeProximityNotificationRepository : ProximityNotificationRepository {
         private val records = mutableMapOf<Triple<Int, Int, Int>, ProximityNotificationRecord>()
@@ -125,6 +144,12 @@ class ProximityAlertServiceITest {
 
         var markOutsideCallCount = 0
             private set
+
+        var claimEntryNotificationsCallCount = 0
+            private set
+
+        var failNextClaimEntryNotifications = false
+        var failNextMarkOutside = false
 
         override suspend fun find(
             buyerUserId: Int,
@@ -172,11 +197,41 @@ class ProximityAlertServiceITest {
             return true
         }
 
+        override suspend fun claimEntryNotifications(
+            vehicleId: Int,
+            candidates: List<ProximityNotificationCandidate>,
+            attemptedAt: Instant,
+            cooldownCutoff: Instant,
+        ): Set<Int> {
+            claimEntryNotificationsCallCount++
+            if (failNextClaimEntryNotifications) {
+                failNextClaimEntryNotifications = false
+                error("simulated claim failure")
+            }
+            val claimedLocationIds =
+                candidates.mapNotNull { candidate ->
+                    candidate.savedLocationId.takeIf {
+                        claimEntryNotification(
+                            candidate.buyerUserId,
+                            candidate.savedLocationId,
+                            vehicleId,
+                            attemptedAt,
+                            cooldownCutoff,
+                        )
+                    }
+                }
+            return claimedLocationIds.toSet()
+        }
+
         override suspend fun markOutside(
             vehicleId: Int,
             savedLocationIds: Collection<Int>,
         ) {
             markOutsideCallCount++
+            if (failNextMarkOutside) {
+                failNextMarkOutside = false
+                error("simulated outside-write failure")
+            }
             records.entries
                 .filter { (key, record) ->
                     key.third == vehicleId && key.second in savedLocationIds &&
@@ -190,9 +245,29 @@ class ProximityAlertServiceITest {
         ): Int = error("not exercised by this test")
     }
 
-    private class Fixture {
+    private class CountingTransactionalRunner : TransactionalRunner {
+        private val delegate = NoopTransactionalRunner()
+        var transactionCount = 0
+            private set
+
+        override suspend fun <T> transactional(block: suspend () -> T): T {
+            transactionCount++
+            return delegate.transactional(block)
+        }
+
+        override suspend fun <T> transactionalWithOutcome(block: suspend () -> TransactionOutcome<T>): T {
+            transactionCount++
+            return delegate.transactionalWithOutcome(block)
+        }
+    }
+
+    private class Fixture(
+        transactionRunner: TransactionalRunner = NoopTransactionalRunner(),
+    ) {
         val favoriteRepository = FakeCompanyFavoriteRepository()
         val savedLocationRepository = FakeSavedLocationRepository()
+        val candidateRepository =
+            FakeProximityAlertCandidateRepository(favoriteRepository, savedLocationRepository)
         val proximityNotificationRepository = FakeProximityNotificationRepository()
         val deviceInstallationRepository = FakeDeviceInstallationRepository()
         val pushSender = FakePushNotificationSender()
@@ -200,11 +275,10 @@ class ProximityAlertServiceITest {
             DeviceInstallationServiceI(deviceInstallationRepository, NoopTransactionalRunner(), pushSender)
         val service =
             ProximityAlertServiceI(
-                companyFavoriteRepository = favoriteRepository,
-                savedLocationRepository = savedLocationRepository,
+                candidateRepository = candidateRepository,
                 proximityNotificationRepository = proximityNotificationRepository,
                 deviceInstallationService = deviceInstallationService,
-                tx = NoopTransactionalRunner(),
+                tx = transactionRunner,
             )
     }
 
@@ -233,6 +307,122 @@ class ProximityAlertServiceITest {
                     .single()
                     .installationId,
             )
+        }
+    }
+
+    @Test
+    fun `candidate lookups share one transaction`() {
+        runBlocking {
+            val tx = CountingTransactionalRunner()
+            val fx = Fixture(tx)
+            fx.favoriteRepository.seedFavorite(companyId = 1, userId = 10)
+
+            fx.service.evaluateBatch(
+                vehicleId = 100,
+                companyId = 1,
+                points = listOf(GeoPoint(savedPoint.first, savedPoint.second)),
+            )
+
+            assertEquals(1, fx.candidateRepository.findSavedLocationsForCompanyCallCount)
+            assertEquals(1, tx.transactionCount)
+            assertEquals(1, fx.favoriteRepository.findUserIdsFavoritingCompanyCallCount)
+            assertEquals(1, fx.savedLocationRepository.findAllForUsersCallCount)
+        }
+    }
+
+    @Test
+    fun `inside candidates share one atomic claim transaction per point`() {
+        runBlocking {
+            val tx = CountingTransactionalRunner()
+            val fx = Fixture(tx)
+            val candidateCount = 25
+            repeat(candidateCount) { userId ->
+                fx.favoriteRepository.seedFavorite(companyId = 1, userId = userId)
+                fx.savedLocationRepository.seed(
+                    userId = userId,
+                    label = "Location $userId",
+                    latitude = savedPoint.first,
+                    longitude = savedPoint.second,
+                    radiusKm = 1.0,
+                )
+            }
+
+            fx.service.evaluateBatch(
+                vehicleId = 100,
+                companyId = 1,
+                points = listOf(GeoPoint(insidePoint.first, insidePoint.second)),
+            )
+
+            assertEquals(1, fx.candidateRepository.findSavedLocationsForCompanyCallCount)
+            assertEquals(1, fx.proximityNotificationRepository.claimEntryNotificationsCallCount)
+            assertEquals(2, tx.transactionCount)
+            assertEquals(candidateCount, fx.proximityNotificationRepository.recordWriteCount)
+        }
+    }
+
+    @Test
+    fun `failed first outside write does not block an inside claim`() {
+        runBlocking {
+            val tx = CountingTransactionalRunner()
+            val fx = Fixture(tx)
+            fx.favoriteRepository.seedFavorite(companyId = 1, userId = 10)
+            fx.savedLocationRepository.seed(
+                userId = 10,
+                label = "Home",
+                latitude = savedPoint.first,
+                longitude = savedPoint.second,
+                radiusKm = 1.0,
+            )
+            fx.savedLocationRepository.seed(
+                userId = 10,
+                label = "Work",
+                latitude = outsidePoint.first,
+                longitude = outsidePoint.second,
+                radiusKm = 1.0,
+            )
+            fx.deviceInstallationRepository.seed(userId = 10, installationId = "buyer-device")
+            fx.proximityNotificationRepository.failNextMarkOutside = true
+
+            fx.service.evaluateBatch(
+                vehicleId = 100,
+                companyId = 1,
+                points = listOf(GeoPoint(insidePoint.first, insidePoint.second)),
+            )
+
+            assertEquals(1, fx.proximityNotificationRepository.markOutsideCallCount)
+            assertEquals(1, fx.proximityNotificationRepository.claimEntryNotificationsCallCount)
+            assertEquals(1, fx.pushSender.sent.size)
+            assertEquals(3, tx.transactionCount)
+        }
+    }
+
+    @Test
+    fun `failed first claim does not prevent later points from being evaluated`() {
+        runBlocking {
+            val tx = CountingTransactionalRunner()
+            val fx = Fixture(tx)
+            fx.favoriteRepository.seedFavorite(companyId = 1, userId = 10)
+            fx.savedLocationRepository.seed(
+                userId = 10,
+                label = "Home",
+                latitude = savedPoint.first,
+                longitude = savedPoint.second,
+                radiusKm = 1.0,
+            )
+            fx.deviceInstallationRepository.seed(userId = 10, installationId = "buyer-device")
+            fx.proximityNotificationRepository.failNextClaimEntryNotifications = true
+            val point = GeoPoint(insidePoint.first, insidePoint.second)
+
+            fx.service.evaluateBatch(
+                vehicleId = 100,
+                companyId = 1,
+                points = listOf(point, point),
+            )
+
+            assertEquals(1, fx.candidateRepository.findSavedLocationsForCompanyCallCount)
+            assertEquals(2, fx.proximityNotificationRepository.claimEntryNotificationsCallCount)
+            assertEquals(1, fx.pushSender.sent.size)
+            assertEquals(3, tx.transactionCount)
         }
     }
 
@@ -321,6 +511,29 @@ class ProximityAlertServiceITest {
             fx.service.evaluate(vehicleId = 100, companyId = 1, latitude = pointLat, longitude = pointLon)
 
             assertEquals(1, fx.pushSender.sent.size, "a point exactly at the radius boundary must count as inside")
+        }
+    }
+
+    @Test
+    fun `a meridian radius boundary remains inside after the latitude prefilter`() {
+        runBlocking {
+            val fx = Fixture()
+            fx.favoriteRepository.seedFavorite(companyId = 1, userId = 10)
+            val (savedLat, savedLon) = savedPoint
+            val pointLat = savedLat + 0.001
+            val exactDistanceKm = haversineKm(pointLat, savedLon, savedLat, savedLon)
+            fx.savedLocationRepository.seed(
+                userId = 10,
+                label = "Home",
+                latitude = savedLat,
+                longitude = savedLon,
+                radiusKm = exactDistanceKm,
+            )
+            fx.deviceInstallationRepository.seed(userId = 10, installationId = "buyer-device")
+
+            fx.service.evaluate(vehicleId = 100, companyId = 1, latitude = pointLat, longitude = savedLon)
+
+            assertEquals(1, fx.pushSender.sent.size, "an exact meridian boundary must pass the conservative filter")
         }
     }
 
@@ -468,7 +681,8 @@ class ProximityAlertServiceITest {
     @Test
     fun `outside candidates are marked with one write per point, however many buyers watch the company`() {
         runBlocking {
-            val fx = Fixture()
+            val tx = CountingTransactionalRunner()
+            val fx = Fixture(tx)
             val (savedLat, savedLon) = savedPoint
             val watchingBuyers = 25
             repeat(watchingBuyers) { index ->
@@ -494,6 +708,7 @@ class ProximityAlertServiceITest {
                 fx.proximityNotificationRepository.markOutsideCallCount,
                 "$watchingBuyers outside candidates over 3 points must cost 3 writes, not ${watchingBuyers * 3}",
             )
+            assertEquals(4, tx.transactionCount)
         }
     }
 

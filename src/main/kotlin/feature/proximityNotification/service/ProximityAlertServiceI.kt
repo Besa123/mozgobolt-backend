@@ -12,20 +12,24 @@ import com.mozgobolt.core.domain.push.PUSH_DATA_KEY_TYPE
 import com.mozgobolt.core.domain.push.PUSH_DATA_KEY_VEHICLE_ID
 import com.mozgobolt.core.domain.push.PushEventType
 import com.mozgobolt.core.utility.functions.runSuspendCatching
-import com.mozgobolt.feature.companyFavorite.domain.CompanyFavoriteRepository
 import com.mozgobolt.feature.deviceInstallation.domain.DeviceInstallationService
+import com.mozgobolt.feature.proximityNotification.domain.ProximityAlertCandidateRepository
 import com.mozgobolt.feature.proximityNotification.domain.ProximityAlertService
 import com.mozgobolt.feature.proximityNotification.domain.ProximityNotificationRepository
-import com.mozgobolt.feature.savedLocation.domain.SavedLocationRepository
+import com.mozgobolt.feature.proximityNotification.domain.model.ProximityNotificationCandidate
 import com.mozgobolt.feature.savedLocation.domain.model.UserSavedLocation
 import com.mozgobolt.feature.vehicleTracking.domain.haversineKm
 import com.mozgobolt.feature.vehicleTracking.domain.model.GeoPoint
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.flow.asFlow
 import java.time.Instant
+import kotlin.math.abs
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.toJavaDuration
 
 private val logger = KotlinLogging.logger {}
+
+private const val CONSERVATIVE_KM_PER_LATITUDE_DEGREE = 110.0
 
 // Deliberately longer than VehiclePingServiceI's PING_COOLDOWN (5 minutes): a ping is a direct,
 // time-sensitive signal between two people who both just acted; this is a passive background
@@ -40,11 +44,10 @@ internal val PROXIMITY_NOTIFICATION_COOLDOWN = 30.minutes
  * Matches a vehicle's live telemetry against the saved locations of buyers who favorited its
  * company, and pushes "it's nearby" to anyone whose watched area the vehicle just entered.
  *
- * Candidate narrowing (see [evaluateBatch]) always runs two small, indexed queries once per batch,
- * before any distance math: which buyers favorited this company, then which saved locations belong
- * to them. A buyer who never favorited this company, or has no saved locations, is never even
- * considered — this is deliberately not an H3-covering-cell index over saved locations, which would
- * be solving for a scale (many thousands of saved locations) this app doesn't have yet.
+ * Candidate narrowing (see [evaluateBatch]) runs one indexed join query per batch, before any
+ * distance math. A buyer who never favorited this company, or has no saved locations, is never even
+ * considered — this is deliberately not an H3-covering-cell index over saved locations, which
+ * would be solving for a scale (many thousands of saved locations) this app doesn't have yet.
  *
  * Candidates a point is outside of (by far the common case) are marked with one statement per point,
  * not one transaction per candidate: otherwise telemetry latency would grow with the number of buyers
@@ -56,8 +59,7 @@ internal val PROXIMITY_NOTIFICATION_COOLDOWN = 30.minutes
  * caught and logged, never propagated.
  */
 class ProximityAlertServiceI(
-    private val companyFavoriteRepository: CompanyFavoriteRepository,
-    private val savedLocationRepository: SavedLocationRepository,
+    private val candidateRepository: ProximityAlertCandidateRepository,
     private val proximityNotificationRepository: ProximityNotificationRepository,
     private val deviceInstallationService: DeviceInstallationService,
     private val tx: TransactionalRunner,
@@ -70,25 +72,13 @@ class ProximityAlertServiceI(
         if (points.isEmpty()) return
 
         runSuspendCatching {
-            val favoritingUserIds =
-                tx.transactional { companyFavoriteRepository.findUserIdsFavoritingCompany(companyId) }
-            if (favoritingUserIds.isEmpty()) return@runSuspendCatching
-
-            val candidates = tx.transactional { savedLocationRepository.findAllForUsers(favoritingUserIds) }
+            val candidates = tx.transactional { candidateRepository.findSavedLocationsForCompany(companyId) }
             if (candidates.isEmpty()) return@runSuspendCatching
 
-            points.forEach { point ->
+            points.asFlow().collect { point ->
                 val (inside, outside) = candidates.partition { it.covers(point) }
                 markOutsideInOneWrite(vehicleId, outside)
-                inside.forEach { savedLocation ->
-                    runSuspendCatching {
-                        claimAndNotify(vehicleId, companyId, savedLocation)
-                    }.onError { throwable ->
-                        logger.warn(throwable) {
-                            "Proximity check failed for saved location ${savedLocation.id}, vehicle $vehicleId"
-                        }
-                    }
-                }
+                claimAndNotifyBatch(vehicleId, companyId, inside)
             }
         }.onError { throwable -> logger.warn(throwable) { "Proximity evaluation failed for vehicle $vehicleId" } }
     }
@@ -118,33 +108,63 @@ class ProximityAlertServiceI(
         }
     }
 
-    private suspend fun claimAndNotify(
+    private suspend fun claimAndNotifyBatch(
         vehicleId: Int,
         companyId: Int,
-        savedLocation: UserSavedLocation,
+        savedLocations: List<UserSavedLocation>,
     ) {
+        if (savedLocations.isEmpty()) return
+
         val attemptedAt = Instant.now()
-        // Claim before sending so concurrent telemetry cannot duplicate an alert attempt. Delivery
-        // is deliberately best-effort: a failure still consumes this cooldown.
-        val shouldNotify =
+        runSuspendCatching {
             tx.transactional {
-                proximityNotificationRepository.claimEntryNotification(
-                    buyerUserId = savedLocation.userId,
-                    savedLocationId = savedLocation.id,
+                proximityNotificationRepository.claimEntryNotifications(
                     vehicleId = vehicleId,
+                    candidates =
+                        savedLocations.map { savedLocation ->
+                            ProximityNotificationCandidate(
+                                buyerUserId = savedLocation.userId,
+                                savedLocationId = savedLocation.id,
+                            )
+                        },
                     attemptedAt = attemptedAt,
                     cooldownCutoff = attemptedAt.minus(PROXIMITY_NOTIFICATION_COOLDOWN.toJavaDuration()),
                 )
             }
-        if (!shouldNotify) return
-
-        notifyBuyerViaPush(
-            buyerUserId = savedLocation.userId,
-            companyId = companyId,
-            vehicleId = vehicleId,
-            savedLocationId = savedLocation.id,
-            savedLocationLabel = savedLocation.label,
+        }.foldSuspend(
+            onSuccess = { claimedLocationIds ->
+                notifyClaimedLocations(vehicleId, companyId, savedLocations, claimedLocationIds)
+            },
+            onError = { throwable ->
+                logger.warn(throwable) {
+                    "Proximity claim batch failed for ${savedLocations.size} saved locations, vehicle $vehicleId"
+                }
+            },
         )
+    }
+
+    private suspend fun notifyClaimedLocations(
+        vehicleId: Int,
+        companyId: Int,
+        savedLocations: List<UserSavedLocation>,
+        claimedLocationIds: Set<Int>,
+    ) {
+        savedLocations.forEach { savedLocation ->
+            if (savedLocation.id !in claimedLocationIds) return@forEach
+            runSuspendCatching {
+                notifyBuyerViaPush(
+                    buyerUserId = savedLocation.userId,
+                    companyId = companyId,
+                    vehicleId = vehicleId,
+                    savedLocationId = savedLocation.id,
+                    savedLocationLabel = savedLocation.label,
+                )
+            }.onError { throwable ->
+                logger.warn(throwable) {
+                    "Proximity push failed for saved location ${savedLocation.id}, vehicle $vehicleId"
+                }
+            }
+        }
     }
 
     private suspend fun notifyBuyerViaPush(
@@ -154,7 +174,8 @@ class ProximityAlertServiceI(
         savedLocationId: Int,
         savedLocationLabel: String,
     ) {
-        val data =
+        deviceInstallationService.sendPush(
+            buyerUserId,
             mapOf(
                 PUSH_DATA_KEY_TYPE to PushEventType.PROXIMITY_ALERT.name,
                 PUSH_DATA_KEY_COMPANY_ID to companyId.toString(),
@@ -165,16 +186,16 @@ class ProximityAlertServiceI(
                 // notification can render something meaningful even if that local cache is stale
                 // or was never fetched (e.g. a fresh install restoring push before its first sync).
                 PUSH_DATA_KEY_SAVED_LOCATION_LABEL to savedLocationLabel,
-            )
-
-        deviceInstallationService.sendPush(buyerUserId, data)
+            ),
+        )
     }
 }
 
 private fun UserSavedLocation.covers(point: GeoPoint): Boolean =
-    haversineKm(
-        lat1 = point.latitude,
-        lon1 = point.longitude,
-        lat2 = latitude,
-        lon2 = longitude,
-    ) <= radiusKm
+    abs(point.latitude - latitude) * CONSERVATIVE_KM_PER_LATITUDE_DEGREE <= radiusKm &&
+        haversineKm(
+            lat1 = point.latitude,
+            lon1 = point.longitude,
+            lat2 = latitude,
+            lon2 = longitude,
+        ) <= radiusKm

@@ -4,6 +4,7 @@
 
 package com.mozgobolt.loadtest
 
+import java.nio.file.Path
 import java.time.Instant
 import java.util.Base64
 import kotlin.test.Test
@@ -12,6 +13,23 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class AccountsTest {
+    @Test
+    fun `load test accounts can be written to a per-run file under build output`() {
+        val output = loadTestAccountsOutputPath("build/load-test/parking-stress-users.csv")
+
+        assertEquals(
+            Path.of("build/load-test/parking-stress-users.csv").toAbsolutePath().normalize(),
+            output,
+        )
+    }
+
+    @Test
+    fun `load test account output cannot escape ignored build output`() {
+        assertFailsWith<IllegalArgumentException> {
+            loadTestAccountsOutputPath("../.env")
+        }
+    }
+
     private fun tokenExpiringAt(epochSeconds: Long): String {
         val payload = Base64.getUrlEncoder().withoutPadding().encodeToString("""{"exp":$epochSeconds}""".toByteArray())
         return "header.$payload.signature"
@@ -57,7 +75,8 @@ class AccountsTest {
                         credentials(exp),
                         com.mozgobolt.feature.vehicleTracking.domain.model
                             .GeoPoint(0.0, 0.0),
-                        "10.2.0.1",
+                        regionIndex = 0,
+                        clientAddress = "10.2.0.1",
                     ),
                 ),
             )

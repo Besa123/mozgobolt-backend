@@ -122,6 +122,19 @@ class AppConfigValidationTest {
     }
 
     @Test
+    fun `production requires breached-password checks to remain enabled`() {
+        val config = testConfig("https://api.example.test", clamAvEnabled = true)
+        val disabledCheck =
+            config.copy(
+                security = config.security.copy(shouldCheckPasswordBreach = false),
+            )
+
+        assertFailsWith<IllegalArgumentException> {
+            disabledCheck.validateForEnvironment("production")
+        }
+    }
+
+    @Test
     fun `production requires ClamAV to be enabled for vehicle-picture uploads`() {
         val config = testConfig("https://api.example.test")
 

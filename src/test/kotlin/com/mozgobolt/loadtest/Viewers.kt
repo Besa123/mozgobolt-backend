@@ -60,7 +60,7 @@ private data class WatchPlan(
  */
 internal class ViewerCrowd(
     private val viewers: List<Viewer>,
-    private val api: LiveApi,
+    private val apis: List<LiveApi>,
     private val sink: ObservationSink,
     private val radiusKm: Double,
     /** Mean time one map stays open before the buyer closes it; `null` keeps every map open for the whole run. */
@@ -69,14 +69,19 @@ internal class ViewerCrowd(
 ) {
     private val sessionIds = AtomicInteger()
 
+    init {
+        require(apis.isNotEmpty()) { "At least one app node is required" }
+    }
+
     /** Runs every viewer until cancelled; initial connections are spread uniformly over [rampUp]. */
     suspend fun run(rampUp: Duration) =
         coroutineScope {
-            viewers.forEach { viewer ->
+            viewers.forEachIndexed { index, viewer ->
+                val api = apis[index % apis.size]
                 val random = randomFor(viewer)
                 launch {
                     delay(rampUp * random.nextDouble())
-                    viewer.plans(random).collect { plan -> viewer.watch(plan) }
+                    viewer.plans(random).collect { plan -> viewer.watch(api, plan) }
                 }
             }
         }
@@ -116,33 +121,50 @@ internal class ViewerCrowd(
     private fun exponentialWatchDuration(random: Random): Duration =
         meanSession?.let { (it * -ln(1.0 - random.nextDouble())).coerceAtLeast(MIN_SESSION) } ?: Duration.INFINITE
 
-    private suspend fun Viewer.watch(plan: WatchPlan) =
-        coroutineScope {
-            val sessionId = sessionIds.incrementAndGet()
-            val map = MutableStateFlow(LiveMapState.EMPTY)
-            sink.record(Observation.ViewerConnecting(sessionId, plan.center, radiusKm, TimeSource.Monotonic.markNow()))
+    private suspend fun Viewer.watch(
+        api: LiveApi,
+        plan: WatchPlan,
+    ) = coroutineScope {
+        val sessionId = sessionIds.incrementAndGet()
+        val map = MutableStateFlow(LiveMapState.EMPTY)
+        sink.record(
+            Observation.ViewerConnecting(
+                sessionId = sessionId,
+                center = plan.center,
+                radiusKm = radiusKm,
+                at = TimeSource.Monotonic.markNow(),
+                nodeName = api.nodeName,
+            ),
+        )
 
-            val feed =
-                api
-                    .liveFeed(buyer, plan.center, radiusKm)
-                    .onEach { event ->
-                        sink.record(Observation.ViewerEventReceived(sessionId, event, TimeSource.Monotonic.markNow()))
-                        map.update { it.apply(event) }
-                    }.launchIn(this)
-            val settledCheck =
-                launch {
-                    delay(MAP_SETTLE_DELAY)
-                    sink.record(Observation.MapChecked(sessionId, CheckPhase.SETTLED, map.value))
-                }
-            live.value = LiveWatch(sessionId, map)
-
-            try {
-                withTimeoutOrNull(plan.watchFor) { feed.join() }
-            } finally {
-                live.value = null
-                settledCheck.cancel()
-                feed.cancel()
-                sink.record(Observation.ViewerLeft(sessionId))
+        val feed =
+            api
+                .liveFeed(buyer, plan.center, radiusKm)
+                .onEach { event ->
+                    sink.record(
+                        Observation.ViewerEventReceived(
+                            sessionId = sessionId,
+                            event = event,
+                            at = TimeSource.Monotonic.markNow(),
+                            nodeName = api.nodeName,
+                        ),
+                    )
+                    map.update { it.apply(event) }
+                }.launchIn(this)
+        val settledCheck =
+            launch {
+                delay(MAP_SETTLE_DELAY)
+                sink.record(Observation.MapChecked(sessionId, CheckPhase.SETTLED, map.value))
             }
+        live.value = LiveWatch(sessionId, map)
+
+        try {
+            withTimeoutOrNull(plan.watchFor) { feed.join() }
+        } finally {
+            live.value = null
+            settledCheck.cancel()
+            feed.cancel()
+            sink.record(Observation.ViewerLeft(sessionId))
         }
+    }
 }

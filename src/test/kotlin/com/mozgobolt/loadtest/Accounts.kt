@@ -69,6 +69,7 @@ internal data class VendorAccount(
 internal data class BuyerAccount(
     val credentials: Credentials,
     val home: GeoPoint,
+    val regionIndex: Int,
     val clientAddress: String,
 )
 
@@ -118,6 +119,7 @@ internal data class AccountBook(
                         BuyerAccount(
                             credentials = row.credentials(),
                             home = GeoPoint(row[HOME_LATITUDE].toDouble(), row[HOME_LONGITUDE].toDouble()),
+                            regionIndex = row[REGION_INDEX].toInt(),
                             clientAddress = syntheticClientAddress(AddressBlock.BUYERS, index),
                         )
                     },

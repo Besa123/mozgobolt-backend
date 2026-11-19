@@ -12,6 +12,12 @@ plugins {
     alias(libs.plugins.sentry.gradle)
 }
 
+// Keep transitive versions reproducible; review updates before regenerating both files with
+// --write-locks --write-verification-metadata sha256.
+dependencyLocking {
+    lockAllConfigurations()
+}
+
 group = "com.mozgobolt"
 version = "1.0.0-SNAPSHOT"
 
@@ -95,7 +101,15 @@ tasks.register<JavaExec>("generateExposedMigrationPreview") {
     dependsOn(tasks.testClasses)
     classpath = sourceSets.test.get().runtimeClasspath
     mainClass.set("com.mozgobolt.core.database.GenerateExposedMigrationPreviewKt")
-    args(providers.gradleProperty("migrationPreviewScriptName").get())
+    val scriptName = providers.gradleProperty("migrationPreviewScriptName")
+    argumentProviders.add {
+        listOf(
+            scriptName.orNull
+                ?: throw GradleException(
+                    "Pass -PmigrationPreviewScriptName=<new Flyway script name> to generateExposedMigrationPreview.",
+                ),
+        )
+    }
 }
 
 tasks.register<JavaExec>("generateExposedInitialV1Candidate") {
@@ -141,7 +155,8 @@ tasks.register<JavaExec>("runSecurityProbes") {
 
 tasks.register<JavaExec>("runLiveLoadTest") {
     group = "verification"
-    description = "Run the live-location workload against a local app. Pass options with --args=\"--profile hotspot\"."
+    description =
+        "Run the live-location workload against a local app; optionally split viewers with --node-b-url."
     dependsOn(tasks.testClasses)
     classpath = sourceSets.test.get().runtimeClasspath
     mainClass.set("com.mozgobolt.loadtest.LiveWorkloadKt")
@@ -168,11 +183,13 @@ dependencies {
     implementation(ktorLibs.server.defaultHeaders)
     implementation(ktorLibs.server.forwardedHeader)
     implementation(ktorLibs.server.sse)
+    implementation(ktorLibs.server.metrics.micrometer)
 
     implementation(libs.logback.classic)
     implementation(libs.kotlin.logging)
     implementation(libs.logstash.logback.encoder)
     implementation(libs.sentry.logback)
+    implementation(libs.micrometer.registry.prometheus)
     implementation(libs.exposed.core)
     implementation(libs.exposed.jdbc)
     implementation(libs.exposed.dao)

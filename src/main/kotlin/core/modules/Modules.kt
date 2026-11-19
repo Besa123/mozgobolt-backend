@@ -12,6 +12,7 @@ import com.mozgobolt.core.modules.plugin.configureDefaultHeaders
 import com.mozgobolt.core.modules.plugin.configureForwardedHeaders
 import com.mozgobolt.core.modules.plugin.configureGlobalBodyLimit
 import com.mozgobolt.core.modules.plugin.configureHttpRequestLifecycle
+import com.mozgobolt.core.modules.plugin.configureMetrics
 import com.mozgobolt.core.modules.plugin.configureRateLimit
 import com.mozgobolt.core.modules.plugin.configureRequestTimeout
 import com.mozgobolt.core.modules.plugin.configureRequestValidation
@@ -28,6 +29,7 @@ import io.ktor.server.resources.Resources
 /** Installs the core Ktor plugins used by the application. */
 fun Application.configureModules() {
     configureSentry()
+    configureMetrics()
     install(Resources)
     install(AutoHeadResponse)
     configureDefaultHeaders()

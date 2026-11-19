@@ -4,6 +4,7 @@
 
 package com.mozgobolt.feature.vehicleAssignment.service
 
+import com.mozgobolt.core.assertInstantMatchesPostgresPrecision
 import com.mozgobolt.core.domain.AppResult
 import com.mozgobolt.core.domain.security.SecureTokenGenerator
 import com.mozgobolt.core.skipIfNoDocker
@@ -223,7 +224,7 @@ class VehicleAssignmentServiceRealDatabaseTest {
                         .single()[VehicleAssignmentsTable.endedAt]
                 }
 
-            assertEquals(firstEnd, persistedEnd)
+            assertInstantMatchesPostgresPrecision(firstEnd, assertNotNull(persistedEnd))
         }
     }
 

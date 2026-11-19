@@ -6,6 +6,7 @@ package com.mozgobolt.feature.proximityNotification.data.repository
 
 import com.mozgobolt.feature.proximityNotification.data.database.ProximityNotificationsTable
 import com.mozgobolt.feature.proximityNotification.domain.ProximityNotificationRepository
+import com.mozgobolt.feature.proximityNotification.domain.model.ProximityNotificationCandidate
 import com.mozgobolt.feature.proximityNotification.domain.model.ProximityNotificationRecord
 import com.mozgobolt.feature.vehicle.data.database.VehiclesTable
 import org.jetbrains.exposed.v1.core.ResultRow
@@ -13,17 +14,23 @@ import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.core.inSubQuery
+import org.jetbrains.exposed.v1.core.lessEq
+import org.jetbrains.exposed.v1.core.or
+import org.jetbrains.exposed.v1.jdbc.batchInsert
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insertIgnore
 import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.update
+import org.jetbrains.exposed.v1.jdbc.updateReturning
 import java.time.Instant
 
+private const val MAX_LOCATION_IDS_PER_CLAIM_UPDATE = 500
+
 /**
- * Notification delivery uses [claimEntryNotification] so the eligibility check and cooldown
- * update are serialized for each buyer/location/vehicle triple. [recordEntryAttempted] remains an
- * unconditional state write for callers that already own that decision.
+ * Notification delivery uses single or batched claims so eligibility and cooldown updates remain
+ * atomic for each buyer/location/vehicle triple. Batch claims must stay inside the caller's transaction.
+ * [recordEntryAttempted] remains an unconditional state write for callers that already own that decision.
  */
 class ProximityNotificationRepositoryI : ProximityNotificationRepository {
     override suspend fun find(
@@ -91,6 +98,61 @@ class ProximityNotificationRepositoryI : ProximityNotificationRepository {
         val existing = findRow(buyerUserId, savedLocationId, vehicleId, forUpdate = true) ?: return false
 
         return updateEntryIfEligible(existing, attemptedAt, cooldownCutoff)
+    }
+
+    override suspend fun claimEntryNotifications(
+        vehicleId: Int,
+        candidates: List<ProximityNotificationCandidate>,
+        attemptedAt: Instant,
+        cooldownCutoff: Instant,
+    ): Set<Int> {
+        if (candidates.isEmpty()) return emptySet()
+
+        val claimedLocationIds = HashSet<Int>()
+        // Candidate query order is unspecified; use a stable lock order for overlapping batches.
+        val orderedCandidates = candidates.sortedBy(ProximityNotificationCandidate::savedLocationId)
+        orderedCandidates.chunked(MAX_LOCATION_IDS_PER_CLAIM_UPDATE).forEach { chunk ->
+            val inserted =
+                ProximityNotificationsTable.batchInsert(
+                    data = chunk,
+                    ignore = true,
+                    shouldReturnGeneratedValues = false,
+                ) { candidate ->
+                    this[ProximityNotificationsTable.buyerUserId] = candidate.buyerUserId
+                    this[ProximityNotificationsTable.savedLocationId] = candidate.savedLocationId
+                    this[ProximityNotificationsTable.vehicleId] = vehicleId
+                    this[ProximityNotificationsTable.currentlyInside] = true
+                    this[ProximityNotificationsTable.lastAttemptedAt] = attemptedAt
+                }
+            val insertedLocationIds =
+                inserted.mapTo(HashSet()) { it[ProximityNotificationsTable.savedLocationId] }
+            claimedLocationIds.addAll(insertedLocationIds)
+
+            val existingLocationIds =
+                chunk
+                    .map(ProximityNotificationCandidate::savedLocationId)
+                    .filterNot(insertedLocationIds::contains)
+            if (existingLocationIds.isNotEmpty()) {
+                val updatedLocationIds =
+                    ProximityNotificationsTable
+                        .updateReturning(
+                            returning = listOf(ProximityNotificationsTable.savedLocationId),
+                            where = {
+                                (ProximityNotificationsTable.vehicleId eq vehicleId) and
+                                    (ProximityNotificationsTable.savedLocationId inList existingLocationIds) and
+                                    (
+                                        (ProximityNotificationsTable.currentlyInside eq false) or
+                                            (ProximityNotificationsTable.lastAttemptedAt lessEq cooldownCutoff)
+                                    )
+                            },
+                        ) {
+                            it[ProximityNotificationsTable.currentlyInside] = true
+                            it[ProximityNotificationsTable.lastAttemptedAt] = attemptedAt
+                        }.map { row -> row[ProximityNotificationsTable.savedLocationId] }
+                claimedLocationIds.addAll(updatedLocationIds)
+            }
+        }
+        return claimedLocationIds
     }
 
     private fun updateEntryIfEligible(

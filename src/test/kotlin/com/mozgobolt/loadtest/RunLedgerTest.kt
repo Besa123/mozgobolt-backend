@@ -20,7 +20,22 @@ class RunLedgerTest {
     private val faraway = center.movedBy(9.0, 0.0)
     private val start = TimeSource.Monotonic.markNow()
     private val description =
-        RunDescription("test", 30, 1, 1, 5.0, 5.0, 1, 0, loginBurst = false, seed = 1)
+        RunDescription(
+            profile = "test",
+            durationSeconds = 30,
+            trucks = 1,
+            viewers = 1,
+            appNodes = 1,
+            viewersPerNode = mapOf("node-a" to 1),
+            radiusKm = 5.0,
+            truckIntervalSeconds = 5.0,
+            pointsPerBatch = 1,
+            viewerSessionSeconds = 0,
+            viewerConnectRampUpSeconds = 5,
+            loginBurst = false,
+            synchronizeTrucks = false,
+            seed = 1,
+        )
 
     private val ledger = RunLedger()
 
@@ -29,6 +44,29 @@ class RunLedgerTest {
     private fun connectViewer(sessionId: Int = 1) {
         ledger.record(Observation.ViewerConnecting(sessionId, center, 5.0, markAt(0)))
         ledger.record(Observation.ViewerEventReceived(sessionId, LiveFeedEvent.Connected(2.milliseconds), markAt(0)))
+    }
+
+    private fun connectViewer(
+        sessionId: Int,
+        nodeName: String,
+    ) {
+        ledger.record(
+            Observation.ViewerConnecting(
+                sessionId = sessionId,
+                center = center,
+                radiusKm = 5.0,
+                at = markAt(0),
+                nodeName = nodeName,
+            ),
+        )
+        ledger.record(
+            Observation.ViewerEventReceived(
+                sessionId = sessionId,
+                event = LiveFeedEvent.Connected(2.milliseconds),
+                at = markAt(0),
+                nodeName = nodeName,
+            ),
+        )
     }
 
     private fun point(
@@ -77,6 +115,64 @@ class RunLedgerTest {
     }
 
     @Test
+    fun `report records peak successfully connected live maps`() {
+        ledger.record(Observation.ViewerConnecting(1, center, 5.0, markAt(0)))
+        assertEquals(0, report().liveFeed.peakConcurrentConnections, "a pending handshake is not connected")
+        ledger.record(Observation.ViewerEventReceived(1, LiveFeedEvent.Connected(2.milliseconds), markAt(1)))
+        ledger.record(Observation.ViewerConnecting(2, center, 5.0, markAt(2)))
+        ledger.record(Observation.ViewerEventReceived(2, LiveFeedEvent.Connected(2.milliseconds), markAt(3)))
+        ledger.record(Observation.ViewerLeft(1))
+        ledger.record(Observation.ViewerConnecting(3, center, 5.0, markAt(4)))
+        ledger.record(Observation.ViewerEventReceived(3, LiveFeedEvent.Connected(2.milliseconds), markAt(5)))
+
+        assertEquals(2, report().liveFeed.peakConcurrentConnections)
+    }
+
+    @Test
+    fun `static viewer run fails if configured connections never become concurrent`() {
+        connectViewer()
+
+        ledger.requirePeakConcurrentConnections(mapOf("node-a" to 2))
+
+        assertEquals(
+            1,
+            report().functionalFailures.getValue(
+                "only 1 of 2 requested live connections were open concurrently on node-a",
+            ),
+        )
+    }
+
+    @Test
+    fun `static multi-node run records and requires concurrent connections on each node`() {
+        connectViewer(sessionId = 1, nodeName = "node-a")
+        connectViewer(sessionId = 2, nodeName = "node-b")
+
+        ledger.requirePeakConcurrentConnections(mapOf("node-a" to 1, "node-b" to 1))
+
+        val liveFeed = report().liveFeed
+        assertEquals(mapOf("node-a" to 1, "node-b" to 1), liveFeed.connectedConnectionsByNode)
+        assertEquals(mapOf("node-a" to 1, "node-b" to 1), liveFeed.peakConcurrentConnectionsByNode)
+    }
+
+    @Test
+    fun `run fails if a sent telemetry batch has no completed response`() {
+        ledger.record(
+            Observation.TelemetrySent(
+                vehicleId = 7,
+                points = listOf(point(nearby, second = 1)),
+                sentAt = markAt(1_000),
+            ),
+        )
+
+        ledger.verifyAllTelemetryAcknowledged()
+
+        assertEquals(
+            1,
+            report().functionalFailures["1 telemetry batch(es) were sent but never acknowledged"],
+        )
+    }
+
+    @Test
     fun `an in-radius point that never arrives lowers the delivery ratio and warns`() {
         connectViewer()
         accept(vehicleId = 7, position = nearby, second = 1, sentAtMillis = 1_000)
@@ -122,13 +218,11 @@ class RunLedgerTest {
 
         ledger.record(Observation.MapChecked(1, CheckPhase.FINAL, phantomMap))
 
-        assertEquals(
-            setOf(
-                "FINAL map check: an in-radius vehicle is missing",
-                "FINAL map check: an out-of-radius vehicle is shown",
-            ),
-            report().functionalFailures.keys,
-        )
+        val failures = report().functionalFailures.keys
+
+        assertEquals(2, failures.size)
+        assertTrue(failures.any { it.startsWith("FINAL map check: an in-radius vehicle is missing") })
+        assertTrue(failures.any { it.startsWith("FINAL map check: an out-of-radius vehicle is shown") })
     }
 
     @Test

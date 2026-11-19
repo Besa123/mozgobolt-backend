@@ -5,18 +5,30 @@
 package com.mozgobolt.core.data.messaging
 
 import com.mozgobolt.core.domain.messaging.MessageRelay
+import com.mozgobolt.core.utility.functions.closeAllResources
 import io.lettuce.core.ExperimentalLettuceCoroutinesApi
 import io.lettuce.core.RedisClient
+import io.lettuce.core.RedisException
 import io.lettuce.core.api.StatefulRedisConnection
 import io.lettuce.core.api.coroutines
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection
 import io.lettuce.core.pubsub.api.reactive.RedisPubSubReactiveCommands
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.reactive.asFlow
+import kotlinx.coroutines.reactive.awaitFirstOrNull
+import kotlinx.coroutines.withTimeout
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.time.Duration.Companion.seconds
 
 // Same value as InMemoryVehicleLocationHub/InMemoryVehiclePingHub's own BROADCAST_BUFFER_CAPACITY
 // (each defines its own private constant rather than sharing one, matching this codebase's
@@ -24,6 +36,7 @@ import kotlinx.coroutines.reactive.asFlow
 // upstream of those same hubs in the relay-decorated case and should apply the same
 // drop-oldest-under-pressure policy, not a differently-tuned one.
 private const val RELAY_BUFFER_CAPACITY = 64
+private val SUBSCRIPTION_ACK_TIMEOUT = 10.seconds
 
 /**
  * Redis Pub/Sub-backed [MessageRelay]. Uses two separate connections — one dedicated to
@@ -42,21 +55,41 @@ class RedisMessageRelay(
     private var client: RedisClient? = null
     private var publishConnection: StatefulRedisConnection<String, String>? = null
     private var subscribeConnection: StatefulRedisPubSubConnection<String, String>? = null
+    private val subscribedChannels = ConcurrentHashMap.newKeySet<String>()
+    private val subscriptionReadiness = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
+
+    override val isReady: Boolean
+        get() = publishConnection?.isOpen == true && subscribeConnection?.isOpen == true
 
     override fun start() {
+        check(client == null) { "RedisMessageRelay.start() may only be called once" }
         val newClient = RedisClient.create(redisUri)
-        client = newClient
-        publishConnection = newClient.connect()
-        subscribeConnection = newClient.connectPubSub()
+        try {
+            val newPublishConnection = newClient.connect()
+            val newSubscribeConnection = newClient.connectPubSub()
+            client = newClient
+            publishConnection = newPublishConnection
+            subscribeConnection = newSubscribeConnection
+        } catch (failure: RedisException) {
+            newClient.shutdown()
+            throw failure
+        }
     }
 
     override fun stop() {
-        publishConnection?.close()
-        subscribeConnection?.close()
-        client?.shutdown()
+        val publish = publishConnection
+        val subscribe = subscribeConnection
+        val redisClient = client
         publishConnection = null
         subscribeConnection = null
         client = null
+        subscribedChannels.clear()
+        subscriptionReadiness.clear()
+        closeAllResources(
+            { publish?.close() },
+            { subscribe?.close() },
+            { redisClient?.shutdown() },
+        )
     }
 
     // Lettuce's own first-class coroutine command API (connection.coroutines(), a genuine suspend
@@ -84,13 +117,47 @@ class RedisMessageRelay(
         val connection =
             checkNotNull(subscribeConnection) { "RedisMessageRelay.start() must be called before subscribe()" }
         val commands = connection.commands(RedisPubSubReactiveCommands.factory())
-        commands.subscribe(channel).subscribe()
+        val readiness = subscriptionReadiness.computeIfAbsent(channel) { CompletableDeferred() }
 
-        return commands
-            .observeChannels()
-            .asFlow()
-            .filter { it.channel == channel }
-            .map { it.message }
-            .buffer(capacity = RELAY_BUFFER_CAPACITY, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+        return channelFlow {
+            launch(start = CoroutineStart.UNDISPATCHED) {
+                try {
+                    commands
+                        .observeChannels()
+                        .asFlow()
+                        .filter { it.channel == channel }
+                        .map { it.message }
+                        .collect { send(it) }
+                } catch (failure: CancellationException) {
+                    throw failure
+                } catch (failure: RedisException) {
+                    readiness.completeExceptionally(failure)
+                    throw failure
+                }
+            }
+
+            if (subscribedChannels.add(channel)) {
+                try {
+                    commands.subscribe(channel).awaitFirstOrNull()
+                    readiness.complete(Unit)
+                } catch (failure: CancellationException) {
+                    throw failure
+                } catch (failure: RedisException) {
+                    readiness.completeExceptionally(failure)
+                    throw failure
+                }
+            } else {
+                readiness.await()
+            }
+            awaitCancellation()
+        }.buffer(capacity = RELAY_BUFFER_CAPACITY, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    }
+
+    override suspend fun awaitSubscription(channel: String) {
+        val readiness =
+            checkNotNull(subscriptionReadiness[channel]) {
+                "RedisMessageRelay.subscribe($channel) must be collected before awaiting its subscription"
+            }
+        withTimeout(SUBSCRIPTION_ACK_TIMEOUT) { readiness.await() }
     }
 }

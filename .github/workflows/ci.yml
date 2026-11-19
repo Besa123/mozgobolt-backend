@@ -5,6 +5,9 @@ on:
     branches: [ master ]
   pull_request:
     branches: [ master ]
+  schedule:
+    - cron: '31 4 * * 3'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -95,3 +98,134 @@ jobs:
             build/reports/ktlint
             build/reports/detekt
           retention-days: 7
+
+  container-smoke:
+    needs: build
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: mozgobolt
+          POSTGRES_PASSWORD: mozgobolt
+          POSTGRES_DB: mozgobolt
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Validate Compose configuration
+        run: |
+          docker compose config --quiet
+          docker compose --profile observability config --quiet
+
+      - name: Validate Prometheus scrape configuration
+        run: |
+          docker run --rm \
+            --entrypoint=/bin/promtool \
+            --volume "$GITHUB_WORKSPACE/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
+            prom/prometheus:v3.16.0 \
+            check config /etc/prometheus/prometheus.yml
+
+      - name: Build application image
+        run: docker build --pull --tag mozgobolt:ci .
+
+      - name: Start container against PostgreSQL
+        run: |
+          docker run --detach --name mozgobolt-ci \
+            --add-host host.docker.internal:host-gateway \
+            --publish 127.0.0.1:18080:8080 \
+            --env ENVIRONMENT=test \
+            --env HOST=0.0.0.0 \
+            --env PORT=8080 \
+            --env APP_BASE_URL=http://127.0.0.1:18080 \
+            --env DB_URL=jdbc:postgresql://host.docker.internal:5432/mozgobolt \
+            --env DB_USER \
+            --env DB_PASSWORD \
+            --env JWT_SECRET \
+            --env JWT_ISSUER \
+            --env JWT_AUDIENCE \
+            --env PASSWORD_PEPPER \
+            --env PASSWORD_BREACH_CHECK_ENABLED=false \
+            --env CLAMAV_ENABLED=false \
+            --env METRICS_ENABLED=false \
+            --env REDIS_URL= \
+            mozgobolt:ci
+
+      - name: Verify container uses a non-root user
+        run: test "$(docker inspect --format='{{.Config.User}}' mozgobolt-ci)" = "10001:10001"
+
+      - name: Verify container JVM timezone is UTC
+        run: |
+          docker exec mozgobolt-ci java -XshowSettings:properties -version 2>&1 \
+            | grep -Eq '^[[:space:]]*user.timezone = UTC$'
+
+      - name: Wait for application readiness
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:18080/ready >/dev/null; then
+              exit 0
+            fi
+            if ! docker inspect --format='{{.State.Running}}' mozgobolt-ci | grep -q true; then
+              docker logs mozgobolt-ci
+              exit 1
+            fi
+            sleep 2
+          done
+          docker logs mozgobolt-ci
+          exit 1
+
+      - name: Verify liveness and disabled metrics default
+        run: |
+          curl --fail --silent http://127.0.0.1:18080/health >/dev/null
+          status=$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18080/metrics)
+          test "$status" = "404"
+
+      - name: Set up JDK 21 for scheduled security probes
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle for scheduled security probes
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Run black-box security probes
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: ./gradlew runSecurityProbes --args="http://127.0.0.1:18080 build/security-probe/security-probe-report.json" --console=plain
+
+      - name: Upload security probe report
+        if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@v7
+        with:
+          name: security-probe-report
+          path: build/security-probe/security-probe-report.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Show container logs on failure
+        if: failure()
+        run: |
+          if docker container inspect mozgobolt-ci >/dev/null 2>&1; then
+            docker logs mozgobolt-ci
+          fi
+
+      - name: Stop application container
+        if: always()
+        run: |
+          if docker container inspect mozgobolt-ci >/dev/null 2>&1; then
+            if [ "$(docker inspect --format='{{.State.Running}}' mozgobolt-ci)" = "true" ]; then
+              docker stop --timeout 10 mozgobolt-ci
+            fi
+            docker rm mozgobolt-ci
+          fi

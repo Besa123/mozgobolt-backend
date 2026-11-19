@@ -6,7 +6,8 @@ The rules the codebase enforces in CI, written down. For the "why" behind the st
 ## Prerequisites
 
 - JDK 21
-- A local PostgreSQL instance (or point `DB_URL` at any reachable Postgres)
+- Docker Engine with Docker Compose v2 for the containerized local stack and Testcontainers integration tests
+- A local PostgreSQL instance if running the server directly (or point `DB_URL` at any reachable Postgres)
 - `.env` file — copy `.env.example` to `.env` and fill in real values. Loaded automatically at startup via
   `dotenv-kotlin`, but only for variables not already set in the environment (CI/prod env vars always win).
 
@@ -18,7 +19,9 @@ cp .env.example .env    # fill in DB credentials, JWT secret, etc.
 ./gradlew run           # start the server
 ```
 
-Flyway migrations run automatically on startup — no manual migration step needed.
+Flyway migrations run automatically on startup — no manual migration step needed. To run the application and its local
+PostgreSQL/Valkey dependencies as containers instead, use `docker compose up --build`; stop with `docker compose down`.
+The named volumes preserve local data, while `docker compose down -v` removes it.
 
 ## Before opening a PR
 
@@ -33,11 +36,15 @@ Run the same checks CI runs, in this order, and make sure all of them pass:
 The Kover tasks run the JVM test suite, enforce the configured line and branch coverage bounds, and write reports to
 `build/reports/kover/` (HTML: `build/reports/kover/html/index.html`; XML: `build/reports/kover/report.xml`). CI
 (`.github/workflows/ci.yml`) gates on the same coverage verification as well as ktlint, detekt, and tests.
-The current minimums are 92% line coverage and 62% branch coverage. PostgreSQL, Redis, and S3 Testcontainers tests
+The current minimums are 92% line coverage and 62% branch coverage. PostgreSQL, Valkey, and S3 Testcontainers tests
 are skipped when Docker is unavailable; because those tests cover persistence and infrastructure code, Docker is
 required for `koverVerify` to meet the 92% line and 62% branch minimums. On Colima, Testcontainers may need
 `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock` and
 `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`.
+
+CI also validates the Compose configuration, builds and readiness-smoke-tests the application image, and runs the
+black-box security probes on the weekly schedule or on manual dispatch. The sustained live-location workload remains
+opt-in via `./gradlew runLiveLoadTest`; it is not run on every pull request.
 
 ## Dependency updates
 
@@ -52,6 +59,8 @@ catalog or wrapper; review release notes and run the test suite before changing 
 `./gradlew dependencyUpdates --refresh-dependencies` when checking for a very recent release not yet in Gradle's cache.
 The report may also list transitive dependencies supplied by plugins (currently KtLint); do not force those versions
 unless the owning plugin documents compatibility and the affected tooling passes its checks.
+
+Dependabot also checks the container image references in the Dockerfile and Compose stack weekly.
 
 ## CodeQL
 

@@ -7,8 +7,10 @@ package com.mozgobolt.feature.vehicleTracking.service
 import com.mozgobolt.core.database.TransactionalRunner
 import com.mozgobolt.core.utility.ApplicationBackgroundScope
 import com.mozgobolt.core.utility.functions.runSuspendCatching
+import com.mozgobolt.feature.vehicleTracking.domain.NoOpVehicleTrackingMetrics
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationBuffer
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationRepository
+import com.mozgobolt.feature.vehicleTracking.domain.VehicleTrackingMetrics
 import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationUpdate
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineName
@@ -27,8 +29,8 @@ private val DEFAULT_FLUSH_INTERVAL = 7.seconds
 /**
  * Slow path: drains the in-memory telemetry buffer on a fixed interval and bulk-inserts it into
  * `vehicle_locations`. Real-time delivery to buyers already happened via the fast-path hub before
- * anything reached this buffer — this class only backs durable history, so a lost batch on crash
- * (buffer is in-memory) degrades history, never live visibility.
+ * anything reached this buffer. A graceful stop attempts a final flush; crash, overflow, or a failed
+ * final flush can still lose history because the buffer is process-local.
  */
 class VehicleLocationBatchWriter(
     private val buffer: VehicleLocationBuffer,
@@ -36,6 +38,7 @@ class VehicleLocationBatchWriter(
     private val tx: TransactionalRunner,
     private val backgroundScope: ApplicationBackgroundScope,
     private val flushInterval: Duration = DEFAULT_FLUSH_INTERVAL,
+    private val metrics: VehicleTrackingMetrics = NoOpVehicleTrackingMetrics,
 ) {
     private var job: Job? = null
 
@@ -51,6 +54,7 @@ class VehicleLocationBatchWriter(
                     // the failed batch at the head of its bounded queue for the next interval.
                     runSuspendCatching { flush() }
                         .onError { failure ->
+                            metrics.recordHistoryBatchRetry()
                             logger.error(failure) { "Failed to persist a telemetry batch; retrying next interval" }
                         }
                 }
@@ -63,15 +67,36 @@ class VehicleLocationBatchWriter(
         job = null
     }
 
+    /** Stops the periodic worker, waits for any claimed batch to be restored, then flushes once. */
+    suspend fun stopAndFlush() {
+        val writerJob =
+            synchronized(this) {
+                job.also {
+                    job = null
+                    it?.cancel()
+                }
+            }
+        writerJob?.join()
+        flush()
+    }
+
     suspend fun flush() {
+        val startedAtNanos = System.nanoTime()
         val batch = buffer.drainAll()
-        if (batch.isEmpty()) return
+        if (batch.isEmpty()) {
+            metrics.recordHistoryBatchFlush(persistedPoints = 0, elapsedNanos = System.nanoTime() - startedAtNanos)
+            return
+        }
 
         var wasBatchCompleted = false
         try {
             val skippedHistoryPoints = persistBatch(batch)
             buffer.completeBatch(batch)
             wasBatchCompleted = true
+            metrics.recordHistoryBatchFlush(
+                persistedPoints = batch.size - skippedHistoryPoints,
+                elapsedNanos = System.nanoTime() - startedAtNanos,
+            )
 
             if (skippedHistoryPoints > 0) {
                 logger.warn {

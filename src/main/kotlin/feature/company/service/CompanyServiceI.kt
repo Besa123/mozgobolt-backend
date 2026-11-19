@@ -267,10 +267,25 @@ class CompanyServiceI(
         companyId: Int,
     ): AppResult<List<CompanyMemberSummary>, CompanyError> =
         tx.transactional {
-            membershipRepository.find(companyId, userId)
-                ?: return@transactional AppResult.Error(CompanyError.NOT_A_MEMBER)
+            val callerMembership =
+                membershipRepository.find(companyId, userId)
+                    ?: return@transactional AppResult.Error(CompanyError.NOT_A_MEMBER)
 
-            AppResult.Success(membershipRepository.findAllForCompany(companyId))
+            val members = membershipRepository.findAllForCompany(companyId)
+            if (callerMembership.role != CompanyRole.ADMIN) {
+                return@transactional AppResult.Success(members)
+            }
+
+            val activeVendorUserIds =
+                vehicleAssignmentService
+                    .findActiveForCompany(companyId)
+                    .map { it.vendorUserId }
+                    .toSet()
+            AppResult.Success(
+                members.map { member ->
+                    member.copy(hasActiveShiftInCompany = member.userId in activeVendorUserIds)
+                },
+            )
         }
 
     override suspend fun listCompaniesForUser(userId: Int): AppResult<List<CompanyMembershipSummary>, CompanyError> =

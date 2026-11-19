@@ -5,6 +5,7 @@
 package com.mozgobolt.loadtest
 
 import com.mozgobolt.feature.vehicleTracking.domain.model.GeoPoint
+import com.mozgobolt.feature.vehicleTracking.service.H3CellIndexer
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -48,5 +49,26 @@ class TruckRouteTest {
         (0 until 200).map { first.positionAt(it * first.lengthKm / 200) }.forEach { position ->
             assertTrue(budapest.distanceKmTo(position) <= 9.0 + 1e-6)
         }
+    }
+
+    @Test
+    fun `single-cell stress profile keeps the whole truck route in one H3 cell`() {
+        val spec = WorkloadSpec.load()
+        val profile = spec.profiles.getValue("single-cell")
+        val indexer = H3CellIndexer()
+        val center = singleCellRegion(spec).center
+        val cell = indexer.cellFor(center.latitude, center.longitude)
+        val route =
+            TruckRoute.loopAround(
+                center,
+                maxRadiusKm = requireNotNull(profile.routeRadiusKm),
+                random = Random(11),
+            )
+
+        (0..1_000).forEach { sample ->
+            val point = route.positionAt(route.lengthKm * sample / 1_000)
+            assertEquals(cell, indexer.cellFor(point.latitude, point.longitude), "route sample $sample")
+        }
+        assertEquals(0.0, profile.cityRadiusKm, "all live-map centers use the H3 cell center")
     }
 }

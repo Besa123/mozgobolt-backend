@@ -6,6 +6,7 @@ package com.mozgobolt.loadtest
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class RegionAllocationTest {
@@ -41,5 +42,29 @@ class RegionAllocationTest {
         assertEquals(assigned, assignBuckets(11, weights))
         assertEquals(assigned.sorted(), assigned, "actors are grouped by bucket in order")
         assertEquals(apportion(11, weights), List(3) { bucket -> assigned.count { it == bucket } })
+    }
+
+    @Test
+    fun `round-robin selection spreads a bounded actor set across regions`() {
+        val actors = listOf(0 to 0, 1 to 0, 2 to 0, 3 to 1, 4 to 1, 5 to 2, 6 to 2, 7 to 2)
+
+        val selected = takeRoundRobinByBucket(actors, 6) { it.second }
+
+        assertEquals(listOf(0, 3, 5, 1, 4, 6), selected.map { it.first })
+        assertEquals(
+            listOf(2, 2, 2),
+            selected
+                .groupingBy { it.second }
+                .eachCount()
+                .values
+                .sorted(),
+        )
+    }
+
+    @Test
+    fun `round-robin selection rejects a request beyond the available fixture`() {
+        assertFailsWith<IllegalArgumentException> {
+            takeRoundRobinByBucket(listOf(0), 2) { it }
+        }
     }
 }

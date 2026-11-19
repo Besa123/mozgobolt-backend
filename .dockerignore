@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+.git
+.gradle
+.idea
+.kotlin
+.claude
+.github
+build
+data
+docs
+load-tests
+logs
+security-probes
+src/test

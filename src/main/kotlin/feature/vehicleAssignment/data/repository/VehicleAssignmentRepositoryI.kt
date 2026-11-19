@@ -74,6 +74,15 @@ class VehicleAssignmentRepositoryI : VehicleAssignmentRepository {
             .orderBy(VehicleAssignmentsTable.id to SortOrder.ASC)
             .map { it.toVehicleAssignment() }
 
+    override suspend fun findActiveForCompany(companyId: Int): List<VehicleAssignment> =
+        (VehicleAssignmentsTable innerJoin VehiclesTable)
+            .selectAll()
+            .where {
+                (VehiclesTable.companyId eq companyId) and
+                    VehicleAssignmentsTable.endedAt.isNull()
+            }.orderBy(VehicleAssignmentsTable.id to SortOrder.ASC)
+            .map { it.toVehicleAssignment() }
+
     override suspend fun findStaleActiveBefore(
         cutoff: Instant,
         limit: Int,

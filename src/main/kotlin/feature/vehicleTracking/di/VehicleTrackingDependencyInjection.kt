@@ -6,6 +6,7 @@ package com.mozgobolt.feature.vehicleTracking.di
 
 import com.mozgobolt.core.database.TransactionalRunner
 import com.mozgobolt.core.domain.messaging.MessageRelay
+import com.mozgobolt.core.modules.metrics.PrometheusMetrics
 import com.mozgobolt.core.modules.plugin.exemptFromRequestTimeout
 import com.mozgobolt.core.routing.API_V1_PREFIX
 import com.mozgobolt.core.utility.ApplicationBackgroundScope
@@ -14,18 +15,22 @@ import com.mozgobolt.feature.vehicle.domain.VehicleRepository
 import com.mozgobolt.feature.vehicleAssignment.domain.VehicleAssignmentService
 import com.mozgobolt.feature.vehicleTracking.data.repository.VehicleLocationRepositoryI
 import com.mozgobolt.feature.vehicleTracking.domain.CellIndexer
+import com.mozgobolt.feature.vehicleTracking.domain.NoOpVehicleTrackingMetrics
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationBuffer
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationHub
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationRepository
+import com.mozgobolt.feature.vehicleTracking.domain.VehicleTrackingMetrics
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleTrackingService
 import com.mozgobolt.feature.vehicleTracking.routing.VEHICLE_TRACKING_LIVE_PATH
 import com.mozgobolt.feature.vehicleTracking.service.H3CellIndexer
 import com.mozgobolt.feature.vehicleTracking.service.InMemoryVehicleLocationBuffer
 import com.mozgobolt.feature.vehicleTracking.service.InMemoryVehicleLocationHub
+import com.mozgobolt.feature.vehicleTracking.service.MicrometerVehicleTrackingMetrics
 import com.mozgobolt.feature.vehicleTracking.service.RedisRelayVehicleLocationHub
 import com.mozgobolt.feature.vehicleTracking.service.VehicleLocationBatchWriter
 import com.mozgobolt.feature.vehicleTracking.service.VehicleLocationHubMaintenanceSweeper
 import com.mozgobolt.feature.vehicleTracking.service.VehicleLocationRetentionPurger
+import com.mozgobolt.feature.vehicleTracking.service.VehicleLocationStateReconciler
 import com.mozgobolt.feature.vehicleTracking.service.VehicleTrackingServiceI
 import io.ktor.server.application.Application
 import io.ktor.server.plugins.di.dependencies
@@ -42,7 +47,18 @@ fun Application.configureVehicleTrackingDependencyInjection() {
 
         // Provided under its own concrete type too (not just VehicleLocationHub) so the maintenance
         // worker can sweep stale live locations and assignment fences.
-        provide<InMemoryVehicleLocationHub> { InMemoryVehicleLocationHub(resolve<CellIndexer>()) }
+        provide<InMemoryVehicleLocationHub> {
+            InMemoryVehicleLocationHub(
+                cellIndexer = resolve<CellIndexer>(),
+                metrics = resolve<VehicleTrackingMetrics>(),
+            )
+        }
+        provide<VehicleTrackingMetrics> {
+            resolve<PrometheusMetrics>()
+                .registry
+                ?.let(::MicrometerVehicleTrackingMetrics)
+                ?: NoOpVehicleTrackingMetrics
+        }
 
         // Provided under its own concrete type too (not just VehicleLocationHub) purely so
         // configureVehicleLocationRelay() below starts its collector; the shared background scope
@@ -66,6 +82,7 @@ fun Application.configureVehicleTrackingDependencyInjection() {
                 buffer = resolve<VehicleLocationBuffer>(),
                 proximityAlertService = resolve<ProximityAlertService>(),
                 tx = resolve<TransactionalRunner>(),
+                metrics = resolve<VehicleTrackingMetrics>(),
             )
         }
 
@@ -75,6 +92,7 @@ fun Application.configureVehicleTrackingDependencyInjection() {
                 repository = resolve<VehicleLocationRepository>(),
                 tx = resolve<TransactionalRunner>(),
                 backgroundScope = resolve<ApplicationBackgroundScope>(),
+                metrics = resolve<VehicleTrackingMetrics>(),
             )
         }
 
@@ -82,6 +100,14 @@ fun Application.configureVehicleTrackingDependencyInjection() {
             VehicleLocationRetentionPurger(
                 repository = resolve<VehicleLocationRepository>(),
                 tx = resolve<TransactionalRunner>(),
+                backgroundScope = resolve<ApplicationBackgroundScope>(),
+            )
+        }
+        provide<VehicleLocationStateReconciler> {
+            VehicleLocationStateReconciler(
+                repository = resolve<VehicleLocationRepository>(),
+                tx = resolve<TransactionalRunner>(),
+                hub = resolve<InMemoryVehicleLocationHub>(),
                 backgroundScope = resolve<ApplicationBackgroundScope>(),
             )
         }
@@ -100,7 +126,13 @@ fun Application.configureVehicleLocationRetentionPurger() {
 
 fun Application.configureVehicleLocationRelay() {
     val hub: RedisRelayVehicleLocationHub by dependencies
+    val stateReconciler: VehicleLocationStateReconciler by dependencies
     hub.start()
+    kotlinx.coroutines.runBlocking {
+        hub.awaitSubscriptionReady()
+        stateReconciler.reconcile()
+    }
+    stateReconciler.start()
 }
 
 fun Application.configureVehicleLocationHubMaintenance() {

@@ -5,6 +5,7 @@
 package com.mozgobolt.loadtest
 
 import com.mozgobolt.feature.vehicleTracking.domain.model.GeoPoint
+import com.mozgobolt.feature.vehicleTracking.domain.model.TelemetryPoint
 import java.time.Instant
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -26,9 +27,11 @@ private data class PointKey(
 )
 
 private data class SessionLog(
+    val nodeName: String,
     val center: GeoPoint,
     val radiusKm: Double,
     val liveFrom: MonotonicMark? = null,
+    val lastEventByVehicle: MutableMap<Int, LiveFeedEvent> = HashMap(),
 )
 
 private val LiveFeedEvent.failureReason: String?
@@ -76,11 +79,16 @@ internal class RunLedger {
     private val deliveryLatency = LatencyHistogram()
 
     private val sentAt = HashMap<PointKey, MonotonicMark>()
-    private val inFlightBatches = HashMap<Int, List<GeoPoint>>()
-    private val lastAcceptedByVehicle = HashMap<Int, GeoPoint>()
+    private val inFlightBatches = HashMap<Int, List<TelemetryPoint>>()
+    private val lastAcceptedByVehicle = HashMap<Int, VehicleFix>()
     private val sessions = HashMap<Int, SessionLog>()
+    private val connectedConnectionsByNode = sortedMapOf<String, Int>()
+    private val concurrentConnectionsByNode = HashMap<String, Int>()
+    private val peakConcurrentConnectionsByNode = sortedMapOf<String, Int>()
 
     private var sessionsOpened = 0
+    private var concurrentConnections = 0
+    private var peakConcurrentConnections = 0
     private var expectedDeliveries = 0L
     private var observedDeliveries = 0L
     private var outsideRadiusEvents = 0
@@ -108,7 +116,7 @@ internal class RunLedger {
             }
 
             is Observation.ViewerLeft -> {
-                sessions.remove(observation.sessionId)
+                recordViewerLeft(observation.sessionId)
             }
 
             is Observation.MapChecked -> {
@@ -135,6 +143,9 @@ internal class RunLedger {
                 LiveFeedSummary(
                     events = eventCounts,
                     sessionsOpened = sessionsOpened,
+                    peakConcurrentConnections = peakConcurrentConnections,
+                    connectedConnectionsByNode = connectedConnectionsByNode,
+                    peakConcurrentConnectionsByNode = peakConcurrentConnectionsByNode,
                     outsideRadiusEvents = outsideRadiusEvents,
                     expectedLiveDeliveries = expectedDeliveries,
                     observedLiveDeliveries = observedDeliveries,
@@ -147,6 +158,23 @@ internal class RunLedger {
         )
     }
 
+    fun requirePeakConcurrentConnections(expectedByNode: Map<String, Int>) {
+        expectedByNode.forEach { (nodeName, expected) ->
+            val peak = peakConcurrentConnectionsByNode[nodeName] ?: 0
+            if (peak < expected) {
+                fail(
+                    "only $peak of $expected requested live connections were open concurrently on $nodeName",
+                )
+            }
+        }
+    }
+
+    fun verifyAllTelemetryAcknowledged() {
+        if (inFlightBatches.isNotEmpty()) {
+            fail("${inFlightBatches.size} telemetry batch(es) were sent but never acknowledged")
+        }
+    }
+
     private fun recordRequest(observation: Observation.RequestCompleted) {
         requestLatency.getOrPut(observation.name, ::LatencyHistogram).record(observation.latency)
         statusCounts.merge("${observation.name}:${observation.status}", 1, Int::plus)
@@ -154,7 +182,7 @@ internal class RunLedger {
 
     private fun recordTelemetrySent(observation: Observation.TelemetrySent) {
         observation.points.forEach { sentAt[PointKey(observation.vehicleId, it.recordedAt)] = observation.sentAt }
-        inFlightBatches[observation.vehicleId] = observation.points.map { GeoPoint(it.latitude, it.longitude) }
+        inFlightBatches[observation.vehicleId] = observation.points
         sessions.values
             .filter { it.isLiveAt(observation.sentAt) }
             .forEach { session ->
@@ -168,7 +196,13 @@ internal class RunLedger {
     private fun recordTelemetryAcknowledged(observation: Observation.TelemetryAcknowledged) {
         val batch = inFlightBatches.remove(observation.vehicleId)
         if (observation.status == HTTP_ACCEPTED && batch != null) {
-            lastAcceptedByVehicle[observation.vehicleId] = batch.last()
+            val point = batch.last()
+            lastAcceptedByVehicle[observation.vehicleId] =
+                VehicleFix(
+                    observation.vehicleId,
+                    GeoPoint(point.latitude, point.longitude),
+                    point.recordedAt,
+                )
         } else {
             fail("telemetry batch was not accepted with HTTP 202")
         }
@@ -176,22 +210,70 @@ internal class RunLedger {
 
     private fun recordViewerConnecting(observation: Observation.ViewerConnecting) {
         sessionsOpened++
-        sessions[observation.sessionId] = SessionLog(observation.center, observation.radiusKm)
+        sessions[observation.sessionId] =
+            SessionLog(
+                nodeName = observation.nodeName,
+                center = observation.center,
+                radiusKm = observation.radiusKm,
+            )
+    }
+
+    private fun recordViewerLeft(sessionId: Int) {
+        val session = sessions.remove(sessionId) ?: return
+        if (session.liveFrom != null) {
+            concurrentConnections--
+            val nodeConnections = concurrentConnectionsByNode.getValue(session.nodeName) - 1
+            if (nodeConnections == 0) {
+                concurrentConnectionsByNode.remove(session.nodeName)
+            } else {
+                concurrentConnectionsByNode[session.nodeName] = nodeConnections
+            }
+        }
     }
 
     private fun recordViewerEvent(observation: Observation.ViewerEventReceived) {
         val session = sessions[observation.sessionId] ?: return
+        if (session.nodeName != observation.nodeName) {
+            fail("live event for session ${observation.sessionId} came from unexpected node ${observation.nodeName}")
+            return
+        }
         val event = observation.event
         eventCounts.merge(event.name, 1, Int::plus)
         event.failureReason?.let(::fail)
 
         if (event is LiveFeedEvent.Connected) {
+            if (session.liveFrom == null) {
+                concurrentConnections++
+                connectedConnectionsByNode.merge(session.nodeName, 1, Int::plus)
+                val nodeConnections = (concurrentConnectionsByNode[session.nodeName] ?: 0) + 1
+                concurrentConnectionsByNode[session.nodeName] = nodeConnections
+                peakConcurrentConnectionsByNode[session.nodeName] =
+                    maxOf(peakConcurrentConnectionsByNode[session.nodeName] ?: 0, nodeConnections)
+                peakConcurrentConnections = maxOf(peakConcurrentConnections, concurrentConnections)
+            }
             sessions[observation.sessionId] = session.copy(liveFrom = observation.at + SUBSCRIPTION_SETTLE)
             requestLatency.getOrPut(SSE_CONNECT, ::LatencyHistogram).record(event.latency)
             statusCounts.merge("$SSE_CONNECT:$HTTP_OK", 1, Int::plus)
         }
         if (event is LiveFeedEvent.Rejected) statusCounts.merge("$SSE_CONNECT:${event.status}", 1, Int::plus)
-        if (event is LiveFeedEvent.Location) recordLocation(session, event.fix, observation.at)
+        when (event) {
+            is LiveFeedEvent.Location -> {
+                session.lastEventByVehicle[event.fix.vehicleId] = event
+                recordLocation(session, event.fix, observation.at)
+            }
+
+            is LiveFeedEvent.Offline -> {
+                session.lastEventByVehicle[event.vehicleId] = event
+            }
+
+            is LiveFeedEvent.Connected,
+            LiveFeedEvent.Reconnect,
+            is LiveFeedEvent.ServerError,
+            is LiveFeedEvent.Rejected,
+            is LiveFeedEvent.Malformed,
+            is LiveFeedEvent.Closed,
+            -> {}
+        }
     }
 
     private fun recordLocation(
@@ -214,14 +296,54 @@ internal class RunLedger {
         val session = sessions[observation.sessionId] ?: return
         val margin = if (observation.phase == CheckPhase.SETTLED) SETTLED_MARGIN_KM else NO_MARGIN_KM
 
-        fun distanceKm(vehicleId: Int) = lastAcceptedByVehicle.getValue(vehicleId).let(session.center::distanceKmTo)
+        fun distanceKm(vehicleId: Int) =
+            lastAcceptedByVehicle
+                .getValue(vehicleId)
+                .position
+                .let(session.center::distanceKmTo)
 
         val mustShow = lastAcceptedByVehicle.keys.filter { distanceKm(it) <= session.radiusKm - margin }
         val mayShow = lastAcceptedByVehicle.keys.filter { distanceKm(it) <= session.radiusKm + margin }.toSet()
         val shown = observation.map.vehicles.keys
+        val missing = mustShow.filterNot(shown::contains).sorted()
+        val unexpected = shown.filterNot(mayShow::contains).sorted()
+        val missingDetails =
+            missing.map { vehicleId ->
+                val expected = lastAcceptedByVehicle.getValue(vehicleId)
+                "$vehicleId(expected=${expected.position}@${expected.recordedAt}, " +
+                    "distance=${distanceKm(vehicleId)}km, " +
+                    "lastEvent=${session.lastEventByVehicle[vehicleId] ?: "none"})"
+            }
+        val unexpectedDetails =
+            unexpected.map { vehicleId ->
+                val expected = lastAcceptedByVehicle.getValue(vehicleId)
+                val shownPosition =
+                    observation
+                        .map
+                        .vehicles
+                        .getValue(vehicleId)
+                        .position
+                val shownDistance = session.center.distanceKmTo(shownPosition)
+                "$vehicleId(shown=$shownPosition, shownDistance=${shownDistance}km, " +
+                    "expected=${expected.position}@${expected.recordedAt}, " +
+                    "expectedDistance=${distanceKm(vehicleId)}km, " +
+                    "lastEvent=${session.lastEventByVehicle[vehicleId] ?: "none"})"
+            }
+        val context =
+            "session=${observation.sessionId}, center=${session.center}, radiusKm=${session.radiusKm}"
 
-        if (mustShow.any { it !in shown }) fail("${observation.phase} map check: an in-radius vehicle is missing")
-        if (shown.any { it !in mayShow }) fail("${observation.phase} map check: an out-of-radius vehicle is shown")
+        if (missing.isNotEmpty()) {
+            fail(
+                "${observation.phase} map check: an in-radius vehicle is missing ($context, " +
+                    "vehicleDistances=${missingDetails.take(10)})",
+            )
+        }
+        if (unexpected.isNotEmpty()) {
+            fail(
+                "${observation.phase} map check: an out-of-radius vehicle is shown ($context, " +
+                    "vehicleDistances=${unexpectedDetails.take(10)})",
+            )
+        }
     }
 
     private fun SessionLog.isLiveAt(mark: MonotonicMark): Boolean = liveFrom?.let { mark >= it } == true

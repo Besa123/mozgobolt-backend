@@ -4,11 +4,22 @@
 
 package com.mozgobolt.feature.vehicleTracking.domain
 
+import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationStateSnapshot
 import com.mozgobolt.feature.vehicleTracking.domain.model.VehicleLocationUpdate
 import java.time.Instant
 
 /** Persistence operations for assignment-scoped vehicle location history. */
 interface VehicleLocationRepository {
+    /**
+     * Reads active assignments and the latest persisted location within [cutoff] and [asOf] for
+     * every consented assignment from one read-only repeatable-read snapshot. Callers must invoke
+     * this within the owning transaction and materialize the result before leaving it.
+     */
+    suspend fun findLiveStateSnapshot(
+        cutoff: Instant,
+        asOf: Instant,
+    ): VehicleLocationStateSnapshot
+
     /** Persists a batch of location updates. */
     suspend fun insertAll(updates: List<VehicleLocationUpdate>)
 

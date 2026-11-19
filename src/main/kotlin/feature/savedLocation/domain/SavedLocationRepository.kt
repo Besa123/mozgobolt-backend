@@ -27,10 +27,8 @@ interface SavedLocationRepository {
     suspend fun delete(id: Int): Boolean
 
     /**
-     * All saved locations belonging to any of [userIds] — the second half of the
-     * candidate-narrowing query [com.mozgobolt.feature.proximityNotification.service.ProximityAlertServiceI]
-     * relies on. Backed by the existing index on `user_saved_locations(user_id)`. Empty input
-     * returns an empty list without touching the database.
+     * All saved locations belonging to any of [userIds], backed by the
+     * `user_saved_locations(user_id)` index. Empty input returns an empty list without querying.
      */
     suspend fun findAllForUsers(userIds: Collection<Int>): List<UserSavedLocation>
 }

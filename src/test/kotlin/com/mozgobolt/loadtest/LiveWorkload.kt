@@ -5,6 +5,8 @@
 package com.mozgobolt.loadtest
 
 import com.mozgobolt.feature.vehicleTracking.domain.model.GeoPoint
+import com.mozgobolt.feature.vehicleTracking.service.H3CellIndexer
+import io.ktor.client.HttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -29,16 +31,14 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.DurationUnit
 
-// Initial map connections are spread over this window, like users opening the app over a few seconds.
-private val CONNECT_RAMP_UP = 5.seconds
-
 // Time for every initial snapshot to arrive before trucks start moving.
 private val SNAPSHOT_SETTLE = 3.seconds
 
-// Time for the last telemetry batch to fan out to every viewer before final maps are compared.
-private val FINAL_DRAIN = 3.seconds
+// Let synchronized bursts and backpressured SSE writers settle before the final convergence check.
+private val FINAL_DRAIN = 10.seconds
 
 private val SCHEDULER_PROBE_PERIOD = 100.milliseconds
+private val AVAILABILITY_PROBE_PERIOD = 5.seconds
 private val AUTH_BURSTS_START_AFTER = 10.seconds
 private val TOKEN_VALIDITY_SETUP_ALLOWANCE = 60.seconds
 
@@ -60,6 +60,8 @@ internal class LiveWorkload(
     private val options: RunOptions,
     private val accounts: AccountBook,
 ) {
+    private val cellCenterRegion by lazy { singleCellRegion(spec) }
+
     suspend fun run(): LoadTestReport =
         coroutineScope {
             val observations = Channel<Observation>(Channel.UNLIMITED)
@@ -72,28 +74,50 @@ internal class LiveWorkload(
             try {
                 newLoadHttpClient().use { http ->
                     val sink = ObservationSink { observations.trySend(it) }
-                    scenario(LiveApi(http, options.baseUrl, sink), sink)
+                    scenario(createNodeApis(http, sink), sink)
                 }
             } finally {
                 observations.close()
             }
-            ledger.await().report(description())
+            val runLedger = ledger.await()
+            runLedger.verifyAllTelemetryAcknowledged()
+            if (options.viewerSession == null) {
+                runLedger.requirePeakConcurrentConnections(viewersPerNode())
+            }
+            runLedger.report(description())
         }
 
+    private fun createNodeApis(
+        http: HttpClient,
+        sink: ObservationSink,
+    ) = buildList {
+        add(LiveApi(http, options.baseUrl, sink, NODE_A))
+        options.nodeBUrl?.let { add(LiveApi(http, it, sink, NODE_B)) }
+    }
+
     private suspend fun scenario(
-        api: LiveApi,
+        nodeApis: List<LiveApi>,
         sink: ObservationSink,
     ) = coroutineScope {
-        check(api.health() == HTTP_OK) { "The app at ${options.baseUrl} is not healthy" }
+        nodeApis.forEach { api ->
+            check(api.health() == HTTP_OK) { "${api.nodeName} is not healthy" }
+            check(api.readiness() == HTTP_OK) { "${api.nodeName} database is not ready" }
+        }
         val generatorHealth = launch { fixedRate(SCHEDULER_PROBE_PERIOD).collect { sink.recordSchedulerLag(it) } }
 
+        val api = nodeApis.first()
         val fleet = fleet(api, sink).also { requireAllAccepted(it.prime()) }
         requireInitialPositionsPublished(api, fleet)
-        val crowd = crowd(api, sink)
-        val crowdJob = launch { crowd.run(CONNECT_RAMP_UP) }
-        delay(CONNECT_RAMP_UP + SNAPSHOT_SETTLE)
+        nodeApis.drop(1).forEach { relayNode ->
+            check(relayNode.isPublishedOnLiveMap(fleet.trucks.first(), accounts.buyers.first())) {
+                "${relayNode.nodeName} did not receive a location published through $NODE_A"
+            }
+        }
+        val crowd = crowd(nodeApis, sink)
+        val crowdJob = launch { crowd.run(options.viewerConnectRampUp) }
+        delay(options.viewerConnectRampUp + SNAPSHOT_SETTLE)
 
-        driveFleetWhileAuthBurstsFire(fleet, api, sink)
+        driveFleetWhileAuthBurstsFire(fleet, nodeApis, sink)
 
         delay(FINAL_DRAIN)
         crowd.checkFinalMaps()
@@ -103,18 +127,49 @@ internal class LiveWorkload(
 
     private suspend fun driveFleetWhileAuthBurstsFire(
         fleet: Fleet,
-        api: LiveApi,
+        nodeApis: List<LiveApi>,
         sink: ObservationSink,
     ) = coroutineScope {
-        if (options.loginBurst) {
+        val availabilityProbes =
             launch {
-                delay(AUTH_BURSTS_START_AFTER.coerceAtMost(options.duration / 3))
-                AuthBursts(api, sink, accounts.buyers.take(spec.loginBurst), spec.authLimitPerMinute).run()
+                fixedRate(AVAILABILITY_PROBE_PERIOD).collect {
+                    nodeApis.forEach { api ->
+                        val healthStatus = api.health()
+                        if (healthStatus != HTTP_OK) {
+                            sink.record(
+                                Observation.FunctionalFailure(
+                                    "${api.nodeName} liveness probe returned HTTP $healthStatus",
+                                ),
+                            )
+                        }
+                        val readyStatus = api.readiness()
+                        if (readyStatus != HTTP_OK) {
+                            sink.record(
+                                Observation.FunctionalFailure(
+                                    "${api.nodeName} readiness probe returned HTTP $readyStatus",
+                                ),
+                            )
+                        }
+                    }
+                }
             }
+        try {
+            if (options.loginBurst) {
+                launch {
+                    delay(AUTH_BURSTS_START_AFTER.coerceAtMost(options.duration / 3))
+                    AuthBursts(
+                        nodeApis.first(),
+                        sink,
+                        accounts.buyers.take(spec.loginBurst),
+                        spec.authLimitPerMinute,
+                    ).run()
+                }
+            }
+            val driving = launch { fleet.run(startedAt = Instant.now(), runDuration = options.duration) }
+            driving.join()
+        } finally {
+            availabilityProbes.cancelAndJoin()
         }
-        val driving = launch { fleet.run(startedAt = Instant.now()) }
-        delay(options.duration)
-        driving.cancelAndJoin()
     }
 
     private suspend fun requireInitialPositionsPublished(
@@ -149,34 +204,71 @@ internal class LiveWorkload(
         api: LiveApi,
         sink: ObservationSink,
     ) = Fleet(
-        trucks = accounts.vendors.map { Truck.forVendor(it, truckRegion(it), spec.routeRadiusKm, options.seed) },
+        trucks =
+            selectedVendors().map {
+                Truck.forVendor(
+                    it,
+                    truckRegion(it),
+                    options.profile.routeRadiusKm ?: spec.routeRadiusKm,
+                    options.seed,
+                )
+            },
         api = api,
         sink = sink,
-        schedule = TelemetrySchedule(options.truckInterval, options.pointsPerBatch),
+        schedule = TelemetrySchedule(options.truckInterval, options.pointsPerBatch, options.synchronizeTrucks),
         runId = UUID.randomUUID().toString().take(RUN_ID_LENGTH),
     )
 
     private fun crowd(
-        api: LiveApi,
+        nodeApis: List<LiveApi>,
         sink: ObservationSink,
     ) = ViewerCrowd(
-        viewers = accounts.buyers.take(options.profile.viewers).map { Viewer(it, viewerHome(it)) },
-        api = api,
+        viewers = selectedBuyers().map { Viewer(it, viewerHome(it)) },
+        apis = nodeApis,
         sink = sink,
         radiusKm = options.radiusKm,
         meanSession = options.viewerSession,
         seed = options.seed,
     )
 
+    private fun selectedVendors() = takeRoundRobinByBucket(accounts.vendors, options.trucks, VendorAccount::regionIndex)
+
+    private fun selectedBuyers() =
+        when (options.profile.placement) {
+            WorkloadSpec.Placement.UNIFORM_REGIONS -> {
+                takeRoundRobinByBucket(accounts.buyers, options.viewers, BuyerAccount::regionIndex)
+            }
+
+            WorkloadSpec.Placement.SEEDED,
+            WorkloadSpec.Placement.SINGLE_REGION,
+            WorkloadSpec.Placement.SINGLE_CELL,
+            -> {
+                accounts.buyers.take(options.viewers)
+            }
+        }
+
     private fun truckRegion(vendor: VendorAccount): WorkloadSpec.Region =
         when (options.profile.placement) {
-            WorkloadSpec.Placement.SEEDED -> spec.regions[vendor.regionIndex]
-            WorkloadSpec.Placement.SINGLE_REGION -> spec.regions.first()
+            WorkloadSpec.Placement.SEEDED,
+            WorkloadSpec.Placement.UNIFORM_REGIONS,
+            -> {
+                spec.regions[vendor.regionIndex]
+            }
+
+            WorkloadSpec.Placement.SINGLE_REGION -> {
+                spec.regions.first()
+            }
+
+            WorkloadSpec.Placement.SINGLE_CELL -> {
+                cellCenterRegion
+            }
         }
 
     private fun viewerHome(buyer: BuyerAccount): GeoPoint =
         when (options.profile.placement) {
-            WorkloadSpec.Placement.SEEDED -> {
+            WorkloadSpec.Placement.SEEDED,
+            WorkloadSpec.Placement.UNIFORM_REGIONS,
+            -> {
                 buyer.home
             }
 
@@ -185,8 +277,12 @@ internal class LiveWorkload(
                 spec.regions
                     .first()
                     .center
-                    .scatteredBy(spec.cityRadiusKm, random)
+                    .scatteredBy(options.profile.cityRadiusKm ?: spec.cityRadiusKm, random)
                     .roundedToWirePrecision()
+            }
+
+            WorkloadSpec.Placement.SINGLE_CELL -> {
+                cellCenterRegion.center
             }
         }
 
@@ -194,21 +290,53 @@ internal class LiveWorkload(
         RunDescription(
             profile = options.profileName,
             durationSeconds = options.duration.inWholeSeconds.toInt(),
-            trucks = accounts.vendors.size,
-            viewers = options.profile.viewers,
+            trucks = options.trucks,
+            viewers = options.viewers,
+            appNodes = nodeNames().size,
+            viewersPerNode = viewersPerNode(),
             radiusKm = options.radiusKm,
             truckIntervalSeconds = options.truckInterval.toDouble(DurationUnit.SECONDS),
             pointsPerBatch = options.pointsPerBatch,
             viewerSessionSeconds = options.viewerSession?.inWholeSeconds?.toInt() ?: 0,
+            viewerConnectRampUpSeconds = options.viewerConnectRampUp.inWholeSeconds.toInt(),
             loginBurst = options.loginBurst,
+            synchronizeTrucks = options.synchronizeTrucks,
             seed = options.seed,
         )
+
+    private fun viewersPerNode(): Map<String, Int> =
+        nodeNames().let { nodes ->
+            nodes
+                .mapIndexed { index, nodeName ->
+                    nodeName to
+                        options.viewers / nodes.size + if (index < options.viewers % nodes.size) 1 else 0
+                }.toMap()
+        }
+
+    private fun nodeNames(): List<String> =
+        buildList {
+            add(NODE_A)
+            if (options.nodeBUrl != null) add(NODE_B)
+        }
+
+    private companion object {
+        const val NODE_A = "node-a"
+        const val NODE_B = "node-b"
+    }
+}
+
+internal fun singleCellRegion(spec: WorkloadSpec): WorkloadSpec.Region {
+    val anchor = spec.regions.first()
+    val indexer = H3CellIndexer()
+    val center = indexer.centerOf(indexer.cellFor(anchor.latitude, anchor.longitude)).roundedToWirePrecision()
+    return anchor.copy(latitude = center.latitude, longitude = center.longitude)
 }
 
 fun main(args: Array<String>) {
     val spec = WorkloadSpec.load()
     val options = RunOptions.parse(args.toList(), spec)
     val accounts = AccountBook.load(options.accountsPath)
+    options.validateAccounts(accounts)
     accounts.requireTokensValidFor(options.duration + TOKEN_VALIDITY_SETUP_ALLOWANCE)
 
     val report = runBlocking { LiveWorkload(spec, options, accounts).run() }

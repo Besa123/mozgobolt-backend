@@ -11,8 +11,10 @@ import com.mozgobolt.feature.vehicle.domain.VehicleRepository
 import com.mozgobolt.feature.vehicleAssignment.domain.VehicleAssignmentService
 import com.mozgobolt.feature.vehicleTracking.domain.CellIndexer
 import com.mozgobolt.feature.vehicleTracking.domain.GpsPlausibility
+import com.mozgobolt.feature.vehicleTracking.domain.NoOpVehicleTrackingMetrics
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationBuffer
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleLocationHub
+import com.mozgobolt.feature.vehicleTracking.domain.VehicleTrackingMetrics
 import com.mozgobolt.feature.vehicleTracking.domain.VehicleTrackingService
 import com.mozgobolt.feature.vehicleTracking.domain.model.GeoPoint
 import com.mozgobolt.feature.vehicleTracking.domain.model.TelemetryDispatchPlan
@@ -32,60 +34,64 @@ class VehicleTrackingServiceI(
     private val buffer: VehicleLocationBuffer,
     private val proximityAlertService: ProximityAlertService,
     private val tx: TransactionalRunner,
+    private val metrics: VehicleTrackingMetrics = NoOpVehicleTrackingMetrics,
 ) : VehicleTrackingService {
     override suspend fun prepareTelemetry(
         vendorUserId: Int,
         points: List<TelemetryPoint>,
     ): AppResult<TelemetryDispatchPlan, TelemetryError> {
-        val activeAssignment =
-            vehicleAssignmentService.findActiveForVendor(vendorUserId)
-                ?: return AppResult.Error(TelemetryError.NOT_LINKED_TO_VEHICLE)
-
-        // Resolved once per batch, not per point — every point in this batch belongs to the same
-        // active assignment's vehicle, so its company can't change mid-batch.
-        val companyId =
+        val assignmentAndCompany =
             tx.transactional {
-                vehicleRepository.findById(activeAssignment.vehicleId)?.companyId
-            }
-
-        val acceptedUpdates = mutableListOf<VehicleLocationUpdate>()
-        var previous = hub.lastKnownLocation(activeAssignment.vehicleId)
-
-        points.forEach { point ->
-            if (point.recordedAt.isBefore(activeAssignment.startedAt)) {
-                logger.warn {
-                    "Dropping telemetry recorded before assignment start for vehicle ${activeAssignment.vehicleId}"
+                // Resolve once per batch; all points share this vehicle/company.
+                // The assignment service's nested transaction joins this boundary.
+                vehicleAssignmentService.findActiveForVendor(vendorUserId)?.let { assignment ->
+                    assignment to vehicleRepository.findById(assignment.vehicleId)?.companyId
                 }
-                return@forEach
             }
+                ?: return AppResult.Error(TelemetryError.NOT_LINKED_TO_VEHICLE)
+        val (activeAssignment, companyId) = assignmentAndCompany
 
-            val isPlausible =
-                GpsPlausibility.isPlausibleMovement(
-                    previous = previous,
-                    candidateLatitude = point.latitude,
-                    candidateLongitude = point.longitude,
-                    candidateRecordedAt = point.recordedAt,
-                )
+        val acceptedUpdates =
+            buildList {
+                var previous = hub.lastKnownLocation(activeAssignment.vehicleId)
 
-            if (!isPlausible) {
-                logger.warn { "Dropping an implausible GPS jump for vehicle ${activeAssignment.vehicleId}" }
-                return@forEach
+                points.forEach { point ->
+                    if (point.recordedAt.isBefore(activeAssignment.startedAt)) {
+                        logger.warn {
+                            "Dropping telemetry recorded before assignment start " +
+                                "for vehicle ${activeAssignment.vehicleId}"
+                        }
+                        return@forEach
+                    }
+
+                    val isPlausible =
+                        GpsPlausibility.isPlausibleMovement(
+                            previous = previous,
+                            candidateLatitude = point.latitude,
+                            candidateLongitude = point.longitude,
+                            candidateRecordedAt = point.recordedAt,
+                        )
+
+                    if (!isPlausible) {
+                        logger.warn { "Dropping an implausible GPS jump for vehicle ${activeAssignment.vehicleId}" }
+                        return@forEach
+                    }
+
+                    val update =
+                        VehicleLocationUpdate(
+                            vehicleId = activeAssignment.vehicleId,
+                            vendorUserId = vendorUserId,
+                            latitude = point.latitude,
+                            longitude = point.longitude,
+                            recordedAt = point.recordedAt,
+                            cellId = cellIndexer.cellFor(point.latitude, point.longitude),
+                            assignmentId = activeAssignment.id,
+                            sharesLocationWithCustomers = activeAssignment.sharesLocationWithCustomers,
+                        )
+                    add(update)
+                    previous = update
+                }
             }
-
-            val update =
-                VehicleLocationUpdate(
-                    vehicleId = activeAssignment.vehicleId,
-                    vendorUserId = vendorUserId,
-                    latitude = point.latitude,
-                    longitude = point.longitude,
-                    recordedAt = point.recordedAt,
-                    cellId = cellIndexer.cellFor(point.latitude, point.longitude),
-                    assignmentId = activeAssignment.id,
-                    sharesLocationWithCustomers = activeAssignment.sharesLocationWithCustomers,
-                )
-            acceptedUpdates += update
-            previous = update
-        }
 
         if (acceptedUpdates.isNotEmpty() &&
             !vehicleAssignmentService.recordTelemetryReceived(
@@ -102,7 +108,7 @@ class VehicleTrackingServiceI(
                 vehicleId = activeAssignment.vehicleId,
                 companyId = companyId,
                 sharesLocationWithCustomers = activeAssignment.sharesLocationWithCustomers,
-                updates = acceptedUpdates.toList(),
+                updates = acceptedUpdates,
             ),
         )
     }
@@ -117,6 +123,7 @@ class VehicleTrackingServiceI(
         }
 
         if (droppedHistoryPoints > 0) {
+            metrics.recordHistoryBufferOverflow(droppedHistoryPoints)
             logger.warn {
                 "Dropped $droppedHistoryPoints telemetry history point(s) because the in-memory buffer is full"
             }

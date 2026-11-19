@@ -35,7 +35,12 @@ class S3ImageStorage(
     private val bucket: String,
     private val resilience: ResiliencePolicy,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-) : ImageStorage {
+) : ImageStorage,
+    AutoCloseable {
+    override fun close() {
+        client.close()
+    }
+
     override suspend fun store(
         key: String,
         bytes: ByteArray,

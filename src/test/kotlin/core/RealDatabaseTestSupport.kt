@@ -15,11 +15,24 @@ import org.junit.Assume.assumeTrue
 import org.testcontainers.DockerClientFactory
 import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
+import java.time.Duration
+import java.time.Instant
+import kotlin.test.assertTrue
 
 fun skipIfNoDocker() {
     assumeTrue(
         "Docker is not available locally — skipping (this still runs in CI)",
         DockerClientFactory.instance().isDockerAvailable,
+    )
+}
+
+fun assertInstantMatchesPostgresPrecision(
+    expected: Instant,
+    actual: Instant,
+) {
+    assertTrue(
+        Duration.between(expected, actual).abs() < Duration.ofNanos(1_000),
+        "Expected $actual to be within one microsecond of $expected",
     )
 }
 

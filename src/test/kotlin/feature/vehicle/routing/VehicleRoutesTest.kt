@@ -17,7 +17,8 @@ import com.mozgobolt.feature.user.routing.postJson
 import com.mozgobolt.feature.vehicle.domain.VehicleService
 import com.mozgobolt.feature.vehicle.domain.model.Vehicle
 import com.mozgobolt.feature.vehicle.domain.model.VehicleError
-import com.mozgobolt.feature.vehicle.routing.dto.response.VehicleResponseDto
+import com.mozgobolt.feature.vehicle.routing.dto.response.CompanyVehicleResponseDto
+import com.mozgobolt.feature.vehicle.routing.dto.response.VehicleAvailability
 import com.mozgobolt.feature.vehicleAssignment.domain.VehicleAssignmentService
 import com.mozgobolt.feature.vehicleAssignment.domain.model.ActiveVehicleAssignment
 import com.mozgobolt.feature.vehicleAssignment.domain.model.VehicleAssignment
@@ -35,6 +36,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -270,14 +272,26 @@ class VehicleRoutesTest {
                         createdAt = Instant.now(),
                     ),
                 )
+            val assignments = FakeVehicleAssignmentService()
+            assignments.activeAssignmentForVehicle =
+                VehicleAssignment(id = 9, vehicleId = 1, vendorUserId = 77, startedAt = Instant.now())
+            val users = FakeUserService()
+            users.findContactInfoResult =
+                DriverContactInfo(
+                    displayName = "Alex Vendor",
+                    phoneNumber = null,
+                    whatsappNumber = null,
+                    viberNumber = null,
+                    messengerUsername = null,
+                )
             application {
                 installTestModules()
                 routing {
                     apiV1 {
                         vehicleRoutes(
                             service,
-                            FakeVehicleAssignmentService(),
-                            FakeUserService(),
+                            assignments,
+                            users,
                             FakeIdempotencyStore(),
                         )
                     }
@@ -288,6 +302,9 @@ class VehicleRoutesTest {
             val response = client.get("/api/v1/vehicles/1") { bearerAuth(token) }
 
             assertEquals(HttpStatusCode.OK, response.status)
+            val responseJson = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+            assertEquals(false, "availability" in responseJson)
+            assertEquals(false, "currentDriverName" in responseJson)
         }
 
     @Test
@@ -734,10 +751,17 @@ class VehicleRoutesAdditionalTest {
                 )
             val assignments = VehicleRoutesTest.FakeVehicleAssignmentService()
             assignments.activeAssignmentForVehicle =
-                VehicleAssignment(id = 9, vehicleId = 3, vendorUserId = 77, startedAt = Instant.now())
+                VehicleAssignment(
+                    id = 9,
+                    vehicleId = 3,
+                    vendorUserId = 77,
+                    startedAt = Instant.now(),
+                    locationSharingConsentedAt = Instant.now(),
+                )
             val users = FakeUserService()
             users.findContactInfoResult =
                 DriverContactInfo(
+                    displayName = "Alex Vendor",
                     phoneNumber = "+3612345678",
                     whatsappNumber = "+3612345679",
                     viberNumber = null,
@@ -752,7 +776,9 @@ class VehicleRoutesAdditionalTest {
             val response = client.get("/api/v1/companies/5/vehicles") { bearerAuth(vendorToken) }
 
             assertEquals(HttpStatusCode.OK, response.status)
-            val vehicle = Json.decodeFromString<List<VehicleResponseDto>>(response.bodyAsText()).single()
+            val vehicle = Json.decodeFromString<List<CompanyVehicleResponseDto>>(response.bodyAsText()).single()
+            assertEquals(VehicleAvailability.IN_USE, vehicle.availability)
+            assertEquals("Alex Vendor", vehicle.currentDriverName)
             assertEquals("+3612345678", vehicle.currentDriverPhoneNumber)
             assertNotNull(vehicle.currentDriverWhatsAppLink)
             assertNull(vehicle.currentDriverViberLink)
@@ -772,6 +798,118 @@ class VehicleRoutesAdditionalTest {
             val notAMemberResponse = client.get("/api/v1/companies/5/vehicles") { bearerAuth(vendorToken) }
             assertEquals(HttpStatusCode.Forbidden, notAMemberResponse.status)
             assertEquals(listOf(42 to 5, 42 to 5), service.listCompanyVehiclesCalls)
+        }
+
+    @Test
+    fun `private active company shift stays in use when all driver contacts are hidden`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = VehicleRoutesTest.FakeVehicleService()
+            service.listCompanyVehiclesResult =
+                AppResult.Success(
+                    listOf(
+                        Vehicle(
+                            id = 3,
+                            companyId = 5,
+                            label = "Truck 3",
+                            licensePlate = "ABC-123",
+                            pictureUrl = null,
+                            createdAt = Instant.now(),
+                        ),
+                    ),
+                )
+            val assignments = VehicleRoutesTest.FakeVehicleAssignmentService()
+            assignments.activeAssignmentForVehicle =
+                VehicleAssignment(id = 9, vehicleId = 3, vendorUserId = 77, startedAt = Instant.now())
+            val users = FakeUserService()
+            users.findContactInfoResult =
+                DriverContactInfo(
+                    displayName = "Sam Vendor",
+                    phoneNumber = null,
+                    whatsappNumber = null,
+                    viberNumber = null,
+                    messengerUsername = null,
+                )
+            application {
+                installTestModules()
+                routing { apiV1 { vehicleRoutes(service, assignments, users, FakeIdempotencyStore()) } }
+            }
+
+            val response =
+                client.get("/api/v1/companies/5/vehicles") {
+                    bearerAuth(testAccessTokenFor(userId = 42, role = "VENDOR"))
+                }
+
+            assertEquals(HttpStatusCode.OK, response.status)
+            val vehicle = Json.decodeFromString<List<CompanyVehicleResponseDto>>(response.bodyAsText()).single()
+            assertEquals(VehicleAvailability.IN_USE, vehicle.availability)
+            assertEquals("Sam Vendor", vehicle.currentDriverName)
+            assertNull(vehicle.currentDriverPhoneNumber)
+            assertNull(vehicle.currentDriverWhatsAppLink)
+            assertNull(vehicle.currentDriverViberLink)
+            assertNull(vehicle.currentDriverMessengerLink)
+        }
+
+    @Test
+    fun `company vehicle without an active assignment is explicitly available`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = VehicleRoutesTest.FakeVehicleService()
+            service.listCompanyVehiclesResult =
+                AppResult.Success(
+                    listOf(
+                        Vehicle(
+                            id = 3,
+                            companyId = 5,
+                            label = "Truck 3",
+                            licensePlate = "ABC-123",
+                            pictureUrl = null,
+                            createdAt = Instant.now(),
+                        ),
+                    ),
+                )
+            val assignments = VehicleRoutesTest.FakeVehicleAssignmentService()
+            val users = FakeUserService()
+            application {
+                installTestModules()
+                routing { apiV1 { vehicleRoutes(service, assignments, users, FakeIdempotencyStore()) } }
+            }
+
+            val response =
+                client.get("/api/v1/companies/5/vehicles") {
+                    bearerAuth(testAccessTokenFor(userId = 42, role = "VENDOR"))
+                }
+
+            assertEquals(HttpStatusCode.OK, response.status)
+            val vehicle = Json.decodeFromString<List<CompanyVehicleResponseDto>>(response.bodyAsText()).single()
+            assertEquals(VehicleAvailability.AVAILABLE, vehicle.availability)
+            assertNull(vehicle.currentDriverName)
+            assertNull(vehicle.currentDriverPhoneNumber)
+            assertEquals(listOf(3), assignments.findActiveForVehicleCalls)
+            assertEquals(emptyList(), users.findContactInfoCalls)
+        }
+
+    @Test
+    fun `a company with no active vehicles returns an empty fleet`() =
+        testApplication {
+            configureTestEnvironment()
+            val service = VehicleRoutesTest.FakeVehicleService()
+            val assignments = VehicleRoutesTest.FakeVehicleAssignmentService()
+            val users = FakeUserService()
+            application {
+                installTestModules()
+                routing { apiV1 { vehicleRoutes(service, assignments, users, FakeIdempotencyStore()) } }
+            }
+
+            val response =
+                client.get("/api/v1/companies/5/vehicles") {
+                    bearerAuth(testAccessTokenFor(userId = 42, role = "VENDOR"))
+                }
+
+            assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals("[]", response.bodyAsText())
+            assertEquals(emptyList(), assignments.findActiveForVehicleCalls)
+            assertEquals(emptyList(), users.findContactInfoCalls)
         }
 
     @Test

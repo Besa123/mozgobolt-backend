@@ -173,6 +173,8 @@ class CompanyServiceAdminActionsTest {
             val fx = CompanyServiceFixture()
             val created = fx.service.createCompany(1, "FamilyFrost").fold(onSuccess = { it }, onError = { fail("$it") })
             fx.service.joinCompany(2, created.inviteCode).fold(onSuccess = {}, onError = { fail("$it") })
+            val vehicle = fx.vehicleRepository.seed(created.id)
+            fx.assignmentRepository.seedActive(vehicle.id, vendorUserId = 1)
 
             val members =
                 fx.service
@@ -182,6 +184,36 @@ class CompanyServiceAdminActionsTest {
                     ).fold(onSuccess = { it }, onError = { fail("$it") })
 
             assertEquals(setOf(1, 2), members.map { it.userId }.toSet())
+            assertEquals(listOf(null, null), members.map { it.hasActiveShiftInCompany })
+        }
+    }
+
+    @Test
+    fun `admin member list reports active assignments only for the requested company`() {
+        runBlocking {
+            val fx = CompanyServiceFixture()
+            val company =
+                fx.service.createCompany(1, "FamilyFrost").fold(onSuccess = { it }, onError = { fail("$it") })
+            fx.service.joinCompany(2, company.inviteCode).fold(onSuccess = {}, onError = { fail("$it") })
+            fx.service.joinCompany(3, company.inviteCode).fold(onSuccess = {}, onError = { fail("$it") })
+            val otherCompany =
+                fx.service.createCompany(4, "Other Company").fold(onSuccess = { it }, onError = { fail("$it") })
+            fx.service.joinCompany(2, otherCompany.inviteCode).fold(onSuccess = {}, onError = { fail("$it") })
+
+            val inCompanyVehicle = fx.vehicleRepository.seed(company.id)
+            val elsewhereVehicle = fx.vehicleRepository.seed(otherCompany.id)
+            fx.assignmentRepository.seedActive(inCompanyVehicle.id, vendorUserId = 1)
+            fx.assignmentRepository.seedActive(elsewhereVehicle.id, vendorUserId = 2)
+
+            val members =
+                fx.service
+                    .listMembers(userId = 1, companyId = company.id)
+                    .fold(onSuccess = { it }, onError = { fail("$it") })
+
+            assertEquals(
+                mapOf(1 to true, 2 to false, 3 to false),
+                members.associate { it.userId to it.hasActiveShiftInCompany },
+            )
         }
     }
 

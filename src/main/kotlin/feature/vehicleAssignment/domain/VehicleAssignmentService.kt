@@ -70,6 +70,10 @@ interface VehicleAssignmentService {
     /** Lists the assignment history associated with [companyId]. */
     suspend fun findAllForCompany(companyId: Int): List<VehicleAssignment>
 
+    /** Lists active assignments associated with vehicles in [companyId]. */
+    suspend fun findActiveForCompany(companyId: Int): List<VehicleAssignment> =
+        findAllForCompany(companyId).filter { it.isActive }
+
     /**
      * Clears these ended shifts from the live location hub. Call only after the transaction that
      * ended them has committed; the hub is an in-memory/relay side effect, not transactional data.
