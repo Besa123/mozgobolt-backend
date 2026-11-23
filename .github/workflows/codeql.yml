@@ -44,7 +44,13 @@ jobs:
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Build production Kotlin sources
-        run: ./gradlew clean classes -PmigrationPreviewScriptName=codeql-analysis --no-configuration-cache --console=plain
+        run: >-
+          ./gradlew clean classes
+          -PmigrationPreviewScriptName=codeql-analysis
+          --no-configuration-cache
+          --no-build-cache
+          --rerun-tasks
+          --console=plain
 
       - name: Analyze
         uses: github/codeql-action/analyze@v4
