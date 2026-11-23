@@ -1,10 +1,10 @@
-FROM eclipse-temurin:21-jdk-noble AS build
+FROM eclipse-temurin:24-jdk-noble AS build
 
 WORKDIR /workspace
 COPY . .
 RUN ./gradlew --no-daemon installDist --console=plain
 
-FROM eclipse-temurin:21-jre-noble
+FROM eclipse-temurin:24-jre-noble
 
 WORKDIR /app
 RUN groupadd --system --gid 10001 mozgobolt \
