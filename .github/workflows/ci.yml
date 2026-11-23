@@ -59,7 +59,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Lint (ktlint)
-        run: ./gradlew ktlintCheck --console=plain
+        run: ./gradlew ktlintCheck --no-configuration-cache --console=plain
 
       - name: Static analysis (detekt)
         run: ./gradlew detekt detektMain detektTest --console=plain
